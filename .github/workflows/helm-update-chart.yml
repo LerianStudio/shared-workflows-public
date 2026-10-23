@@ -1,0 +1,927 @@
+name: "Update Helm Chart"
+
+# Reusable workflow for updating Helm charts from dispatch payload
+# Receives a JSON payload with chart name, components, versions, and env vars
+# Updates values.yaml, Chart.yaml (appVersion), and optionally configmap/secret templates
+# Creates a PR for review instead of pushing directly to the target branch
+#
+# Usage:
+#   jobs:
+#     update:
+#       uses: LerianStudio/shared-workflows-public/.github/workflows/helm-update-chart.yml@v1.54.0
+#       with:
+#         payload: ${{ inputs.payload }}
+#         base_branch: develop
+#       secrets: inherit
+
+on:
+  workflow_call:
+    inputs:
+      payload:
+        description: 'JSON payload with chart, components, and metadata'
+        type: string
+        required: true
+      base_branch:
+        description: 'Target branch for the PR. Allowed: main, develop, master, staging (default: main). Legacy patches are routed to a derived chart line branch instead — see legacy_patch_enabled.'
+        type: string
+        default: 'main'
+      scripts_path:
+        description: 'Path to scripts directory (default: .github/scripts)'
+        type: string
+        default: '.github/scripts'
+      charts_path:
+        description: 'Path to charts directory (default: charts)'
+        type: string
+        default: 'charts'
+      update_readme:
+        description: 'Whether to update README matrix (default: true)'
+        type: boolean
+        default: true
+      legacy_patch_enabled:
+        description: 'Honor is_legacy_patch in the payload and route the update to the matching legacy chart line branch instead of base_branch'
+        type: boolean
+        default: true
+      legacy_branch_prefix:
+        description: 'Branch prefix for legacy chart line patches (e.g. hotfix produces hotfix/<chart>-5.7.x)'
+        type: string
+        default: 'hotfix'
+      legacy_branch_source:
+        description: 'Branch a legacy chart line branch is created from when it does not exist yet'
+        type: string
+        default: 'main'
+      legacy_update_readme:
+        description: 'Update the README compatibility matrix on legacy patches. Off by default because the root README tracks the mainline.'
+        type: boolean
+        default: false
+      runner_type:
+        description: 'GitHub runner type to use'
+        type: string
+        default: 'blacksmith-4vcpu-ubuntu-2404'
+      gpg_sign_commits:
+        description: 'Whether to sign commits with GPG (default: true)'
+        type: boolean
+        default: true
+      slack_notification:
+        description: 'Whether to send Slack notification (default: false)'
+        type: boolean
+        default: false
+      slack_channel:
+        description: 'Slack channel ID to send notifications (e.g., C1234567890)'
+        type: string
+        required: false
+      slack_mention_group:
+        description: 'Slack user group ID to mention (e.g., S0614TZR7 for @devops-sre). Falls back to SLACK_GROUP_DEVOPS_SRE org variable.'
+        type: string
+        required: false
+      slack_bot_mention:
+        description: 'Slack bot user ID for Jira ticket creation (e.g., U1234567890 for @Severino). Falls back to SLACK_BOT_SEVERINO org variable.'
+        type: string
+        required: false
+    secrets:
+      APP_ID:
+        description: 'GitHub App ID for token generation'
+        required: true
+      APP_PRIVATE_KEY:
+        description: 'GitHub App private key'
+        required: true
+      GPG_KEY:
+        description: 'GPG private key for signing commits'
+        required: false
+      GPG_KEY_PASSWORD:
+        description: 'GPG key passphrase'
+        required: false
+      GIT_USER_NAME:
+        description: 'Git committer name'
+        required: true
+      GIT_USER_EMAIL:
+        description: 'Git committer email'
+        required: true
+      SLACK_BOT_TOKEN_HELM:
+        description: 'Slack Bot OAuth Token (xoxb-...) for Helm notifications'
+        required: false
+      SLACK_CHANNEL_DEVOPS:
+        description: 'Slack channel ID for DevOps notifications'
+        required: false
+      SLACK_GROUP_DEVOPS_SRE:
+        description: 'Slack group ID for @devops-sre mentions'
+        required: false
+      SLACK_BOT_SEVERINO:
+        description: 'Slack bot user ID for Severino (@severino)'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  update-chart:
+    name: Update Chart
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    steps:
+      - name: Validate branch inputs
+        env:
+          BASE_BRANCH: ${{ inputs.base_branch }}
+          LEGACY_SOURCE: ${{ inputs.legacy_branch_source }}
+        run: |
+          for pair in "base_branch:${BASE_BRANCH}" "legacy_branch_source:${LEGACY_SOURCE}"; do
+            name="${pair%%:*}"
+            value="${pair#*:}"
+            case "${value}" in
+              main|develop|master|staging)
+                echo "✅ ${name} '${value}' is allowed"
+                ;;
+              *)
+                echo "::error::Invalid ${name} '${value}'. Allowed: main, develop, master, staging"
+                exit 1
+                ;;
+            esac
+          done
+
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Extract payload
+        id: payload
+        env:
+          PAYLOAD_INPUT: ${{ inputs.payload }}
+        run: |
+          echo "Received payload:"
+          # Write payload to file using env var to avoid quote escaping issues
+          echo "${PAYLOAD_INPUT}" > /tmp/payload.json
+
+          # Debug: show raw content
+          echo "DEBUG: Raw payload file content:"
+          cat /tmp/payload.json
+          echo ""
+          echo "DEBUG: Hex dump of first 200 bytes:"
+          head -c 200 /tmp/payload.json | xxd || true
+
+          # Pretty print
+          jq . /tmp/payload.json
+
+          # Extract all fields
+          CHART=$(jq -r '.chart' /tmp/payload.json)
+          HAS_NEW_ENV_VARS=$(jq -r '.has_new_env_vars' /tmp/payload.json)
+          SOURCE_REF=$(jq -r '.source_ref // "unknown"' /tmp/payload.json)
+          SOURCE_REPO=$(jq -r '.source_repo // "unknown"' /tmp/payload.json)
+          SOURCE_ACTOR=$(jq -r '.source_actor // "unknown"' /tmp/payload.json)
+          SOURCE_SHA=$(jq -r '.source_sha // "unknown"' /tmp/payload.json)
+          SOURCE_BRANCH=$(jq -r '.source_branch // ""' /tmp/payload.json)
+          IS_LEGACY_PATCH=$(jq -r '.is_legacy_patch // false' /tmp/payload.json)
+          VERSION_LINE=$(jq -r '.version_line // ""' /tmp/payload.json)
+
+          # Generate branch name
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          BRANCH_NAME="update/${CHART}/${SOURCE_REF}-${TIMESTAMP}"
+
+          {
+            echo "chart=${CHART}"
+            echo "has_new_env_vars=${HAS_NEW_ENV_VARS}"
+            echo "source_ref=${SOURCE_REF}"
+            echo "source_repo=${SOURCE_REPO}"
+            echo "source_actor=${SOURCE_ACTOR}"
+            echo "source_sha=${SOURCE_SHA}"
+            echo "source_branch=${SOURCE_BRANCH}"
+            echo "is_legacy_patch=${IS_LEGACY_PATCH}"
+            echo "version_line=${VERSION_LINE}"
+            echo "branch_name=${BRANCH_NAME}"
+          } >> "$GITHUB_OUTPUT"
+
+          # Save components array to file for processing
+          jq -c '.components' /tmp/payload.json > /tmp/components.json
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Import GPG key
+        if: ${{ inputs.gpg_sign_commits }}
+        uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
+        with:
+          gpg_private_key: ${{ secrets.GPG_KEY }}
+          passphrase: ${{ secrets.GPG_KEY_PASSWORD }}
+          git_committer_name: ${{ secrets.GIT_USER_NAME }}
+          git_committer_email: ${{ secrets.GIT_USER_EMAIL }}
+          git_config_global: true
+          git_user_signingkey: true
+          git_commit_gpgsign: true
+
+      - name: Configure git (without GPG)
+        if: ${{ !inputs.gpg_sign_commits }}
+        env:
+          GIT_USER_NAME: ${{ secrets.GIT_USER_NAME }}
+          GIT_USER_EMAIL: ${{ secrets.GIT_USER_EMAIL }}
+        run: |
+          git config user.name "${GIT_USER_NAME}"
+          git config user.email "${GIT_USER_EMAIL}"
+
+      # ----------------- Base Branch Resolution -----------------
+      - name: Resolve target base branch
+        id: base
+        env:
+          LEGACY_ENABLED: ${{ inputs.legacy_patch_enabled }}
+          LEGACY_PREFIX: ${{ inputs.legacy_branch_prefix }}
+          LEGACY_SOURCE: ${{ inputs.legacy_branch_source }}
+          LEGACY_UPDATE_README: ${{ inputs.legacy_update_readme }}
+          UPDATE_README: ${{ inputs.update_readme }}
+          BASE_BRANCH: ${{ inputs.base_branch }}
+          CHARTS_PATH: ${{ inputs.charts_path }}
+          CHART: ${{ steps.payload.outputs.chart }}
+          IS_LEGACY_PATCH: ${{ steps.payload.outputs.is_legacy_patch }}
+          VERSION_LINE: ${{ steps.payload.outputs.version_line }}
+          SOURCE_BRANCH: ${{ steps.payload.outputs.source_branch }}
+        run: |
+          set -euo pipefail
+
+          finish() {
+            local base="$1" legacy="$2" tag="${3:-}"
+            local readme="false"
+            if [ "${UPDATE_README}" = "true" ]; then
+              if [ "${legacy}" != "true" ] || [ "${LEGACY_UPDATE_README}" = "true" ]; then
+                readme="true"
+              fi
+            fi
+            {
+              echo "resolved_base=${base}"
+              echo "is_legacy=${legacy}"
+              echo "chart_tag=${tag}"
+              echo "update_readme=${readme}"
+            } >> "$GITHUB_OUTPUT"
+            echo "Resolved base branch: ${base} (legacy=${legacy}, chart_tag=${tag:-none}, update_readme=${readme})"
+          }
+
+          # Read a top-level scalar from a Chart.yaml reachable in git (avoids yq before setup).
+          # A missing ref or path must yield an empty value, not abort the step: git show
+          # exits 128 and pipefail would propagate it through the assignment. sed quits on
+          # the first match instead of piping into head, which also removes a SIGPIPE path.
+          chart_field() {
+            local content
+            content=$(git show "$1" 2>/dev/null) || return 0
+            printf '%s\n' "${content}" \
+              | sed -nE "/^$2:/{s/^$2:[[:space:]]*\"?([^\"[:space:]]+)\"?.*/\1/p;q;}"
+          }
+
+          version_line_of() {
+            printf '%s' "$1" | sed -nE 's/^([0-9]+\.[0-9]+)\..*/\1/p'
+          }
+
+          if [ "${LEGACY_ENABLED}" != "true" ] || [ "${IS_LEGACY_PATCH}" != "true" ]; then
+            finish "${BASE_BRANCH}" "false"
+            exit 0
+          fi
+
+          if ! printf '%s' "${VERSION_LINE}" | grep -qE '^[0-9]+\.[0-9]+$'; then
+            echo "::error::Payload is flagged as a legacy patch but version_line='${VERSION_LINE}' is not an X.Y line"
+            exit 1
+          fi
+
+          echo "Legacy patch from '${SOURCE_BRANCH}' — resolving the chart line for app line ${VERSION_LINE}.x"
+
+          # Find the highest stable chart tag whose appVersion belongs to the app version line
+          CHART_TAG=""
+          CHART_VERSION=""
+          while IFS= read -r tag; do
+            [ -z "${tag}" ] && continue
+            APP_VERSION=$(chart_field "${tag}:${CHARTS_PATH}/${CHART}/Chart.yaml" appVersion)
+            [ -z "${APP_VERSION}" ] && continue
+            case "${APP_VERSION}" in
+              "${VERSION_LINE}."*) ;;
+              *) continue ;;
+            esac
+            CANDIDATE="${tag#"${CHART}-v"}"
+            if [ -z "${CHART_VERSION}" ] || \
+               [ "$(printf '%s\n%s\n' "${CHART_VERSION}" "${CANDIDATE}" | sort -V | tail -1)" = "${CANDIDATE}" ]; then
+              CHART_VERSION="${CANDIDATE}"
+              CHART_TAG="${tag}"
+            fi
+          done < <(git tag --list "${CHART}-v*" | grep -E "^${CHART}-v[0-9]+\.[0-9]+\.[0-9]+$" || true)
+
+          if [ -z "${CHART_TAG}" ]; then
+            echo "::error::No stable '${CHART}' chart tag has an appVersion in the ${VERSION_LINE} line. Refusing to apply a legacy patch to the mainline chart."
+            exit 1
+          fi
+
+          CHART_LINE=$(version_line_of "${CHART_VERSION}")
+          echo "Resolved chart line ${CHART_LINE}.x from tag ${CHART_TAG} (appVersion line ${VERSION_LINE})"
+
+          git fetch --no-tags origin "${BASE_BRANCH}" "${LEGACY_SOURCE}"
+
+          MAINLINE_VERSION=$(chart_field "origin/${BASE_BRANCH}:${CHARTS_PATH}/${CHART}/Chart.yaml" version)
+          MAINLINE_LINE=$(version_line_of "${MAINLINE_VERSION}")
+
+          if [ -n "${MAINLINE_LINE}" ] && [ "${CHART_LINE}" = "${MAINLINE_LINE}" ]; then
+            echo "::warning::Resolved chart line ${CHART_LINE}.x is the mainline chart line on '${BASE_BRANCH}' — treating this as a regular update"
+            finish "${BASE_BRANCH}" "false"
+            exit 0
+          fi
+
+          LEGACY_BRANCH="${LEGACY_PREFIX}/${CHART}-${CHART_LINE}.x"
+
+          if ! printf '%s' "${LEGACY_BRANCH}" | grep -qE '^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*-[0-9]+\.[0-9]+\.x$'; then
+            echo "::error::Derived legacy branch '${LEGACY_BRANCH}' does not match the expected pattern <prefix>/<chart>-<major>.<minor>.x"
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --heads origin "${LEGACY_BRANCH}" >/dev/null 2>&1; then
+            echo "::notice::Reusing existing legacy branch ${LEGACY_BRANCH}"
+            finish "${LEGACY_BRANCH}" "true" "${CHART_TAG}"
+            exit 0
+          fi
+
+          echo "::notice::Creating ${LEGACY_BRANCH} from origin/${LEGACY_SOURCE} with ${CHARTS_PATH}/${CHART} restored from ${CHART_TAG}"
+          git checkout -B "${LEGACY_BRANCH}" "origin/${LEGACY_SOURCE}"
+          rm -rf "${CHARTS_PATH:?}/${CHART:?}"
+          git checkout "${CHART_TAG}" -- "${CHARTS_PATH}/${CHART}"
+          git add -A "${CHARTS_PATH}/${CHART}"
+
+          if git diff --staged --quiet; then
+            echo "Chart tree on ${LEGACY_SOURCE} already matches ${CHART_TAG}"
+          else
+            git commit -m "chore(${CHART}): seed ${CHART_LINE}.x maintenance line from ${CHART_TAG}"
+          fi
+
+          git push -u origin "${LEGACY_BRANCH}"
+          finish "${LEGACY_BRANCH}" "true" "${CHART_TAG}"
+
+      - name: Switch to base branch
+        env:
+          BASE_BRANCH: ${{ steps.base.outputs.resolved_base }}
+        run: |
+          git fetch --no-tags origin "${BASE_BRANCH}"
+          git checkout -B "${BASE_BRANCH}" "origin/${BASE_BRANCH}"
+
+      - name: Create feature branch
+        env:
+          BRANCH_NAME: ${{ steps.payload.outputs.branch_name }}
+        run: |
+          git checkout -b "${BRANCH_NAME}"
+
+      - name: Setup Go
+        if: steps.base.outputs.update_readme == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
+        with:
+          go-version: '1.21'
+          cache-dependency-path: ${{ inputs.scripts_path }}/go.mod
+
+      - name: Build scripts
+        if: steps.base.outputs.update_readme == 'true'
+        env:
+          SCRIPTS_PATH: ${{ inputs.scripts_path }}
+        run: |
+          cd "${SCRIPTS_PATH}" || exit 1
+          # Support both the legacy flat layout (update-readme-matrix.go) and the
+          # package-directory layout (update-readme-matrix/main.go). The "-bin"
+          # suffix avoids a name collision with the package directory.
+          for s in update-readme-matrix update-chart-version-readme; do
+            if [ -d "$s" ]; then
+              go build -o "${s}-bin" "./${s}"
+            else
+              go build -o "${s}-bin" "${s}.go"
+            fi
+          done
+
+      - name: Setup yq
+        uses: mikefarah/yq@504fc38780cc46be8444ea1b72fb55919fc0bfb0 # v4
+
+      - name: Process all components
+        id: process
+        env:
+          CHART: ${{ steps.payload.outputs.chart }}
+          CHARTS_PATH: ${{ inputs.charts_path }}
+        run: |
+          VALUES_FILE="${CHARTS_PATH}/${CHART}/values.yaml"
+          CHART_FILE="${CHARTS_PATH}/${CHART}/Chart.yaml"
+          TEMPLATES_BASE="${CHARTS_PATH}/${CHART}/templates"
+
+          # Debug: show components file content
+          echo "DEBUG: Components file content:"
+          cat /tmp/components.json
+          echo ""
+
+          COMPONENTS=$(cat /tmp/components.json)
+          UPDATED_COMPONENTS=""
+
+          # Function to check if a variable is sensitive (should go to secrets)
+          is_sensitive_var() {
+            local var_name="$1"
+            # Match patterns: *_KEY, *_SECRET, *_PASSWORD, *_TOKEN, *_CREDENTIAL, *_PRIVATE*, *_API_KEY
+            if [[ "$var_name" =~ _(KEY|SECRET|PASSWORD|TOKEN|CREDENTIAL|PRIVATE)$ ]] || \
+               [[ "$var_name" =~ ^(API_KEY|SECRET_|PRIVATE_|PASSWORD_|TOKEN_) ]] || \
+               [[ "$var_name" =~ _API_KEY$ ]]; then
+              return 0  # true - is sensitive
+            fi
+            return 1  # false - not sensitive
+          }
+
+          # Function to escape sed special characters
+          escape_sed() {
+            local str="$1"
+            # Escape: \ & / and newlines
+            printf '%s' "$str" | sed -e 's/[\/&\\]/\\&/g' | tr -d '\n'
+          }
+
+          # Track highest version for appVersion
+          HIGHEST_VERSION=""
+
+          # Get chart name from Chart.yaml for template references
+          CHART_TEMPLATE_NAME=$(yq '.name' "${CHART_FILE}")
+
+          # Function to create secret template if it doesn't exist
+          # $1 = values_key (for directory/file path and .Values references)
+          create_secret_template() {
+            local values_key="$1"
+            local secret_file="${TEMPLATES_BASE}/${values_key}/secret.yaml"
+
+            if [ ! -f "$secret_file" ]; then
+              echo "  Creating secret template: $secret_file"
+              mkdir -p "${TEMPLATES_BASE}/${values_key}"
+              printf '%s\n' \
+                "apiVersion: v1" \
+                "kind: Secret" \
+                "metadata:" \
+                "  name: {{ include \"${CHART_TEMPLATE_NAME}.fullname\" . }}-${values_key}" \
+                "  labels:" \
+                "    {{- include \"${CHART_TEMPLATE_NAME}.labels\" . | nindent 4 }}" \
+                "    app.kubernetes.io/component: ${values_key}" \
+                "type: Opaque" \
+                "data:" \
+                "  # Extra Secret Vars" \
+                "  {{- if .Values.${values_key}.extraSecretVars }}" \
+                "  {{- toYaml .Values.${values_key}.extraSecretVars | nindent 2 }}" \
+                "  {{- end }}" > "$secret_file"
+            fi
+          }
+
+          echo "Processing components for chart: $CHART"
+
+          # Process each component
+          while IFS= read -r row; do
+            COMP_NAME=$(echo "$row" | jq -r '.name')
+            COMP_VERSION=$(echo "$row" | jq -r '.version')
+            COMP_ENV_VARS=$(echo "$row" | jq -c '.env_vars // {}')
+            # Use values_key if provided, otherwise fallback to name
+            VALUES_KEY=$(echo "$row" | jq -r '.values_key // .name')
+
+            echo ""
+            echo "=== Processing: $COMP_NAME ==="
+            echo "  Version: $COMP_VERSION"
+            echo "  Values Key: $VALUES_KEY"
+            echo "  Env Vars: $COMP_ENV_VARS"
+
+            # Update image tag in values.yaml.
+            #
+            # Every Lerian chart nests the component image under its values key
+            # (.<VALUES_KEY>.image.tag) EXCEPT a single-service chart that keeps its
+            # own image at the values root (.image.tag). Writing .<VALUES_KEY>.image.tag
+            # to such a chart creates an orphan top-level "<component>:" block the chart
+            # never reads, while the real root image.tag stays stale. Pick the path the
+            # chart actually uses: root only when the chart is annotated single-service
+            # AND a root .image.tag already exists (so single-service charts that DO nest,
+            # e.g. tracer/bank-transfer, keep nesting). Every other chart is unchanged.
+            CHART_TYPE=$(yq -r '.annotations."lerian.studio/chart-type" // ""' "${CHART_FILE}")
+            if [ "${CHART_TYPE}" = "single-service" ] && yq -e '.image.tag' "${VALUES_FILE}" >/dev/null 2>&1; then
+              IMAGE_PATH=".image.tag"
+            else
+              IMAGE_PATH=".${VALUES_KEY}.image.tag"
+            fi
+            echo "  Updating ${IMAGE_PATH} to ${COMP_VERSION}"
+            yq -i "${IMAGE_PATH} = \"${COMP_VERSION}\"" "${VALUES_FILE}"
+
+            # Self-heal: a root-image chart must not carry an orphan top-level
+            # "<VALUES_KEY>:" block left by older runs of this workflow. Only remove it
+            # when it holds nothing but the image mapping, so a legitimately-named
+            # top-level key is never touched.
+            if [ "${IMAGE_PATH}" = ".image.tag" ] && [ "${VALUES_KEY}" != "image" ]; then
+              ORPHAN_KEYS=$(yq -r "(.\"${VALUES_KEY}\" // {}) | keys | @csv" "${VALUES_FILE}" 2>/dev/null || true)
+              if [ "${ORPHAN_KEYS}" = "image" ]; then
+                yq -i "del(.\"${VALUES_KEY}\")" "${VALUES_FILE}"
+                echo "  Removed orphan top-level .${VALUES_KEY} block (single-service root-image chart)"
+              fi
+            fi
+
+            # Track highest version for appVersion (using sort -V for version comparison)
+            if [ -z "$HIGHEST_VERSION" ]; then
+              HIGHEST_VERSION="$COMP_VERSION"
+            else
+              HIGHEST_VERSION=$(printf '%s\n%s' "$HIGHEST_VERSION" "$COMP_VERSION" | sort -V | tail -n1)
+            fi
+
+            # Add new environment variables if any
+            if [ "$COMP_ENV_VARS" != "{}" ] && [ "$COMP_ENV_VARS" != "null" ]; then
+              # Template paths use VALUES_KEY (directory structure matches values.yaml keys)
+              # Values references also use VALUES_KEY (values.yaml structure)
+              CONFIGMAP_FILE="${TEMPLATES_BASE}/${VALUES_KEY}/configmap.yaml"
+              SECRET_FILE="${TEMPLATES_BASE}/${VALUES_KEY}/secret.yaml"
+
+              while IFS='=' read -r key value; do
+                if [ -n "$key" ]; then
+                  # Escape values for safe sed insertion
+                  escaped_value=$(escape_sed "$value")
+
+                  # Check if variable is sensitive
+                  if is_sensitive_var "$key"; then
+                    echo "  Adding SECRET var: ${key}=***"
+
+                    # Create secret template if needed (uses VALUES_KEY for both path and .Values)
+                    create_secret_template "$VALUES_KEY"
+
+                    # Add to secret template (using 2 spaces indentation for data section)
+                    if [ -f "${SECRET_FILE}" ] && grep -q "# Extra Secret Vars" "${SECRET_FILE}"; then
+                      sed -i "/# Extra Secret Vars/i\\  ${key}: {{ .Values.${VALUES_KEY}.secrets.${key} | default \"${escaped_value}\" | b64enc | quote }}" "${SECRET_FILE}"
+                    else
+                      echo "::warning::Secret template not found or missing '# Extra Secret Vars' marker: ${SECRET_FILE} — skipping var ${key}"
+                    fi
+                  else
+                    echo "  Adding configmap var: ${key}=${value}"
+
+                    # Add to configmap template if it exists (using 2 spaces indentation)
+                    if [ -f "${CONFIGMAP_FILE}" ] && grep -q "# Extra Env Vars" "${CONFIGMAP_FILE}"; then
+                      sed -i "/# Extra Env Vars/i\\  ${key}: {{ .Values.${VALUES_KEY}.configmap.${key} | default \"${escaped_value}\" | quote }}" "${CONFIGMAP_FILE}"
+                    else
+                      echo "::warning::Configmap template not found or missing '# Extra Env Vars' marker: ${CONFIGMAP_FILE} — skipping var ${key}"
+                    fi
+                  fi
+                fi
+              done < <(echo "$COMP_ENV_VARS" | jq -r 'to_entries[] | "\(.key)=\(.value)"')
+            fi
+
+            # Build updated components list for commit message
+            if [ -n "$UPDATED_COMPONENTS" ]; then
+              UPDATED_COMPONENTS="${UPDATED_COMPONENTS}, ${COMP_NAME}@${COMP_VERSION}"
+            else
+              UPDATED_COMPONENTS="${COMP_NAME}@${COMP_VERSION}"
+            fi
+          done < <(echo "$COMPONENTS" | jq -c '.[]')
+
+          # Update appVersion with highest version among all components
+          if [ -n "$HIGHEST_VERSION" ]; then
+            echo ""
+            echo "Updating appVersion to ${HIGHEST_VERSION} (highest version)"
+            yq -i ".appVersion = \"${HIGHEST_VERSION}\"" "${CHART_FILE}"
+          fi
+
+          echo ""
+          echo "updated_components=${UPDATED_COMPONENTS}" >> "$GITHUB_OUTPUT"
+
+      - name: Update README matrix
+        if: steps.base.outputs.update_readme == 'true'
+        env:
+          CHART: ${{ steps.payload.outputs.chart }}
+          CHARTS_PATH: ${{ inputs.charts_path }}
+          SCRIPTS_PATH: ${{ inputs.scripts_path }}
+        run: |
+          COMPONENTS=$(cat /tmp/components.json)
+
+          # Get current appVersion from Chart.yaml
+          APP_VERSION=$(yq '.appVersion' "${CHARTS_PATH}/${CHART}/Chart.yaml")
+
+          # Update README for each component
+          while IFS= read -r row; do
+            COMP_NAME=$(echo "$row" | jq -r '.name')
+            COMP_VERSION=$(echo "$row" | jq -r '.version')
+
+            echo "Updating README matrix for ${COMP_NAME}@${COMP_VERSION}"
+
+            "./${SCRIPTS_PATH}/update-readme-matrix-bin" \
+              --chart "${CHART}" \
+              --component "${COMP_NAME}" \
+              --version "${COMP_VERSION}" \
+              --app-version "${APP_VERSION}"
+          done < <(echo "$COMPONENTS" | jq -c '.[]')
+
+      - name: Commit changes
+        id: commit
+        env:
+          CHART: ${{ steps.payload.outputs.chart }}
+          UPDATED_COMPONENTS: ${{ steps.process.outputs.updated_components }}
+          HAS_NEW_ENV_VARS: ${{ steps.payload.outputs.has_new_env_vars }}
+          IS_LEGACY: ${{ steps.base.outputs.is_legacy }}
+        run: |
+
+          git add -A
+
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+
+          # Determine commit message based on env_vars
+          # feat: when new environment variables are added (requires attention)
+          # fix: when it's just a version bump (routine update)
+          # A legacy patch is always fix: a minor bump would fall outside the
+          # maintenance range of the chart line branch and break its release.
+          if [ "${HAS_NEW_ENV_VARS}" = "true" ] && [ "${IS_LEGACY}" != "true" ]; then
+            COMMIT_MSG="feat(${CHART}): update ${UPDATED_COMPONENTS} - new env vars"
+          else
+            COMMIT_MSG="fix(${CHART}): update ${UPDATED_COMPONENTS}"
+          fi
+
+          echo "commit_msg=${COMMIT_MSG}" >> "$GITHUB_OUTPUT"
+          echo "Committing with message: ${COMMIT_MSG}"
+          git commit -m "${COMMIT_MSG}"
+
+      - name: Push branch and create PR
+        id: push-pr
+        if: steps.commit.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          CHART: ${{ steps.payload.outputs.chart }}
+          BRANCH_NAME: ${{ steps.payload.outputs.branch_name }}
+          BASE_BRANCH: ${{ steps.base.outputs.resolved_base }}
+          HAS_NEW_ENV_VARS: ${{ steps.payload.outputs.has_new_env_vars }}
+          UPDATED_COMPONENTS: ${{ steps.process.outputs.updated_components }}
+          SOURCE_REF: ${{ steps.payload.outputs.source_ref }}
+          SOURCE_BRANCH: ${{ steps.payload.outputs.source_branch }}
+          VERSION_LINE: ${{ steps.payload.outputs.version_line }}
+          IS_LEGACY: ${{ steps.base.outputs.is_legacy }}
+          CHART_TAG: ${{ steps.base.outputs.chart_tag }}
+        run: |
+
+          # Push the branch
+          git push -u origin "${BRANCH_NAME}"
+
+          # Build PR body
+          COMPONENTS=$(cat /tmp/components.json)
+
+          # Determine PR title prefix
+          if [ "${HAS_NEW_ENV_VARS}" = "true" ]; then
+            ATTENTION_NOTE="> ⚠️ **Attention:** This PR includes new environment variables that may require configuration."
+          else
+            ATTENTION_NOTE=""
+          fi
+
+          if [ "${HAS_NEW_ENV_VARS}" = "true" ] && [ "${IS_LEGACY}" != "true" ]; then
+            PR_TITLE="feat(${CHART}): update ${UPDATED_COMPONENTS}"
+          else
+            PR_TITLE="fix(${CHART}): update ${UPDATED_COMPONENTS}"
+          fi
+
+          LEGACY_NOTE=""
+          if [ "${IS_LEGACY}" = "true" ]; then
+            PR_TITLE="fix(${CHART}): update ${UPDATED_COMPONENTS} [legacy ${VERSION_LINE}.x]"
+            LEGACY_NOTE="> 🧬 **Legacy patch** — released from \`${SOURCE_BRANCH}\` for the \`${VERSION_LINE}.x\` app line. Base branch \`${BASE_BRANCH}\` carries the chart line seeded from \`${CHART_TAG}\`. Do **not** merge this into the mainline chart."
+          fi
+
+          # Build components table
+          COMPONENTS_TABLE=$(echo "$COMPONENTS" | jq -r '
+            ["| Component | Version | New Env Vars |", "|-----------|---------|--------------|"] +
+            [.[] | "| \(.name) | \(.version) | \(.env_vars | if . == {} then "-" else (. | keys | join(", ")) end) |"]
+            | .[]
+          ')
+
+          # Create PR body file
+          {
+            echo "## Summary"
+            echo ""
+            echo "Automated update of Helm chart components."
+            echo ""
+            if [ -n "${LEGACY_NOTE}" ]; then
+              echo "${LEGACY_NOTE}"
+              echo ""
+            fi
+            if [ -n "${ATTENTION_NOTE}" ]; then
+              echo "${ATTENTION_NOTE}"
+              echo ""
+            fi
+            echo "## Components Updated"
+            echo ""
+            echo "${COMPONENTS_TABLE}"
+            echo ""
+            echo "---"
+            echo "*This PR was automatically generated by the CI/CD pipeline.*"
+          } > /tmp/pr_body.md
+
+          # Create PR
+          PR_URL=$(gh pr create \
+            --base "${BASE_BRANCH}" \
+            --head "${BRANCH_NAME}" \
+            --title "${PR_TITLE}" \
+            --body-file /tmp/pr_body.md)
+
+          echo "PR created: ${PR_URL}"
+          echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
+
+          # Supersede older open update PRs for the same chart and major version line.
+          # Cross-major PRs are kept: 1.x and 2.x release lines can be open simultaneously.
+          # Fail closed: if a major cannot be derived on either side, nothing is closed.
+          NEW_MAJOR=$(echo "${SOURCE_REF}" | sed -nE 's/^v?([0-9]+)\..*/\1/p')
+          if [ -z "${NEW_MAJOR}" ]; then
+            echo "::warning::Skipping superseded PR cleanup: could not derive major from SOURCE_REF='${SOURCE_REF}'"
+            exit 0
+          fi
+
+          # Best-effort: a transient listing failure must not fail the job after the PR exists.
+          if ! OPEN_UPDATE_PRS=$(
+            gh pr list --base "${BASE_BRANCH}" --state open --limit 100 \
+              --json number,headRefName --jq '.[] | "\(.number) \(.headRefName)"'
+          ); then
+            echo "::warning::Failed to list open PRs for supersession cleanup"
+            exit 0
+          fi
+
+          while read -r OLD_NUM OLD_HEAD; do
+            [ -z "${OLD_NUM}" ] && continue
+            [ "${OLD_HEAD}" = "${BRANCH_NAME}" ] && continue
+            case "${OLD_HEAD}" in
+              "update/${CHART}/"*) ;;
+              *) continue ;;
+            esac
+            OLD_MAJOR=$(echo "${OLD_HEAD#"update/${CHART}/"}" | sed -nE 's/^v?([0-9]+)\..*/\1/p')
+            if [ -z "${OLD_MAJOR}" ] || [ "${OLD_MAJOR}" != "${NEW_MAJOR}" ]; then
+              continue
+            fi
+            echo "Closing superseded PR #${OLD_NUM} (${OLD_HEAD})"
+            gh pr close "${OLD_NUM}" \
+              --comment "Superseded by ${PR_URL}." \
+              --delete-branch \
+              || echo "::warning::Failed to close superseded PR #${OLD_NUM}"
+          done <<< "${OPEN_UPDATE_PRS}"
+
+      - name: Summary
+        env:
+          BASE_BRANCH: ${{ steps.base.outputs.resolved_base }}
+          CHART: ${{ steps.payload.outputs.chart }}
+          BRANCH_NAME: ${{ steps.payload.outputs.branch_name }}
+          HAS_CHANGES: ${{ steps.commit.outputs.has_changes }}
+          IS_LEGACY: ${{ steps.base.outputs.is_legacy }}
+          CHART_TAG: ${{ steps.base.outputs.chart_tag }}
+          VERSION_LINE: ${{ steps.payload.outputs.version_line }}
+        run: |
+          COMPONENTS=$(cat /tmp/components.json)
+
+          {
+            echo "### Helm Chart Update Summary"
+            echo ""
+            echo "**Chart:** \`${CHART}\`"
+            echo "**Branch:** \`${BRANCH_NAME}\`"
+            echo "**Base:** \`${BASE_BRANCH}\`"
+
+            if [ "${IS_LEGACY}" = "true" ]; then
+              echo "**Legacy patch:** app line \`${VERSION_LINE}.x\`, chart line seeded from \`${CHART_TAG}\`"
+            fi
+
+            echo ""
+
+            if [ "${HAS_CHANGES}" = "true" ]; then
+              echo "✅ **PR created successfully**"
+            else
+              echo "ℹ️ **No changes detected**"
+            fi
+
+            echo ""
+            echo "**Components:**"
+            echo ""
+            echo "| Component | Version | New Env Vars |"
+            echo "|-----------|---------|--------------|"
+
+            echo "$COMPONENTS" | jq -r '.[] | "| \(.name) | \(.version) | \(.env_vars | if . == {} then "-" else (. | keys | join(", ")) end) |"'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Send Slack notification
+        if: ${{ inputs.slack_notification && steps.commit.outputs.has_changes == 'true' }}
+        env:
+          CHART: ${{ steps.payload.outputs.chart }}
+          HAS_NEW_ENV_VARS: ${{ steps.payload.outputs.has_new_env_vars }}
+          SOURCE_REF: ${{ steps.payload.outputs.source_ref }}
+          SOURCE_REPO: ${{ steps.payload.outputs.source_repo }}
+          SOURCE_ACTOR: ${{ steps.payload.outputs.source_actor }}
+          SOURCE_SHA: ${{ steps.payload.outputs.source_sha }}
+          PR_URL: ${{ steps.push-pr.outputs.pr_url }}
+          WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WORKFLOW_NUM: ${{ github.run_number }}
+          BASE_BRANCH: ${{ steps.base.outputs.resolved_base }}
+          MENTION_GROUP: ${{ inputs.slack_mention_group || secrets.SLACK_GROUP_DEVOPS_SRE }}
+          SLACK_CHANNEL: ${{ inputs.slack_channel || secrets.SLACK_CHANNEL_DEVOPS }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN_HELM }}
+          BOT_MENTION: ${{ inputs.slack_bot_mention || secrets.SLACK_BOT_SEVERINO }}
+          IS_LEGACY: ${{ steps.base.outputs.is_legacy }}
+          VERSION_LINE: ${{ steps.payload.outputs.version_line }}
+        run: |
+          COMPONENTS=$(cat /tmp/components.json)
+
+          # Get appVersion (highest version)
+          APP_VERSION=$(echo "$COMPONENTS" | jq -r '.[].version' | sort -V | tail -n1)
+
+          # Determine emoji based on env vars
+          if [ "${HAS_NEW_ENV_VARS}" = "true" ]; then
+            TYPE_EMOJI=":sparkles:"
+          else
+            TYPE_EMOJI=":rocket:"
+          fi
+
+          if [ "${IS_LEGACY}" = "true" ]; then
+            HEADER_TEXT="${TYPE_EMOJI} Helm Chart Update — legacy ${VERSION_LINE}.x"
+          else
+            HEADER_TEXT="${TYPE_EMOJI} Helm Chart Update"
+          fi
+
+          # Build metadata
+          TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+
+          # Context with optional team mention (set via env)
+          if [ -n "$MENTION_GROUP" ]; then
+            CONTEXT_TEXT=":clock1: ${TIMESTAMP} | Workflow: <${WORKFLOW_URL}|#${WORKFLOW_NUM}> | cc: <!subteam^${MENTION_GROUP}>"
+          else
+            CONTEXT_TEXT=":clock1: ${TIMESTAMP} | Workflow: <${WORKFLOW_URL}|#${WORKFLOW_NUM}>"
+          fi
+
+          # Build component fields for table (header + rows)
+          COMPONENT_FIELDS=$(echo "$COMPONENTS" | jq -c '[
+            {"type": "mrkdwn", "text": "*Component*"},
+            {"type": "mrkdwn", "text": "*Version*"}
+          ] + [.[] | {"type": "mrkdwn", "text": ("`" + .name + "`")}, {"type": "mrkdwn", "text": ("`" + .version + "`")}]')
+
+          # Channel is set via env
+
+          # Build complete payload using jq
+          SLACK_PAYLOAD=$(jq -n \
+            --arg channel "${SLACK_CHANNEL}" \
+            --arg header "${HEADER_TEXT}" \
+            --arg chart "${CHART}" \
+            --arg version "${APP_VERSION}" \
+            --arg repo "${SOURCE_REPO}" \
+            --arg actor "${SOURCE_ACTOR}" \
+            --arg ref "${SOURCE_REF}" \
+            --arg branch "${BASE_BRANCH}" \
+            --argjson comp_fields "${COMPONENT_FIELDS}" \
+            --arg pr_url "${PR_URL}" \
+            --arg commit_url "https://github.com/${SOURCE_REPO}/commit/${SOURCE_SHA}" \
+            --arg context "${CONTEXT_TEXT}" \
+            '{
+              channel: $channel,
+              attachments: [{
+                color: "#FFC107",
+                blocks: [
+                  {type: "header", text: {type: "plain_text", text: $header, emoji: true}},
+                  {type: "section", fields: [
+                    {type: "mrkdwn", text: ("*Chart:* `" + $chart + "`")},
+                    {type: "mrkdwn", text: ("*App Version:* `" + $version + "`")},
+                    {type: "mrkdwn", text: ("*Source:* <https://github.com/" + $repo + "|" + $repo + ">")},
+                    {type: "mrkdwn", text: ("*Author:* <https://github.com/" + $actor + "|@" + $actor + ">")},
+                    {type: "mrkdwn", text: ("*Source Ref:* `" + $ref + "`")},
+                    {type: "mrkdwn", text: ("*Target Branch:* `" + $branch + "`")}
+                  ]},
+                  {type: "divider"},
+                  {type: "section", text: {type: "mrkdwn", text: "*Components Updated:*"}},
+                  {type: "section", fields: $comp_fields},
+                  {type: "divider"},
+                  {type: "actions", elements: [
+                    {type: "button", text: {type: "plain_text", text: "View PR", emoji: true}, url: $pr_url, style: "primary"},
+                    {type: "button", text: {type: "plain_text", text: "View Commit", emoji: true}, url: $commit_url}
+                  ]},
+                  {type: "context", elements: [{type: "mrkdwn", text: $context}]}
+                ]
+              }]
+            }')
+
+          # Add warning block if new env vars detected
+          if [ "${HAS_NEW_ENV_VARS}" = "true" ]; then
+            SLACK_PAYLOAD=$(echo "$SLACK_PAYLOAD" | jq '.attachments[0].blocks = .attachments[0].blocks[0:4] + [{"type": "section", "text": {"type": "mrkdwn", "text": ":warning: *New environment variables detected* - Review required before merging"}}] + .attachments[0].blocks[4:]')
+          fi
+
+          # Send main notification to Slack via Bot API
+          SLACK_RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+            -H "Content-type: application/json; charset=utf-8" \
+            --data "$SLACK_PAYLOAD" \
+            "https://slack.com/api/chat.postMessage")
+
+          # Check response
+          if echo "$SLACK_RESPONSE" | jq -e '.ok == true' > /dev/null; then
+            echo "Slack notification sent successfully"
+          else
+            echo "::warning::Failed to send Slack notification"
+            echo "$SLACK_RESPONSE" | jq .
+          fi
+
+          # Send separate message for Severino bot (Jira ticket creation)
+          if [ -n "$BOT_MENTION" ]; then
+            SEVERINO_TEXT="<@${BOT_MENTION}> helm chart PR review | ${PR_URL} | Chart: ${CHART}"
+
+            SEVERINO_PAYLOAD=$(jq -n \
+              --arg channel "${SLACK_CHANNEL}" \
+              --arg text "${SEVERINO_TEXT}" \
+              '{channel: $channel, text: $text}')
+
+            SEVERINO_RESPONSE=$(curl -s -X POST \
+              -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+              -H "Content-type: application/json; charset=utf-8" \
+              --data "$SEVERINO_PAYLOAD" \
+              "https://slack.com/api/chat.postMessage")
+
+            if echo "$SEVERINO_RESPONSE" | jq -e '.ok == true' > /dev/null; then
+              echo "Severino message sent successfully"
+            else
+              echo "::warning::Failed to send Severino message"
+              echo "$SEVERINO_RESPONSE" | jq .
+            fi
+          fi

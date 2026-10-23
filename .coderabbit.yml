@@ -1,0 +1,124 @@
+language: "en-US"
+
+tone_instructions: >
+  Be direct and technical. Focus on correctness, security, and maintainability.
+  Flag breaking changes to callers explicitly. Skip praise for routine changes.
+
+early_access: false
+
+reviews:
+  profile: "assertive"
+
+  # Off because these are NOT governed by the review gate. CodeRabbit regenerates
+  # the summary on every push even with `auto_review.enabled: false` — on PR #708
+  # the summary comment's `updated_at` matched the push second for second, while
+  # the PR carried no `review-ready` label and received no review. That is work
+  # spent on pull requests the gate deliberately left unreviewed.
+  high_level_summary: false
+  high_level_summary_in_walkthrough: false
+
+  # Kept on: this is what posts "Review skipped — required labels: review-ready",
+  # which is the cheapest way to confirm the gate is behaving as intended.
+  review_status: true
+  review_details: false
+  collapse_walkthrough: false
+  changed_files_summary: true
+  sequence_diagrams: false
+
+  poem: false
+
+  suggested_labels: true
+  auto_apply_labels: false
+
+  suggested_reviewers: true
+  auto_assign_reviewers: false
+
+  request_changes_workflow: true
+
+  abort_on_close: true
+
+  path_filters:
+    - "!CHANGELOG.md"
+    - "!.releaserc.yml"
+
+  path_instructions:
+    - path: ".github/workflows/self-*.yml"
+      instructions: |
+        This is a self-use entrypoint for this repository — NOT a reusable workflow.
+        Do NOT flag missing `workflow_call` — these files intentionally omit it.
+        `dry_run` is not required; flag it only if it is marked `required: true` or lacks a default value.
+        When `dry_run` is present it must be: type boolean, required false, default true for destructive operations (delete, purge) or default false for non-destructive ones (sync, notify).
+        Must call the corresponding reusable workflow via local path and contain no business logic.
+
+    - path: ".github/workflows/*.yml"
+      instructions: |
+        This is a reusable workflow in a shared CI/CD library. Repo-specific rules:
+        - `workflow_call` must be present. `workflow_dispatch` must NOT be: its inputs are
+          free-text and user-controlled, which is a script-injection vector when they reach
+          a `run:` block. Manual triggering belongs in a `self-*` entrypoint, where inputs
+          can be `type: choice`. Do not flag a reusable workflow for lacking it.
+        - Workflows that apply state changes must have a `dry_run` boolean input (default: false)
+        - Composites in this repo must be referenced by absolute external ref
+          (`LerianStudio/shared-workflows-public/src/<capability>/<name>@v1`), using a
+          floating major tag rather than an exact semver pin. A local `./src/...` path resolves
+          against the CALLER's workspace, where the directory does not exist, so it breaks every
+          external consumer. Local paths are correct only in `self-*` files, where the caller is
+          this repository. Do not flag an absolute external ref as a violation.
+        - A `docs/<filename>.md` matching this workflow's name must exist or be added in this PR
+        - Flag any removed or renamed input/output as a breaking change for callers
+        - Jobs take their runner from `${{ vars.GENERAL_RUNNERS || inputs.runner_type }}`,
+          or from a more specific `*_runner_type` input where one exists. 134 jobs here do
+          so against 1 hardcoded literal, because a consumer has to be able to size a job
+          it pays for. Do not ask for a literal runner such as `blacksmith-4vcpu-ubuntu-2404`,
+          and do not flag the configurable form.
+        - `echo` in a `run:` block is how these workflows report what they decided, and
+          there are 249 of them across 30 files here. There is no silent-by-default rule,
+          and no requirement to route messages through `::notice::` or to gate them on
+          `dry_run`. Flag logging only when it would print a secret.
+
+    - path: "src/**/action.yml"
+      instructions: |
+        This is a composite action in a shared CI/CD library. Repo-specific rules:
+        - Max 15 steps — flag if exceeded
+        - Single responsibility only — no multi-language runtimes, no job definitions
+        - Flag any removed, renamed, or retyped input/output as a breaking change for callers
+        - Flag any default value change as a potentially breaking change
+
+    - path: "src/**/README.md"
+      instructions: |
+        Composite action README. Verify inputs table matches `action.yml` exactly (name, required, default).
+        Flag any usage example that references `@main`. Production examples pin a tier channel (`@tier-0`/`@tier-1`/`@tier-2`); testing examples use `@develop` or `@feat/<branch>`. An exact `@vX.Y.Z` is not wrong but opts the caller out of the promotion rings, so do not teach it as the default.
+
+    - path: "docs/*.md"
+      instructions: |
+        Workflow documentation. Filename must exactly match the workflow file (e.g., `go-ci.yml` → `docs/go-ci.md`).
+        Flag if inputs table is out of sync with the corresponding workflow changes in this PR.
+        Flag any usage example that references `@main`. Production examples pin a tier channel (`@tier-0`/`@tier-1`/`@tier-2`); testing examples use `@develop` or `@feat/<branch>`. An exact `@vX.Y.Z` is not wrong but opts the caller out of the promotion rings, so do not teach it as the default.
+
+  auto_review:
+    # Nothing is reviewed automatically. `Self — PR Validation` posts
+    # `@coderabbitai review` once every required check has passed and the pull
+    # request is in scope, and that command is the only trigger.
+    #
+    # Do NOT add `labels:` here. The `review-ready` label still exists, but as a
+    # visual marker applied alongside the command — putting it back in this list
+    # would make it a second, competing trigger for the same decision, which is
+    # what produced the bugs in #705 and #708.
+    #
+    # To review a pull request the gate skipped, comment `@coderabbitai review`.
+    enabled: false
+    drafts: false
+    # Kept even though nothing is auto-reviewed: `base_branches` is a separate
+    # filter from the trigger, and leaving it out made every pull request into
+    # develop ineligible (#712/#713). Harmless here, and correct if `enabled`
+    # is ever turned back on.
+    base_branches:
+      - "develop"
+    ignore_title_keywords:
+      - "WIP"
+      - "wip"
+      - "[skip review]"
+    auto_pause_after_reviewed_commits: 0
+
+chat:
+  auto_reply: true

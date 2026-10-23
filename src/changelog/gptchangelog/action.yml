@@ -1,0 +1,682 @@
+name: GPT Changelog
+description: Generates CHANGELOG.md files using GPT (OpenRouter) and creates a PR with the updates.
+
+inputs:
+  github-token:
+    description: GitHub token with contents write and pull-requests write permissions
+    required: true
+  gpg-private-key:
+    description: GPG private key for signing commits
+    required: true
+  gpg-passphrase:
+    description: Passphrase for the GPG private key
+    required: true
+  git-committer-name:
+    description: Git committer name for signed commits
+    required: true
+  git-committer-email:
+    description: Git committer email for signed commits
+    required: true
+  openrouter-api-key:
+    description: OpenRouter API key for GPT changelog generation
+    required: true
+  filter-paths:
+    description: Newline-separated list of path prefixes for monorepo support. Empty means single-app mode.
+    required: false
+    default: ''
+  stable-releases-only:
+    description: Only generate changelogs for stable releases (skip beta/rc/alpha tags)
+    required: false
+    default: 'true'
+  release-branch:
+    description: |
+      Branch whose tags get a changelog. Empty derives it from the run: the branch that
+      triggered the release, falling back to searching which branch contains the tag commit
+      for tag-triggered runs. Set it only for layouts neither step can infer.
+    required: false
+    default: ''
+  openai-model:
+    description: Model to use for changelog generation (OpenRouter format)
+    required: false
+    default: 'openai/gpt-4o'
+  bot-ignore-list:
+    description: |
+      Additional space-separated GitHub login substrings to treat as bots and exclude from the changelog.
+      Any login that ends with [bot] is always excluded regardless of this list.
+      A built-in baseline (dependabot renovate github-actions lerian-studio-midaz-push-bot
+      semantic-release-bot) is always applied; this value extends it.
+    required: false
+    default: ''
+
+outputs:
+  has-changes:
+    description: Whether the composite identified apps eligible for changelog generation
+    value: ${{ steps.set-matrix.outputs.has_changes }}
+  apps-updated:
+    description: Comma-separated list of apps whose CHANGELOGs were updated (empty if none)
+    value: ${{ steps.generate.outputs.apps_updated }}
+  release-line:
+    description: |
+      Branch the stability gate resolved as this release's line, and the branch the
+      CHANGELOG commit was pushed to. Empty when the gate skipped. Callers that backmerge
+      afterwards must use this, not the default branch: a maintenance tag's changelog
+      lands on its own line.
+    value: ${{ steps.check-tag.outputs.release_line }}
+
+runs:
+  using: composite
+  steps:
+    # ----------------- Setup -----------------
+    - name: Checkout repository
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      with:
+        fetch-depth: 0
+        token: ${{ inputs.github-token }}
+
+    - name: Sync with remote ref
+      shell: bash
+      env:
+        # On `workflow_run`, GITHUB_REF/GITHUB_REF_NAME name the DEFAULT branch, not the
+        # branch the completed run was cut from. Empty for every other event.
+        WORKFLOW_RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      run: |
+        # shellcheck disable=SC2193
+        if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+          echo "📌 Triggered by tag: $GITHUB_REF_NAME"
+          echo "✅ Already at tag commit"
+        else
+          SOURCE_BRANCH="${WORKFLOW_RUN_BRANCH:-$GITHUB_REF_NAME}"
+          if ! git check-ref-format --branch "$SOURCE_BRANCH" >/dev/null 2>&1; then
+            echo "❌ Invalid source branch: '$SOURCE_BRANCH'"
+            exit 1
+          fi
+          echo "📌 Triggered by branch: $SOURCE_BRANCH"
+          git fetch origin "$SOURCE_BRANCH"
+          git reset --hard "origin/$SOURCE_BRANCH"
+        fi
+
+    # ----------------- Stability Gate -----------------
+    - name: Check if tag is a stable release on a supported release line
+      id: check-tag
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        STABLE_RELEASES_ONLY: ${{ inputs.stable-releases-only }}
+        RELEASE_BRANCH: ${{ inputs.release-branch }}
+        WORKFLOW_RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      run: |
+        if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+          TAG_NAME="${GITHUB_REF##*/}"
+          echo "📌 Triggered by tag push: $TAG_NAME"
+        else
+          echo "📌 Triggered by branch/workflow_run, finding latest stable tags..."
+          git fetch --tags --force
+
+          # --merged HEAD keeps the search on the release line that triggered the run: a
+          # maintenance branch must not pick up the newest tag of another (higher) line.
+          LATEST_TAGS=$(git tag --merged HEAD --sort=-creatordate | head -20 || true)
+          echo "📌 Recent tags: $LATEST_TAGS"
+
+          TAG_NAME=""
+          for tag in $LATEST_TAGS; do
+            if [[ ! "$tag" =~ -(beta|rc|alpha|dev|snapshot) ]]; then
+              TAG_NAME="$tag"
+              echo "📌 Found stable tag: $TAG_NAME"
+              break
+            fi
+          done
+
+          if [ -z "$TAG_NAME" ]; then
+            echo "⚠️ No stable tags found"
+            echo "is_stable=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+        fi
+
+        echo "📌 Processing tag: $TAG_NAME"
+
+        TAG_COMMIT=$(git rev-list -n 1 "$TAG_NAME" 2>/dev/null || echo "")
+        if [ -z "$TAG_COMMIT" ]; then
+          echo "❌ Could not find commit for tag: $TAG_NAME"
+          echo "is_stable=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef -q '.defaultBranchRef.name')
+        echo "📌 Default branch: $DEFAULT_BRANCH"
+
+        # The release line is NOT the default branch. Repositories that keep `develop` as the
+        # default and cut stable on `main` are a supported layout, and gating on the default
+        # branch published every one of their stable releases with an empty changelog: at gate
+        # time the tag commit is not yet on `develop` (the backmerge runs later in the same
+        # workflow, which is also why the evidence disappears afterwards).
+        #
+        # Resolve the line in three steps, first hit wins:
+        #   1. the caller said so explicitly;
+        #   2. the run was triggered by a branch push - that branch IS the release line;
+        #   3. tag-triggered run with no branch to read: search which line contains the commit.
+        RELEASE_LINE=""
+        CANDIDATE_LINES=""
+
+        if [ -n "$RELEASE_BRANCH" ]; then
+          # A typo here is not harmless: the commit step pushes with
+          # `git push origin HEAD:$BASE_BRANCH`, which CREATES the branch when it does not
+          # exist. The changelog would land on a branch nobody reads and the step would
+          # report success. Fail loudly - a misconfigured override must not degrade into
+          # the silent skip this gate exists to prevent.
+          if ! git show-ref --verify --quiet "refs/remotes/origin/$RELEASE_BRANCH"; then
+            echo "❌ release-branch '$RELEASE_BRANCH' does not exist on origin"
+            exit 1
+          fi
+          RELEASE_LINE="$RELEASE_BRANCH"
+          echo "📌 Release line from release-branch input: $RELEASE_LINE"
+        elif [[ "$GITHUB_REF" == refs/heads/* ]]; then
+          # Same caveat as the sync step: on `workflow_run` the ref names the default
+          # branch. Reading it here would resolve every such run to the default branch —
+          # the very premise this gate was rewritten to stop trusting.
+          RELEASE_LINE="${WORKFLOW_RUN_BRANCH:-$GITHUB_REF_NAME}"
+          echo "📌 Release line from the branch that triggered the run: $RELEASE_LINE"
+        else
+          # Candidates in order: the default branch, the conventional stable lines, then the
+          # maintenance lines. Patch releases cut from an older minor never reach the default
+          # branch, so those have to stay in the search.
+          CANDIDATE_LINES="$DEFAULT_BRANCH main master"
+          while IFS= read -r remote_branch; do
+            [ -z "$remote_branch" ] && continue
+            CANDIDATE_LINES="$CANDIDATE_LINES ${remote_branch#origin/}"
+          done < <(git branch --remotes --list 'origin/maintenance/*' 'origin/release/*' --format='%(refname:short)')
+
+          for candidate in $CANDIDATE_LINES; do
+            git show-ref --verify --quiet "refs/remotes/origin/$candidate" || continue
+            if git merge-base --is-ancestor "$TAG_COMMIT" "origin/$candidate" 2>/dev/null; then
+              RELEASE_LINE="$candidate"
+              echo "📌 Release line found by containment: $RELEASE_LINE"
+              break
+            fi
+          done
+        fi
+
+        if [ -z "$RELEASE_LINE" ]; then
+          echo "❌ Tag commit is on none of the release lines searched ($CANDIDATE_LINES) - skipping changelog"
+          echo "   Set release-branch (changelog_release_branch on the reusable workflow) if this repository cuts stable elsewhere."
+          echo "is_stable=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        echo "✅ Release line resolved: $RELEASE_LINE"
+        # Later steps need the line, not just the verdict: a tag-triggered maintenance run
+        # would otherwise commit the CHANGELOG to the default branch.
+        echo "release_line=$RELEASE_LINE" >> "$GITHUB_OUTPUT"
+
+        if [[ "$TAG_NAME" =~ -(beta|rc|alpha|dev|snapshot) ]]; then
+          echo "is_stable=false" >> "$GITHUB_OUTPUT"
+          echo "⚠️ Prerelease tag detected: $TAG_NAME"
+          if [ "$STABLE_RELEASES_ONLY" == "true" ]; then
+            echo "🛑 stable-releases-only=true, skipping changelog generation"
+          fi
+        else
+          echo "is_stable=true" >> "$GITHUB_OUTPUT"
+          echo "✅ Stable release tag on $RELEASE_LINE: $TAG_NAME"
+        fi
+
+    - name: Set changelog matrix
+      id: set-matrix
+      shell: bash
+      env:
+        STABLE_RELEASES_ONLY: ${{ inputs.stable-releases-only }}
+        IS_STABLE: ${{ steps.check-tag.outputs.is_stable }}
+        FILTER_PATHS: ${{ inputs.filter-paths }}
+      run: |
+        if [ "$STABLE_RELEASES_ONLY" == "true" ] && [ "$IS_STABLE" != "true" ]; then
+          echo "matrix=[]" >> "$GITHUB_OUTPUT"
+          echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          echo "🛑 Skipping: no stable release tag for this ref with stable-releases-only=true (see the stability gate above for the reason)"
+          exit 0
+        fi
+
+        git fetch --tags --force
+
+        if [ -z "$FILTER_PATHS" ]; then
+          APP_NAME="${GITHUB_REPOSITORY##*/}"
+          MATRIX=$(jq -nc --arg name "$APP_NAME" '[{name: $name, working_dir: "."}]')
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          echo "📦 Single app mode: ${APP_NAME}"
+        else
+          MATRIX='[]'
+
+          while IFS= read -r path; do
+            [ -z "$path" ] && continue
+            if [[ ! -d "$path" || "$path" == -* ]]; then
+              echo "⚠️ Invalid filter path: $path"
+              continue
+            fi
+            APP_NAME=$(basename "$path")
+            # shellcheck disable=SC2001,SC2016
+            APP_NAME_ESCAPED=$(echo "$APP_NAME" | sed 's/[.[\*^$()+?{}|\\]/\\&/g')
+            # --merged HEAD: same release-line scoping as the stability gate, so a
+            # maintenance run cannot select a mainline tag of a higher line.
+            LATEST_TAG=$(git tag --merged HEAD --sort=-creatordate | grep "^${APP_NAME_ESCAPED}-v" | grep -v -e "-beta" -e "-rc" -e "-alpha" -e "-dev" -e "-snapshot" | head -1 || true)
+
+            if [ -n "$LATEST_TAG" ]; then
+              echo "📦 Found stable tag for $APP_NAME: $LATEST_TAG"
+              MATRIX=$(jq -c \
+                --arg name "$APP_NAME" \
+                --arg working_dir "$path" \
+                '. + [{name: $name, working_dir: $working_dir}]' <<< "$MATRIX")
+            else
+              echo "⚠️ No stable tag found for $APP_NAME"
+            fi
+          done <<< "$FILTER_PATHS"
+
+          if [[ "$(jq 'length' <<< "$MATRIX")" -eq 0 ]]; then
+            echo "matrix=[]" >> "$GITHUB_OUTPUT"
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "⚠️ No apps with stable tags found"
+          else
+            echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "📦 Monorepo mode - found apps: $MATRIX"
+          fi
+        fi
+
+    # ----------------- Changelog Generation -----------------
+    - name: Import GPG key
+      if: steps.set-matrix.outputs.has_changes == 'true'
+      uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
+      with:
+        gpg_private_key: ${{ inputs.gpg-private-key }}
+        passphrase: ${{ inputs.gpg-passphrase }}
+        git_committer_name: ${{ inputs.git-committer-name }}
+        git_committer_email: ${{ inputs.git-committer-email }}
+        git_config_global: true
+        git_user_signingkey: true
+        git_commit_gpgsign: true
+
+    - name: Generate changelog for all apps
+      id: generate
+      if: steps.set-matrix.outputs.has_changes == 'true'
+      shell: bash
+      env:
+        OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        MATRIX: ${{ steps.set-matrix.outputs.matrix }}
+        OPENAI_MODEL: ${{ inputs.openai-model }}
+        REPO_URL: https://github.com/${{ github.repository }}
+        BOT_IGNORE_LIST: ${{ inputs.bot-ignore-list }}
+      run: |
+        git fetch --tags --force
+
+        echo "📦 Processing apps from matrix: $MATRIX"
+        : > /tmp/apps_updated.txt
+
+        while read -r APP; do
+          APP_NAME=$(echo "$APP" | jq -r '.name')
+          WORKING_DIR=$(echo "$APP" | jq -r '.working_dir')
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📝 Processing: $APP_NAME (dir: $WORKING_DIR)"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          # shellcheck disable=SC2001,SC2016
+          APP_NAME_ESCAPED=$(echo "$APP_NAME" | sed 's/[.[\*^$()+?{}|\\]/\\&/g')
+          if [ "$WORKING_DIR" != "." ]; then
+            TAG_GREP_PATTERN="^${APP_NAME_ESCAPED}-v"
+          else
+            TAG_GREP_PATTERN="^v"
+          fi
+
+          # --merged HEAD scopes both ends of the range to the release line being built.
+          # Unscoped, a maintenance run resolves the highest stable tag repo-wide (e.g.
+          # v1.11.0 while releasing v1.10.5) and would then overwrite THAT release's notes.
+          LAST_TAG=$(git tag --merged HEAD --sort=-version:refname | grep "$TAG_GREP_PATTERN" | grep -v -e "-beta" -e "-rc" -e "-alpha" -e "-dev" -e "-snapshot" | head -1 || true)
+
+          if [ -z "$LAST_TAG" ]; then
+            echo "⚠️ No stable tag found for $APP_NAME - skipping"
+            continue
+          fi
+
+          echo "📌 Latest stable tag: $LAST_TAG"
+
+          if ! git rev-parse "$LAST_TAG" >/dev/null 2>&1; then
+            echo "❌ Tag $LAST_TAG does not exist - skipping"
+            continue
+          fi
+
+          PREV_TAG=$(git tag --merged HEAD --sort=-version:refname | grep "$TAG_GREP_PATTERN" | grep -v -e "-beta" -e "-rc" -e "-alpha" -e "-dev" -e "-snapshot" | sed -n '2p')
+
+          if [ -n "$PREV_TAG" ]; then
+            SINCE="$PREV_TAG"
+            echo "🟢 Range: $PREV_TAG → $LAST_TAG"
+          else
+            SINCE=$(git rev-list --max-parents=0 HEAD)
+            echo "🟡 First stable release - Range: first commit → $LAST_TAG"
+          fi
+
+          # shellcheck disable=SC2001
+          if [ "$WORKING_DIR" != "." ]; then
+            VERSION=$(echo "$LAST_TAG" | sed 's/.*-v//')
+          else
+            VERSION=$(echo "$LAST_TAG" | sed 's/^v//')
+          fi
+
+          # Collect SHA, short-hash, and subject in one git log pass (unit-separator delimited)
+          # to avoid a redundant git log -1 subprocess per commit.
+          if [ "$WORKING_DIR" != "." ]; then
+            GIT_LOG_DATA=$(git log "$SINCE".."$LAST_TAG" --format='%H%x1f%h%x1f%s' -- "$WORKING_DIR" 2>/dev/null || true)
+          else
+            GIT_LOG_DATA=$(git log "$SINCE".."$LAST_TAG" --format='%H%x1f%h%x1f%s' 2>/dev/null || true)
+          fi
+
+          # A marker can sit in the body rather than the subject: GitHub's default
+          # merge commit puts the PR title on a later line, so a backmerge merged
+          # that way carries [backmerge] below "Merge pull request #N". Asking git
+          # for the SHAs whose FULL message matches keeps the single-pass loop
+          # below intact — a multi-line body would break its record boundaries.
+          if [ "$WORKING_DIR" != "." ]; then
+            MARKED_SHAS=$(git log "$SINCE".."$LAST_TAG" -E -i \
+              --grep='\[skip[[:space:]-]ci\]' --grep='\[backmerge\]' \
+              --format='%H' -- "$WORKING_DIR" 2>/dev/null || true)
+          else
+            MARKED_SHAS=$(git log "$SINCE".."$LAST_TAG" -E -i \
+              --grep='\[skip[[:space:]-]ci\]' --grep='\[backmerge\]' \
+              --format='%H' 2>/dev/null || true)
+          fi
+
+          COMMIT_COUNT=$(echo "$GIT_LOG_DATA" | grep -c . || true)
+          echo "📊 Found $COMMIT_COUNT commits for $APP_NAME"
+
+          if [ "$COMMIT_COUNT" -eq 0 ]; then
+            echo "⚠️ No commits found for $APP_NAME in range - skipping"
+            continue
+          fi
+
+          # Build annotated commit list: "short-hash subject [@author]"
+          # Bots and [skip ci] commits are excluded entirely so GPT only sees
+          # meaningful human-authored changes.
+          COMMITS_ANNOTATED=""
+          SKIPPED_BOTS=0
+          SKIPPED_SKIP_CI=0
+          while IFS=$'\x1f' read -r SHA SHORT_HASH SUBJECT; do
+            [[ -z "$SHA" ]] && continue
+
+            # Machinery rather than work: version bumps, changelog commits and
+            # syncs. [backmerge] is matched alongside [skip ci] because a
+            # backmerge carries the former instead — it has to let the run start
+            # so the target branch's own checks report, while still being absent
+            # from the changelog. The bracket markers are matched against the
+            # full message via MARKED_SHAS; the chore() prefixes stay anchored to
+            # the subject, where a conventional-commit type belongs.
+            # Here-strings rather than pipes: `grep -q` exits on first match, and
+            # under pipefail the SIGPIPE that reaches the writer turns the whole
+            # pipeline non-zero — so a marked commit would test as unmarked and
+            # land in the changelog. Only bites once the input outgrows the pipe
+            # buffer, which a large release range does.
+            if grep -qxF "$SHA" <<< "$MARKED_SHAS" \
+              || grep -qiE '^chore\((release|changelog|backmerge)\):' <<< "$SUBJECT"; then
+              echo "⏭️ Skipping skip-ci commit: $SHORT_HASH $SUBJECT"
+              SKIPPED_SKIP_CI=$((SKIPPED_SKIP_CI + 1))
+              continue
+            fi
+
+            LOGIN=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}" \
+              --jq '.author.login // empty' 2>/dev/null || true)
+
+            # Skip bots: any login ending in [bot] OR matching an entry in the
+            # built-in baseline OR the caller-supplied BOT_IGNORE_LIST extension.
+            BOT_BASELINE='dependabot renovate github-actions lerian-studio-midaz-push-bot semantic-release-bot'
+            IS_BOT=false
+            if [[ "$LOGIN" == *"[bot]" ]]; then
+              IS_BOT=true
+            else
+              for bot_pattern in $BOT_BASELINE $BOT_IGNORE_LIST; do
+                if [[ "${LOGIN,,}" == *"${bot_pattern,,}"* ]]; then
+                  IS_BOT=true
+                  break
+                fi
+              done
+            fi
+
+            if [[ "$IS_BOT" == "true" ]]; then
+              echo "🤖 Skipping bot commit: $SHORT_HASH by ${LOGIN:-unknown}"
+              SKIPPED_BOTS=$((SKIPPED_BOTS + 1))
+              continue
+            fi
+
+            if [[ -n "$LOGIN" ]]; then
+              COMMITS_ANNOTATED+="${SHORT_HASH} ${SUBJECT} [@${LOGIN}]"$'\n'
+            else
+              COMMITS_ANNOTATED+="${SHORT_HASH} ${SUBJECT}"$'\n'
+            fi
+          done <<< "$GIT_LOG_DATA"
+          echo "📝 Commits after filtering (skipped bots: $SKIPPED_BOTS, skipped skip-ci: $SKIPPED_SKIP_CI):"$'\n'"${COMMITS_ANNOTATED}"
+
+          if [ -z "${COMMITS_ANNOTATED// /}" ]; then
+            echo "⚠️ No human commits after filtering bots and skip-ci for $APP_NAME — skipping"
+            continue
+          fi
+
+          PROMPT="Generate a changelog for ${APP_NAME} ONLY. Each commit below includes the author handle in brackets. Commits: ${COMMITS_ANNOTATED} --- STRICT RULES: 1) NEVER mention other components - only ${APP_NAME}. 2) Use bullet points under section headers only — do NOT repeat the commit type prefix (feat:, fix:, etc.) inside each bullet; the section header already conveys the category. 3) Group entries under plain section headers: 'Features:', 'Fixes:', 'Improvements:' (skip empty sections). Each bullet is plain prose describing WHAT changed, not the raw commit message. 4) No markdown headers (no #). 5) Include ALL meaningful commits — do not omit any entry. Group two or more closely-related commits into a single bullet only when they describe the exact same change; otherwise keep them separate. 6) For each bullet point add the GitHub handle(s) of the author(s) in parentheses at the end, indented on the same line, e.g. 'Ensure normalize_to_filter is a boolean in extra_build. (@bedatty)'. If a bullet combines multiple commits, list all unique handles. Omit handles only when none were detected. 7) ALWAYS wrap version references in backticks - this includes tag names (\`v1\`, \`v1.28.8\`, \`v2.0.0-beta.1\`), action refs (\`@v1\`, \`@v1.28.8\`), and any semver-like token. Never emit a bare version."
+
+          REQUEST_BODY=$(jq -n \
+            --arg model "$OPENAI_MODEL" \
+            --arg prompt "$PROMPT" \
+            '{
+              model: $model,
+              messages: [{role: "user", content: $prompt}],
+              temperature: 0.3,
+              max_tokens: 2000
+            }')
+
+          MAX_ATTEMPTS=3
+          BACKOFF=(10 30)
+          HTTP_CODE="000"
+          for _attempt in 1 2 3; do
+            HTTP_CODE=$(curl -s -w "%{http_code}" --max-time 60 --connect-timeout 10 \
+              -o /tmp/api_response.json \
+              https://openrouter.ai/api/v1/chat/completions \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+              -H "HTTP-Referer: https://github.com/${GITHUB_REPOSITORY}" \
+              -H "X-Title: GPT Changelog" \
+              -d "$REQUEST_BODY") || HTTP_CODE="000"
+
+            if [[ "$HTTP_CODE" =~ ^[0-9]+$ ]] && [ "$HTTP_CODE" -lt 400 ]; then
+              break
+            fi
+
+            # Permanent client errors (4xx except 429) — no point retrying
+            if [[ "$HTTP_CODE" =~ ^4 ]] && [ "$HTTP_CODE" != "429" ]; then
+              echo "⚠️ Permanent API error HTTP $HTTP_CODE for $APP_NAME — skipping"
+              cat /tmp/api_response.json 2>/dev/null || true
+              break
+            fi
+
+            if [ "$_attempt" -lt "$MAX_ATTEMPTS" ]; then
+              WAIT=${BACKOFF[$((_attempt - 1))]}
+              echo "⚠️ Attempt $_attempt/$MAX_ATTEMPTS failed (HTTP $HTTP_CODE) — retrying in ${WAIT}s"
+              cat /tmp/api_response.json 2>/dev/null || true
+              sleep "$WAIT"
+            else
+              echo "⚠️ All $MAX_ATTEMPTS attempts failed for $APP_NAME (last HTTP $HTTP_CODE) — skipping"
+              cat /tmp/api_response.json 2>/dev/null || true
+            fi
+          done
+
+          if ! [[ "$HTTP_CODE" =~ ^[0-9]+$ ]] || [ "$HTTP_CODE" -ge 400 ]; then
+            rm -f /tmp/api_response.json
+            continue
+          fi
+
+          CONTENT=$(jq -r '.choices[0].message.content // empty' /tmp/api_response.json)
+          rm -f /tmp/api_response.json
+
+          if [ -z "$CONTENT" ]; then
+            echo "⚠️ No content generated for $APP_NAME"
+            continue
+          fi
+
+          CONTENT=$(echo "$CONTENT" | sed '/^```/d')
+
+          if [ "$WORKING_DIR" != "." ]; then
+            CHANGELOG_PATH="${WORKING_DIR}/CHANGELOG.md"
+          else
+            CHANGELOG_PATH="CHANGELOG.md"
+          fi
+
+          if [ -n "$PREV_TAG" ]; then
+            COMPARE_LINK="[Compare changes](${REPO_URL}/compare/${PREV_TAG}...${LAST_TAG})"
+          else
+            COMPARE_LINK="[View all changes](${REPO_URL}/commits/${LAST_TAG})"
+          fi
+
+          if [ -f "$CHANGELOG_PATH" ]; then
+            EXISTING_CONTENT=$(awk '/^## \[/{found=1} found{print}' "$CHANGELOG_PATH")
+          else
+            EXISTING_CONTENT=""
+            echo "📜 Creating new changelog"
+          fi
+
+          {
+            echo "# ${APP_NAME^} Changelog"
+            echo ""
+            echo "## [${VERSION}](${REPO_URL}/releases/tag/${LAST_TAG})"
+            echo ""
+            echo "$CONTENT"
+            echo ""
+            echo "$COMPARE_LINK"
+            if [ -n "$EXISTING_CONTENT" ]; then
+              echo ""
+              echo "---"
+              echo ""
+              echo "$EXISTING_CONTENT"
+            fi
+            echo ""
+          } > "$CHANGELOG_PATH"
+
+          echo "📄 Updated: $CHANGELOG_PATH"
+          echo "${APP_NAME}:v${VERSION}:${WORKING_DIR}" >> /tmp/apps_updated.txt
+
+          {
+            echo "## ${APP_NAME^} v${VERSION}"
+            echo ""
+            echo "$CONTENT"
+            echo ""
+            echo "$COMPARE_LINK"
+          } > /tmp/app_release_notes.md
+
+          gh release edit "$LAST_TAG" --notes-file /tmp/app_release_notes.md || \
+            echo "⚠️ Could not update release for $LAST_TAG"
+
+          echo "✅ Processed $APP_NAME"
+        done < <(echo "$MATRIX" | jq -c '.[]')
+
+        if [ -s /tmp/apps_updated.txt ]; then
+          APPS_LIST=$(cut -d: -f1,2 < /tmp/apps_updated.txt | tr '\n' ', ' | sed 's/,$//')
+          echo "apps_updated=$APPS_LIST" >> "$GITHUB_OUTPUT"
+          echo "✅ Per-app changelogs created for: $APPS_LIST"
+        else
+          echo "⚠️ No changelog content generated"
+          echo "apps_updated=" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Show generated changelogs
+      if: steps.set-matrix.outputs.has_changes == 'true'
+      shell: bash
+      run: |
+        echo "📄 Generated per-app CHANGELOGs:"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        if [ -f /tmp/apps_updated.txt ]; then
+          while IFS=: read -r APP_NAME _VERSION WORKING_DIR; do
+            if [ "$WORKING_DIR" != "." ]; then
+              CHANGELOG_PATH="${WORKING_DIR}/CHANGELOG.md"
+            else
+              CHANGELOG_PATH="CHANGELOG.md"
+            fi
+            echo ""
+            echo "📦 ${APP_NAME} (${CHANGELOG_PATH}):"
+            echo "---"
+            head -50 "$CHANGELOG_PATH" 2>/dev/null || echo "File not found"
+            echo ""
+          done < /tmp/apps_updated.txt
+        fi
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # ----------------- Commit & Push -----------------
+    - name: Commit changelog to the release line
+      if: steps.generate.outputs.apps_updated != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        APPS_UPDATED: ${{ steps.generate.outputs.apps_updated }}
+        RELEASE_LINE: ${{ steps.check-tag.outputs.release_line }}
+      run: |
+        # shellcheck disable=SC2193
+        if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+          # The stability gate resolved which line the tag belongs to. Honour it: a
+          # maintenance tag's CHANGELOG belongs on its own line, not on the default branch.
+          if [ -n "$RELEASE_LINE" ]; then
+            BASE_BRANCH="$RELEASE_LINE"
+          else
+            BASE_BRANCH=$(gh repo view --json defaultBranchRef -q '.defaultBranchRef.name')
+          fi
+          echo "📌 Triggered by tag, pushing to release line: $BASE_BRANCH"
+        else
+          # The gate already resolved this for branch and `workflow_run` triggers alike;
+          # GITHUB_REF_NAME is only a fallback for a run that skipped it.
+          BASE_BRANCH="${RELEASE_LINE:-$GITHUB_REF_NAME}"
+          echo "📌 Pushing CHANGELOGs directly to: $BASE_BRANCH"
+        fi
+
+        # Stage per-app CHANGELOG.md files written by the generate step
+        if [ -f /tmp/apps_updated.txt ]; then
+          while IFS=: read -r _APP_NAME _VERSION WORKING_DIR; do
+            if [ "$WORKING_DIR" != "." ]; then
+              CHANGELOG_PATH="${WORKING_DIR}/CHANGELOG.md"
+            else
+              CHANGELOG_PATH="CHANGELOG.md"
+            fi
+            git add "$CHANGELOG_PATH" 2>/dev/null || true
+          done < /tmp/apps_updated.txt
+        fi
+
+        if git diff --cached --quiet; then
+          echo "⚠️ No changelog changes to commit"
+          exit 0
+        fi
+
+        git commit -S -m "chore(release): Update CHANGELOGs for ${APPS_UPDATED} [skip ci]"
+
+        # Retry push on race: rebase onto latest base branch keeping our
+        # changelog content (-X ours) and re-push.
+        attempt=1
+        max_attempts=3
+        while [ $attempt -le $max_attempts ]; do
+          if git push origin "HEAD:$BASE_BRANCH"; then
+            echo "✅ CHANGELOGs pushed to $BASE_BRANCH"
+            exit 0
+          fi
+          echo "⚠️ Push rejected (attempt $attempt/$max_attempts) — rebasing onto latest $BASE_BRANCH"
+          git fetch origin "$BASE_BRANCH"
+          if ! git rebase "origin/$BASE_BRANCH" -X ours; then
+            echo "❌ Rebase failed — manual intervention required"
+            git rebase --abort 2>/dev/null || true
+            exit 1
+          fi
+          attempt=$((attempt + 1))
+        done
+        echo "❌ Failed to push after $max_attempts attempts"
+        exit 1
+
+    # Backmerging default branch into develop is NOT done here. The caller
+    # (release.yml) runs a dedicated `backmerge` job after this composite,
+    # which already carries the changelog commit just pushed above since it
+    # fetches the source branch fresh. A second backmerge here was redundant.
+
+    # ----------------- Cleanup -----------------
+    - name: Cleanup temporary files
+      if: always()
+      shell: bash
+      run: |
+        rm -f /tmp/apps_updated.txt /tmp/app_release_notes.md /tmp/api_response.json
+        echo "🧹 Cleaned up temporary files"

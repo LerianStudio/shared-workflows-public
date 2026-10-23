@@ -1,0 +1,202 @@
+name: Validate PR Source Branch
+description: "Validates that PRs to protected branches come from allowed source branches."
+
+inputs:
+  github-token:
+    description: GitHub token with pull-requests write permission
+    required: true
+  allowed-branches:
+    description: "Allowed source branches (pipe-separated, supports prefix matching with *)"
+    required: false
+    default: "hotfix/*|release-candidate"
+  target-branches:
+    description: "Target branches that require source branch validation (pipe-separated)"
+    required: false
+    default: "main"
+  branch-rules:
+    description: >-
+      Per-target rules as JSON, for repositories where each protected branch
+      accepts a different set of sources — e.g.
+      {"main": "develop|hotfix/*", "release-candidate": "develop-*|hotfix/*"}.
+      A target listed here is validated against its own patterns and ignores
+      allowed-branches/target-branches, which still govern every other target.
+    required: false
+    default: ""
+  automation-only-patterns:
+    description: >-
+      Source patterns (pipe-separated, `*` suffix for prefix matching) accepted
+      ONLY when the pull request was opened by automation — e.g. "backmerge/*".
+      This restricts, it does not grant: the pattern must still be allowed by
+      allowed-branches or branch-rules, and listing it here adds the condition
+      that the author be automation. A branch name alone is guessable — anyone
+      can push `backmerge/anything` and target a protected branch — so this
+      authorises the mechanism rather than the name.
+    required: false
+    default: ""
+  automation-actors:
+    description: >-
+      Comma-separated logins that count as automation for the patterns above.
+      A list is authoritative — those logins are accepted whatever their account
+      type, which matters because `lerian-studio` is a User, not a Bot. Set to
+      empty to accept any author whose account type is Bot instead.
+    required: false
+    default: "lerian-studio-midaz-push-bot[bot],lerian-studio"
+  dry-run:
+    description: "When true, validate without posting REQUEST_CHANGES review"
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Validate source branch
+      uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+      env:
+        ALLOWED_BRANCHES: ${{ inputs.allowed-branches }}
+        TARGET_BRANCHES: ${{ inputs.target-branches }}
+        BRANCH_RULES: ${{ inputs.branch-rules }}
+        AUTOMATION_ONLY_PATTERNS: ${{ inputs.automation-only-patterns }}
+        AUTOMATION_ACTORS: ${{ inputs.automation-actors }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const sourceBranch = context.payload.pull_request.head.ref;
+          const targetBranch = context.payload.pull_request.base.ref;
+          const targetBranchesForCheck = process.env.TARGET_BRANCHES.split('|').map(b => b.trim());
+          const dryRun = process.env.DRY_RUN === 'true';
+
+          // A per-target rule wins over the flat allowed-branches list, so a
+          // repository whose protected branches accept different sources can
+          // express that without the flat list having to cover all of them.
+          let branchRules = {};
+          const rawRules = (process.env.BRANCH_RULES || '').trim();
+          if (rawRules) {
+            try {
+              branchRules = JSON.parse(rawRules);
+            } catch (error) {
+              core.setFailed(`branch-rules is not valid JSON: ${error.message}`);
+              return;
+            }
+            if (typeof branchRules !== 'object' || branchRules === null || Array.isArray(branchRules)) {
+              core.setFailed('branch-rules must be a JSON object mapping target branch to allowed patterns.');
+              return;
+            }
+          }
+
+          const hasRule = Object.prototype.hasOwnProperty.call(branchRules, targetBranch);
+          if (!hasRule && !targetBranchesForCheck.includes(targetBranch)) {
+            console.log(`Target branch '${targetBranch}' does not require source branch validation`);
+            return;
+          }
+
+          if (hasRule && typeof branchRules[targetBranch] !== 'string') {
+            core.setFailed(`branch-rules value for '${targetBranch}' must be a string of pipe-separated patterns, got ${Array.isArray(branchRules[targetBranch]) ? 'an array' : typeof branchRules[targetBranch]}.`);
+            return;
+          }
+
+          const patterns = hasRule ? branchRules[targetBranch] : process.env.ALLOWED_BRANCHES;
+          const allowedBranches = patterns.split('|').map(b => b.trim()).filter(Boolean);
+
+          if (allowedBranches.length === 0) {
+            core.setFailed(`No allowed source patterns configured for target '${targetBranch}'.`);
+            return;
+          }
+
+          console.log(`Checking if source branch '${sourceBranch}' is allowed for target '${targetBranch}'`);
+          console.log(`Rule source: ${hasRule ? 'branch-rules' : 'allowed-branches'}`);
+          console.log(`Allowed patterns: ${allowedBranches.join(', ')}`);
+
+          const matchesPattern = (branch, pattern) =>
+            pattern.endsWith('*') ? branch.startsWith(pattern.slice(0, -1)) : pattern === branch;
+
+          let isAllowed = allowedBranches.some(p => matchesPattern(sourceBranch, p));
+
+          // These patterns RESTRICT, they do not grant. The pattern still has to
+          // be authorised by the rules above; listing it here adds the condition
+          // that the author be automation. Granting instead would be a no-op in
+          // the intended configuration, where `backmerge/*` also appears in the
+          // rules — a human pushing `backmerge/anything` would sail through, and
+          // a guessable branch name is exactly what this closes.
+          const automationPatterns = (process.env.AUTOMATION_ONLY_PATTERNS || '')
+            .split('|').map(p => p.trim()).filter(Boolean);
+          const automationActors = (process.env.AUTOMATION_ACTORS || '')
+            .split(',').map(a => a.trim()).filter(Boolean);
+
+          const author = context.payload.pull_request.user || {};
+          const matchesAutomationPattern = automationPatterns.some(p => matchesPattern(sourceBranch, p));
+          // An explicit list is authoritative: it names the accounts that count
+          // as automation, whatever their account type. Requiring type Bot on top
+          // would silently drop machine users such as `lerian-studio`, which is a
+          // User — the entry would look configured and never match. With no list,
+          // fall back to any Bot.
+          const isAutomation = automationActors.length === 0
+            ? author.type === 'Bot'
+            : automationActors.includes(author.login);
+
+          if (matchesAutomationPattern) {
+            console.log(`Automation-only patterns: ${automationPatterns.join(', ')}`);
+            console.log(`Author: ${author.login || 'unknown'} (type ${author.type || 'unknown'}) — automation: ${isAutomation}`);
+            if (!isAutomation) {
+              isAllowed = false;
+            }
+          }
+
+          const marker = '<!-- pr-source-branch-validation -->';
+
+          const viewerLogin = await github.rest.users.getAuthenticated()
+            .then(({ data }) => data.login)
+            .catch(() => null);
+
+          async function findExistingComment() {
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const marked = comments.filter(c => c.body?.includes(marker));
+            if (viewerLogin) {
+              return marked.find(c => c.user?.login === viewerLogin);
+            }
+            return marked.find(c => c.user?.type === 'Bot');
+          }
+
+          async function upsertComment(body) {
+            const fullBody = `${marker}\n${body}`;
+            const existing = await findExistingComment();
+            const params = { owner: context.repo.owner, repo: context.repo.repo, body: fullBody };
+            if (existing) {
+              await github.rest.issues.updateComment({ ...params, comment_id: existing.id });
+            } else {
+              await github.rest.issues.createComment({ ...params, issue_number: context.issue.number });
+            }
+          }
+
+          if (!isAllowed) {
+            // A branch that matched an automation-only pattern failed for a
+            // different reason than one that matched nothing, and saying so is
+            // the difference between "use another branch" and "you cannot open
+            // this by hand".
+            const reason = matchesAutomationPattern
+              ? `\n\n\`${sourceBranch}\` matches an automation-only pattern, so it is accepted only on pull requests opened by automation${automationActors.length ? ` (${automationActors.join(', ')})` : ''}. This one was opened by \`${author.login || 'unknown'}\`.`
+              : '';
+            const message = `⚠️ **Invalid Source Branch**\n\nPull requests to **${targetBranch}** can only come from:\n${allowedBranches.map(b => `- \`${b}\``).join('\n')}\n\nYour source branch: \`${sourceBranch}\`${reason}\n\nPlease **change the base branch** or create a PR from an allowed branch.`;
+
+            if (dryRun) {
+              core.notice(`DRY RUN — would upsert source-branch validation comment for '${sourceBranch}' → '${targetBranch}'`);
+            } else {
+              await upsertComment(message);
+            }
+
+            core.setFailed(`Source branch '${sourceBranch}' is not allowed for PRs to '${targetBranch}'`);
+          } else {
+            console.log(`✅ Source branch '${sourceBranch}' is allowed`);
+            if (!dryRun) {
+              const existing = await findExistingComment();
+              if (existing) {
+                const message = `✅ **Source Branch — now valid**\n\nSource branch \`${sourceBranch}\` is allowed for target \`${targetBranch}\`.`;
+                await upsertComment(message);
+              }
+            }
+          }

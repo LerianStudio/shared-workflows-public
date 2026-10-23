@@ -1,0 +1,96 @@
+name: release
+
+on:
+  push:
+    branches:
+      - develop
+      - release-candidate
+      - main
+    paths-ignore:
+      - '.gitignore'
+      - '**/*.env'
+      - '*.env'
+      - '**/*.md'
+      - '*.md'
+      - '**/*.txt'
+      - '*.txt'
+      # The deployment matrix is resolved from main at runtime by callers, so
+      # matrix-only changes propagate without a new release tag.
+      - 'config/deployment-matrix.yml'
+      # Same rationale: the version-propagation matrix is metadata for the
+      # propagation controller; editing it must not cut a release.
+      - 'config/version-propagation.yml'
+      # Likewise the tier promotion flow: it is read by the promotion
+      # controller at the published tag, so editing it must not cut a release.
+      - 'config/tier-promotion.yml'
+      - '.github/workflows/self-*.yml'
+    tags-ignore:
+      - '**'
+  # Cuts the release a push could not. The doc gate classifies a push by its
+  # file diff, so once releasable commits are on a branch, a later push that
+  # changes only self-* workflows or meta files is skipped by paths-ignore or
+  # by the gate even though semantic-release would find a version to cut. A
+  # dispatch has no `before` ref, so the gate treats it as code. Run it on
+  # develop, release-candidate or main; any other ref is refused below.
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+  packages: read
+
+jobs:
+  publish-release:
+    if: >-
+      github.event_name == 'push'
+      || contains(fromJSON('["refs/heads/develop", "refs/heads/release-candidate", "refs/heads/main"]'), github.ref)
+    uses: ./.github/workflows/release.yml
+    with:
+      runner_type: ubuntu-latest
+      enable_changelog: ${{ github.ref == 'refs/heads/main' }}
+      enable_major_tag: ${{ github.ref == 'refs/heads/main' }}
+      # The doc gate is for callers, whose pipeline edits ship byte-identical
+      # code. This repository publishes only workflows and composites, so every
+      # change that reaches this job is releasable; what must not release (docs,
+      # self-* workflows, the controller matrices) is already dropped by the
+      # trigger's paths-ignore above.
+      enable_doc_gate: false
+    secrets: inherit
+
+  # The `propagate-version` job that rewrote `@vX.Y.Z` pins in each downstream
+  # repository was removed: the tier channels below replaced it, and every entry
+  # in `config/version-propagation.yml` is now `enabled: false`. The reusable
+  # workflow and its matrix are kept as the rollback path — re-add a job calling
+  # `./.github/workflows/version-propagation.yml` to resume.
+
+  # After every stable release on main, walk the new tag through the tier
+  # branches declared in `config/tier-promotion.yml`: tier-0 immediately, then
+  # tier-1 and tier-2 each behind their Environment approval. The run stays open
+  # while an approval is pending, which is what keeps the promoted commit fixed
+  # to the tag resolved when the train opened.
+  #
+  # Two conditions here are load-bearing, not defensive noise:
+  #
+  #   `new_release_published` — semantic-release exits SUCCESSFULLY when a push
+  #   carries no releasable commits, so gating on the job result alone would
+  #   open a train for a tag already sitting on the tiers and reopen its
+  #   approvals on every such push.
+  #
+  #   `new_release_git_tag` passed explicitly — letting the controller
+  #   re-resolve "latest stable" would race a concurrent release and promote a
+  #   different tag than the one this run published.
+  #
+  # This is now the only propagation model: a repository still pinning `@vX.Y.Z`
+  # simply stops receiving automatic bumps and must migrate to a tier channel.
+  promote-tiers:
+    needs: publish-release
+    if: >-
+      github.ref == 'refs/heads/main'
+      && needs.publish-release.result == 'success'
+      && needs.publish-release.outputs.new_release_published == 'true'
+    uses: ./.github/workflows/tier-promotion.yml
+    with:
+      tag: ${{ needs.publish-release.outputs.new_release_git_tag }}
+      dry_run: false
+    secrets: inherit

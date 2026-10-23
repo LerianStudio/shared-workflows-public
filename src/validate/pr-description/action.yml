@@ -1,0 +1,14 @@
+name: Validate PR Description
+description: "Checks that the PR description is not empty."
+
+runs:
+  using: composite
+  steps:
+    - name: Check description
+      uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+      with:
+        script: |
+          const body = (context.payload.pull_request.body || '').trim();
+          if (body.length === 0) {
+            core.setFailed('PR description is empty. Please provide a description.');
+          }

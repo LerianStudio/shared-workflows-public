@@ -1,0 +1,952 @@
+name: "Release Workflow"
+
+# This reusable workflow handles semantic versioning, release management, and
+# optional changelog generation.
+#
+# Monorepo Support:
+# - If filter_paths is provided: detects changes and runs release for each changed app
+# - If filter_paths is empty: runs release for the entire repository (single app mode)
+
+on:
+  workflow_call:
+    outputs:
+      new_release_published:
+        description: 'true when at least one matrix leg published a release.'
+        value: ${{ jobs.publish_release_status.outputs.release_published }}
+      new_release_version:
+        description: 'Published version (single-app mode; last matrix leg that actually published wins in monorepo).'
+        value: ${{ jobs.publish_release_status.outputs.release_version }}
+      new_release_git_tag:
+        description: 'Git tag semantic-release created (single-app mode; last leg that actually published wins in monorepo).'
+        value: ${{ jobs.publish_release_status.outputs.release_git_tag }}
+    inputs:
+      # ----------------- Change gate -----------------
+      # Documentation and repository metadata must not cut a release tag. The
+      # gate reuses src/config/non-doc-changes, the same classifier behind the
+      # go-/js- umbrella workflows, and folds its verdict into `should_skip` so
+      # every downstream job already respects it.
+      #
+      # Callers that gate upstream (go-release.yml, js-release.yml) pass
+      # enable_doc_gate: false to avoid classifying the same push twice.
+      enable_doc_gate:
+        description: 'Skip the release when a branch push touches only documentation/meta files (see ignore_globs).'
+        type: boolean
+        default: true
+      ignore_globs:
+        description: 'Space-separated glob patterns treated as docs/meta; when only these change on a branch push, the release is skipped. Files under .github/workflows/, .github/actions/ and .github/scripts/ count as code only when release_on_workflow_changes is true.'
+        type: string
+        default: '*.md docs/* .github/* LICENSE* .gitignore .coderabbit.yml .coderabbit.yaml'
+      release_on_workflow_changes:
+        description: 'Release when a branch push touches only .github/workflows/, .github/actions/ or .github/scripts/. Off by default: a pipeline edit ships byte-identical code, and releasing it moves GitOps tags and writes a changelog entry for a CI tweak. Turn it on in a repository whose released artifact lives under .github/ (one that publishes composite actions, say).'
+        type: boolean
+        default: false
+
+      semantic_version:
+        description: 'Semantic release version to use'
+        type: string
+        default: '23.0.8'
+      runner_type:
+        description: 'Runner to use for the workflow'
+        type: string
+        default: 'blacksmith-4vcpu-ubuntu-2404'
+      publish_runner_type:
+        description: 'Optional runner override for the Release (publish) jobs only. Empty = vars.GENERAL_RUNNERS, then runner_type.'
+        type: string
+        default: ''
+      filter_paths:
+        description: 'Newline-separated list of path prefixes to filter. If not provided, treats as single app repo.'
+        type: string
+        required: false
+        default: ''
+      shared_paths:
+        description: 'Newline-separated path patterns (e.g., "go.mod\ngo.sum") that trigger a build for ALL components when matched by any changed file.'
+        type: string
+        required: false
+        default: ''
+      path_level:
+        description: 'Limits the path to the first N segments (e.g., 2 -> "apps/agent")'
+        type: string
+        default: '2'
+      normalize_to_filter:
+        description: 'Use the matching filter_paths entry as the release working_dir instead of the path_level-trimmed directory, so a top-level component (e.g. "cockpit") releases from its root rather than once per subdirectory.'
+        type: boolean
+        default: false
+      enable_changelog:
+        description: 'Generate CHANGELOG.md files via GPT after a successful release'
+        required: false
+        type: boolean
+        default: false
+      enable_major_tag:
+        description: 'Force-update the floating major version tag (e.g. v1) after a successful release'
+        required: false
+        type: boolean
+        default: false
+      stable_releases_only:
+        description: 'Only generate changelogs for stable releases (skip beta/rc/alpha tags)'
+        required: false
+        type: boolean
+        default: true
+      openai_model:
+        description: 'Model to use for changelog generation (OpenRouter format)'
+        required: false
+        type: string
+        default: 'openai/gpt-4o'
+      changelog_bot_ignore_list:
+        description: 'Space-separated list of GitHub login substrings to exclude from the changelog (bot authors). Logins ending in [bot] are always excluded. Extends the default list built into the gptchangelog composite action.'
+        required: false
+        type: string
+        default: ''
+      changelog_release_branch:
+        description: 'Branch whose tags get a changelog. Empty derives it from the run: the branch that triggered the release, falling back to searching which branch contains the tag commit for tag-triggered runs. Set it only for layouts neither step can infer.'
+        required: false
+        type: string
+        default: ''
+
+      # ----------------- Release Announcement -----------------
+      enable_release_announcement:
+        description: 'Announce the published release to the repository Slack channel after a successful release'
+        required: false
+        type: boolean
+        default: true
+      announcement_product_name:
+        description: 'Product name displayed in the announcement. Defaults to the repository name.'
+        required: false
+        type: string
+        default: ''
+      announcement_slack_channel:
+        description: 'Slack channel that receives the announcement. Defaults to the RELEASE_SLACK_CHANNEL repository variable; the announcement is skipped when both are empty.'
+        required: false
+        type: string
+        default: ''
+
+      # ----------------- Backmerge -----------------
+      backmerge_enabled:
+        description: 'Backmerge the release branch into the target branch after a successful release'
+        required: false
+        type: boolean
+        default: true
+      backmerge_source:
+        description: 'Release branch eligible for backmerge; backmerge runs only when the release ref matches this'
+        required: false
+        type: string
+        default: 'main'
+      backmerge_target:
+        description: 'Branch that receives the backmerge'
+        required: false
+        type: string
+        default: 'develop'
+      backmerge_mode:
+        description: 'Backmerge strategy: direct | pr | direct-with-pr-fallback'
+        required: false
+        type: string
+        default: 'direct-with-pr-fallback'
+      dry_run:
+        description: 'Run semantic-release in dry-run mode (no tags/releases created) and preview the backmerge instead of applying it'
+        required: false
+        type: boolean
+        default: false
+      prerelease_branches:
+        description: 'Comma-separated list of branches treated as prerelease lines (beta/rc). Before calculating a version on these branches, backmerge_source is merged in first; if that merge cannot complete directly, the release is skipped for this run. A defensive check then fails the run if the calculated version would still land on an X.Y.Z that already has a stable release.'
+        required: false
+        type: string
+        default: 'develop,release-candidate'
+      prerelease_backmerge_sync_enabled:
+        description: 'Merge backmerge_source into a prerelease branch (see prerelease_branches) before calculating its next version. Independent of backmerge_enabled, which also gates the separate post-release backmerge on backmerge_source itself. Defaults to false (opt-in) — set to true to enable this pre-version-calculation sync, which can skip/block a release on prerelease branches when the merge cannot complete directly. The post-release backmerge on backmerge_source is unaffected by this input either way.'
+        required: false
+        type: boolean
+        default: false
+      release_notes_max_chars:
+        description: 'Fail the release before any tag is created when the generated release notes exceed this many characters. The GitHub Releases API rejects a body over 125000 characters, and semantic-release only hits that limit in its `publish` step — after the tag is already pushed, which leaves the repository with a tag, a deployed build and no Release, changelog or backmerge. The check runs on the dry-run notes, so an oversized body stops the run with nothing published. Set to 0 to disable.'
+        required: false
+        type: number
+        default: 125000
+      environment_name:
+        description: 'Overrides the per-channel deployment environment for this run. Empty (default) keeps `stable` on main, `rc` on release-candidate and `beta` on anything else. Pass a value only when a ref needs its own environment, scoping it with a condition in the caller so the channel split still applies to every other ref (see docs/release.md, Deployment Environments). The environment lives in your repository; if it has a deployment branch policy that does not allow this ref, the job fails, which is the intended behaviour.'
+        required: false
+        type: string
+        default: ''
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      has_changes: ${{ steps.set-matrix.outputs.has_changes }}
+      should_skip: ${{ steps.check-skip.outputs.should_skip }}
+    steps:
+      # Runs before the skip check so its verdict can feed into it. Skipped
+      # entirely on tag pushes: a tag carries no diff to classify, and a release
+      # driven by a tag is explicit intent, not an accident of a docs commit.
+      - name: Non-doc change gate
+        id: doc-gate
+        if: inputs.enable_doc_gate && github.ref_type == 'branch'
+        # An unreadable diff is not a verdict. A caller may grant less than
+        # `pull-requests: read`, and a reusable workflow cannot elevate what its
+        # caller restricted; failing here would block the pipeline the gate only
+        # means to shorten. The empty output that follows reads as "assume code".
+        continue-on-error: true
+        uses: LerianStudio/shared-workflows-public/src/config/non-doc-changes@v1
+        with:
+          github-token: ${{ github.token }}
+          ignore-globs: ${{ inputs.ignore_globs }}
+          workflow-paths-are-code: ${{ inputs.release_on_workflow_changes }}
+
+      - name: Check if should skip (changelog commits)
+        id: check-skip
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          # Empty when the gate did not run (tag push, or gate disabled by the
+          # caller). Only the literal "false" skips, so an absent verdict means
+          # "assume code" and the release proceeds exactly as it did before.
+          HAS_CODE: ${{ steps.doc-gate.outputs.code }}
+        run: |
+          if [ "$HAS_CODE" = "false" ]; then
+            echo "🛑 Skipping release - branch push touched only documentation/meta files"
+            echo "should_skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "📌 Checking commit message for skip patterns"
+
+          # Backmerges and syncs mark themselves [backmerge], which GitHub does
+          # not recognise: the run starts and every check reports, so a PR whose
+          # head carries the marker is still mergeable, and a push still triggers
+          # whatever is chained to it. Only the release is skipped, here.
+          # [skip ci] stays matched for commits that arrive by other means; it
+          # suppresses the run at the GitHub level and never reaches this step.
+          if echo "$COMMIT_MSG" | grep -qiE '\[skip ci\]|\[backmerge\]|chore\(release\): Update CHANGELOGs'; then
+            echo "🛑 Skipping release - changelog/skip-ci commit detected"
+            echo "should_skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "✅ Proceeding with release"
+            echo "should_skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Get changed paths (monorepo)
+        if: inputs.filter_paths != ''
+        id: changed-paths
+        uses: LerianStudio/shared-workflows-public/src/config/changed-paths@v1
+        with:
+          filter-paths: ${{ inputs.filter_paths }}
+          shared-paths: ${{ inputs.shared_paths }}
+          path-level: ${{ inputs.path_level }}
+          normalize-to-filter: ${{ inputs.normalize_to_filter }}
+          get-app-name: 'true'
+
+      - name: Set matrix
+        id: set-matrix
+        env:
+          FILTER_PATHS: ${{ inputs.filter_paths }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          CHANGED_MATRIX: ${{ steps.changed-paths.outputs.matrix }}
+        run: |
+          if [ -z "$FILTER_PATHS" ]; then
+            # Single app mode - release from root
+            APP_NAME="$REPO_NAME"
+            echo "matrix=[{\"name\": \"${APP_NAME}\", \"working_dir\": \".\"}]" >> "$GITHUB_OUTPUT"
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          else
+            MATRIX="$CHANGED_MATRIX"
+            if [ "$MATRIX" == "[]" ] || [ -z "$MATRIX" ]; then
+              echo "matrix=[]" >> "$GITHUB_OUTPUT"
+              echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+              echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+  publish_release:
+    needs: prepare
+    if: needs.prepare.outputs.has_changes == 'true' && needs.prepare.outputs.should_skip != 'true'
+    runs-on: ${{ inputs.publish_runner_type || vars.GENERAL_RUNNERS || inputs.runner_type }}
+    environment:
+      # `stable` on main, `rc` on release-candidate, `beta` on anything else.
+      # The three-way split follows the branch strategy this workflow supports
+      # for its CONSUMERS, not the branches this repository happens to use —
+      # shared-workflows has no release-candidate, and that is irrelevant to the
+      # contract.
+      #
+      # The environments live in the CALLER's repository, so every consumer gets
+      # its own set, and its own branch policies if it configures them. Nothing
+      # here is created or protected centrally. A repository that never pushes to
+      # release-candidate never gets an `rc` environment: GitHub creates one only
+      # when a job referencing it actually runs.
+      #
+      # `environment_name` overrides the whole calculation when the caller needs a
+      # ref to have its own environment. It is a single input rather than a
+      # ref-to-environment map on purpose: a run is on exactly one ref, so the
+      # caller scopes the override with its own expression and keeps the channel
+      # split for everything else.
+      #
+      # Choosing the name by expression is backed by the environment's own
+      # deployment branch policy: if this expression resolved wrongly, GitHub
+      # refuses a deployment from a ref the environment does not allow. The
+      # expression states intent; the policy is what imposes it.
+      #
+      # Whether an administrator can override that policy is not something to
+      # assume either way — the environment's "Allow administrators to bypass
+      # configured protection rules" checkbox is on by default, and a caller
+      # that needs the branch restriction to apply to everyone should turn it
+      # off rather than rely on the default.
+      name: ${{ inputs.environment_name != '' && inputs.environment_name || github.ref == 'refs/heads/main' && 'stable' || github.ref == 'refs/heads/release-candidate' && 'rc' || 'beta' }}
+    name: Release ${{ matrix.app.name }}
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.prepare.outputs.matrix) }}
+
+    outputs:
+      gpg_fingerprint: ${{ steps.import_gpg.outputs.fingerprint }}
+      new_release_version: ${{ steps.semantic.outputs.new_release_version }}
+      new_release_git_tag: ${{ steps.semantic.outputs.new_release_git_tag }}
+
+    steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ secrets.LERIAN_STUDIO_MIDAZ_PUSH_BOT_APP_ID }}
+          private-key: ${{ secrets.LERIAN_STUDIO_MIDAZ_PUSH_BOT_PRIVATE_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Sync with remote branch
+        run: |
+          git fetch origin ${{ github.ref_name }}
+          git reset --hard origin/${{ github.ref_name }}
+
+      - name: Fetch semantic-release git notes
+        run: git fetch origin "+refs/notes/*:refs/notes/*"
+
+      - name: Import GPG key
+        uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
+        id: import_gpg
+        with:
+          gpg_private_key: ${{ secrets.LERIAN_CI_CD_USER_GPG_KEY }}
+          passphrase: ${{ secrets.LERIAN_CI_CD_USER_GPG_KEY_PASSWORD }}
+          git_committer_name: ${{ secrets.LERIAN_CI_CD_USER_NAME }}
+          git_committer_email: ${{ secrets.LERIAN_CI_CD_USER_EMAIL }}
+          git_config_global: true
+          git_user_signingkey: true
+          git_commit_gpgsign: true
+
+      # ----------------- Backmerge config preflight -----------------
+      - name: Validate backmerge inputs
+        if: inputs.backmerge_enabled
+        env:
+          BACKMERGE_MODE: ${{ inputs.backmerge_mode }}
+          BACKMERGE_SOURCE: ${{ inputs.backmerge_source }}
+          BACKMERGE_TARGET: ${{ inputs.backmerge_target }}
+        run: |
+          case "$BACKMERGE_MODE" in
+            direct|pr|direct-with-pr-fallback) ;;
+            *)
+              echo "::error::Invalid backmerge_mode '$BACKMERGE_MODE' (must be: direct, pr, direct-with-pr-fallback)"
+              exit 1
+              ;;
+          esac
+          if [ "$BACKMERGE_SOURCE" = "$BACKMERGE_TARGET" ]; then
+            echo "::error::backmerge_source and backmerge_target must differ (got '$BACKMERGE_SOURCE')"
+            exit 1
+          fi
+          if ! git check-ref-format --branch "$BACKMERGE_SOURCE" >/dev/null 2>&1; then
+            echo "::error::Invalid backmerge_source ref: '$BACKMERGE_SOURCE'"
+            exit 1
+          fi
+          if ! git check-ref-format --branch "$BACKMERGE_TARGET" >/dev/null 2>&1; then
+            echo "::error::Invalid backmerge_target ref: '$BACKMERGE_TARGET'"
+            exit 1
+          fi
+
+      # ----------------- Prerelease staleness guard -----------------
+      - name: Classify branch
+        id: classify
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          PRERELEASE_BRANCHES: ${{ inputs.prerelease_branches }}
+        run: |
+          is_prerelease=false
+          IFS=',' read -ra BR <<< "$PRERELEASE_BRANCHES"
+          for b in "${BR[@]}"; do
+            b_trimmed="$(echo "$b" | xargs)"
+            if [ "$b_trimmed" = "$REF_NAME" ]; then
+              is_prerelease=true
+              break
+            fi
+          done
+          echo "is_prerelease=$is_prerelease" >> "$GITHUB_OUTPUT"
+
+      - name: Sync ${{ inputs.backmerge_source }} → ${{ github.ref_name }} before calculating version
+        id: pre_sync
+        if: inputs.backmerge_enabled && inputs.prerelease_backmerge_sync_enabled && steps.classify.outputs.is_prerelease == 'true'
+        uses: LerianStudio/shared-workflows-public/src/config/backmerge-sync@v1
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          source-branch: ${{ inputs.backmerge_source }}
+          target-branch: ${{ github.ref_name }}
+          mode: direct-with-pr-fallback
+          dry-run: ${{ inputs.dry_run }}
+          commit-message: "chore(release): sync ${source} into ${target} before release [backmerge]"
+          pr-title: "chore(release): sync ${source} → ${target} [backmerge]"
+          git-user-name: ${{ secrets.LERIAN_CI_CD_USER_NAME }}
+          git-user-email: ${{ secrets.LERIAN_CI_CD_USER_EMAIL }}
+
+      - name: Warn about pending backmerge sync
+        if: steps.pre_sync.outputs.action == 'pr-opened' || steps.pre_sync.outputs.action == 'pr-existing'
+        env:
+          APP_NAME: ${{ matrix.app.name }}
+          BACKMERGE_SOURCE: ${{ inputs.backmerge_source }}
+          REF_NAME: ${{ github.ref_name }}
+          PR_URL: ${{ steps.pre_sync.outputs.pr-url }}
+        run: |
+          printf '::warning::Release skipped for %s — %s could not be auto-merged into %s (PR: %s). Merge it and push again to release.\n' "$APP_NAME" "$BACKMERGE_SOURCE" "$REF_NAME" "$PR_URL"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version: '20'
+
+      - name: Init package.json
+        working-directory: ${{ matrix.app.working_dir }}
+        run: npm init -y
+
+      - name: Install semantic-release plugins
+        working-directory: ${{ matrix.app.working_dir }}
+        run: |
+          npm install --save-dev \
+            @semantic-release/exec
+
+      - name: Determine next version (dry-run)
+        id: semantic_dry
+        # Runs on every branch, not just the prerelease lines: the oversized
+        # release notes guard below needs the notes before the real run creates
+        # the tag. `pre_sync` only ever runs on a prerelease branch, so on a
+        # stable branch both conditions are vacuously true.
+        if: |
+          steps.pre_sync.outputs.action != 'pr-opened' &&
+          steps.pre_sync.outputs.action != 'pr-existing'
+        uses: cycjimmy/semantic-release-action@b12c8f6015dc215fe37bc154d4ad456dd3833c90 # v6
+        with:
+          ci: false
+          dry_run: true
+          semantic_version: ${{ inputs.semantic_version }}
+          working_directory: ${{ matrix.app.working_dir }}
+          extra_plugins: |
+            conventional-changelog-conventionalcommits@v7.0.2
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # `cycjimmy/semantic-release-action` installs its own dependencies in its
+      # entrypoint, and the entrypoint ends in `run().catch(console.error)`: a
+      # failing `npm ci` is printed and the process still exits 0, so the step
+      # is green with semantic-release never started. The action's first task
+      # sets `new_release_published` to `false`, so an empty output is the
+      # signature of "never ran" — `false` is the legitimate "nothing to
+      # release". Without this check the two are indistinguishable, and a
+      # release that silently did not happen looks exactly like one that
+      # correctly did not happen.
+      - name: Verify the dry-run ran
+        if: |
+          steps.semantic_dry.outcome == 'success' &&
+          steps.semantic_dry.outputs.new_release_published == ''
+        run: |
+          printf '::error::%s%s%s\n' \
+            "semantic-release never started in the dry-run step: the action could not install its own dependencies and exited successfully anyway. The npm error is in the step log above.%0A" \
+            "Nothing was tagged or published, and the release guards below never got a version to check.%0A" \
+            "Re-run the job. If it keeps happening, the runner cannot reach the npm registry."
+          exit 1
+
+      - name: Guard against stale prerelease
+        id: guard
+        # The dry-run above also runs on stable branches now; this guard only
+        # ever applied to the prerelease lines, so it keeps its own condition.
+        if: |
+          steps.classify.outputs.is_prerelease == 'true' &&
+          steps.semantic_dry.outputs.new_release_published == 'true'
+        uses: LerianStudio/shared-workflows-public/src/config/prerelease-guard@v1
+        with:
+          calculated-version: ${{ steps.semantic_dry.outputs.new_release_version }}
+          source-branch: ${{ inputs.backmerge_source }}
+          target-branch: ${{ github.ref_name }}
+
+      # The Releases API rejects a body over 125000 characters. semantic-release
+      # only finds out in `publish`, which runs *after* the tag is created and
+      # pushed: the tag triggers the caller's build and deploy, while the
+      # Release, the changelog, the announcement and the backmerge are all
+      # skipped. The target branch then never gets the stable tag, so the
+      # prerelease guard above fails every later push to it.
+      #
+      # The first stable release of a repository with a long prerelease history
+      # is the case that hits this: with no previous stable tag the notes cover
+      # the whole history. Checking the dry-run notes stops the run before any
+      # tag exists, so a failure here leaves nothing behind to clean up.
+      - name: Guard against oversized release notes
+        # The input is validated here rather than in the `if:` above, so a bad
+        # value fails loudly instead of quietly turning the guard off.
+        if: steps.semantic_dry.outputs.new_release_published == 'true'
+        env:
+          NOTES: ${{ steps.semantic_dry.outputs.new_release_notes }}
+          MAX_CHARS: ${{ inputs.release_notes_max_chars }}
+          NEXT_VERSION: ${{ steps.semantic_dry.outputs.new_release_version }}
+        run: |
+          # A character limit is a whole number. Anything else — a fraction, a
+          # negative, the exponent notation GitHub can produce when it renders a
+          # large `number` input as a string — is a configuration mistake, and
+          # `test -le` would report it as oversized notes instead.
+          case "$MAX_CHARS" in
+            '' | *[!0-9]*)
+              echo "::error::release_notes_max_chars must be a non-negative whole number (got '${MAX_CHARS}')"
+              exit 1
+              ;;
+          esac
+
+          if [ "$MAX_CHARS" -eq 0 ]; then
+            echo "Release notes size check disabled (release_notes_max_chars=0)"
+            exit 0
+          fi
+
+          # Counted with node, already installed above, rather than `wc -m`:
+          # the caller picks the runner, and on one without the C.UTF-8 locale
+          # `wc -m` silently falls back to counting bytes, so notes with accents
+          # or emoji would measure larger than the API counts them. Spreading
+          # the string iterates code points, which is what the API limit counts.
+          size="$(node -e 'process.stdout.write(String([...(process.env.NOTES || "")].length))')"
+          echo "Release notes for v${NEXT_VERSION}: ${size} characters (limit ${MAX_CHARS})"
+
+          if [ "$size" -le "$MAX_CHARS" ]; then
+            exit 0
+          fi
+
+          printf '::error::%s%s%s%s%s\n' \
+            "Release notes for v${NEXT_VERSION} are ${size} characters, over the ${MAX_CHARS} limit. " \
+            "The GitHub Releases API would reject them in the publish step, after the tag had already been created and pushed. This run stopped before that: no tag, no release, nothing to clean up.%0A" \
+            "This is usually the first stable release of a repository with a long prerelease history: with no previous stable tag, the notes cover every commit.%0A" \
+            "To unblock it, publish this release by hand with the notes of the last prerelease on the promoted channel, or narrow what the notes cover in .releaserc.%0A" \
+            "Set release_notes_max_chars to 0 to disable this check."
+          exit 1
+
+      - name: Semantic Release
+        uses: cycjimmy/semantic-release-action@b12c8f6015dc215fe37bc154d4ad456dd3833c90 # v6
+        id: semantic
+        if: |
+          steps.classify.outputs.is_prerelease != 'true' ||
+          (steps.pre_sync.outputs.action != 'pr-opened' && steps.pre_sync.outputs.action != 'pr-existing')
+        with:
+          ci: false
+          dry_run: ${{ inputs.dry_run }}
+          semantic_version: ${{ inputs.semantic_version }}
+          working_directory: ${{ matrix.app.working_dir }}
+          extra_plugins: |
+            conventional-changelog-conventionalcommits@v7.0.2
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GIT_AUTHOR_NAME: ${{ secrets.LERIAN_CI_CD_USER_NAME }}
+          GIT_AUTHOR_EMAIL: ${{ secrets.LERIAN_CI_CD_USER_EMAIL }}
+          GIT_COMMITTER_NAME: ${{ secrets.LERIAN_CI_CD_USER_NAME }}
+          GIT_COMMITTER_EMAIL: ${{ secrets.LERIAN_CI_CD_USER_EMAIL }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # `cycjimmy/semantic-release-action` installs its own dependencies in its
+      # entrypoint, and the entrypoint ends in `run().catch(console.error)`: a
+      # failing `npm ci` is printed and the process still exits 0, so the step
+      # is green with semantic-release never started. The action's first task
+      # sets `new_release_published` to `false`, so an empty output is the
+      # signature of "never ran" — `false` is the legitimate "nothing to
+      # release". Without this check the two are indistinguishable, and a
+      # release that silently did not happen looks exactly like one that
+      # correctly did not happen.
+      - name: Verify Semantic Release ran
+        if: |
+          steps.semantic.outcome == 'success' &&
+          steps.semantic.outputs.new_release_published == ''
+        run: |
+          printf '::error::%s%s%s\n' \
+            "semantic-release never started: the action could not install its own dependencies and exited successfully anyway. The npm error is in the step log above.%0A" \
+            "No version was released. This is not the same as having nothing to release — the tool never ran.%0A" \
+            "Re-run the job. If it keeps happening, the runner cannot reach the npm registry."
+          exit 1
+
+      # semantic-release opens with a `git push --dry-run` of HEAD; when that is
+      # rejected because the branch moved since the sync step, it checks whether
+      # the local branch is behind the remote and, if so, logs "behind the remote
+      # one" and returns without releasing — exit 0, `new_release_published`
+      # `false`. Another merge landing during the run is enough, and with
+      # `max-parallel: 1` across the matrix that window is the whole run. The
+      # newer push only releases this leg again if it touches the same paths,
+      # so the release is lost while the run reports success.
+      #
+      # `false` alone cannot tell this from "nothing to release", so when the
+      # branch did move, the release is recomputed in dry-run on the new head:
+      # a version there means one was owed and skipped.
+      - name: Check the branch did not move during the release
+        id: branch_moved
+        if: |
+          steps.semantic.outcome == 'success' &&
+          steps.semantic.outputs.new_release_published == 'false'
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          git fetch --quiet origin "$REF_NAME"
+          if git merge-base --is-ancestor "origin/$REF_NAME" HEAD; then
+            echo "moved=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::notice::$REF_NAME moved during the release; rechecking on $(git rev-parse --short "origin/$REF_NAME")"
+          # --soft moves HEAD only: the working tree keeps the package.json and
+          # release config the steps above prepared, which a hard reset would
+          # put back to the committed versions.
+          git reset --soft "origin/$REF_NAME"
+          echo "moved=true" >> "$GITHUB_OUTPUT"
+
+      - name: Recheck the release on the moved branch
+        id: semantic_recheck
+        if: steps.branch_moved.outputs.moved == 'true'
+        uses: cycjimmy/semantic-release-action@b12c8f6015dc215fe37bc154d4ad456dd3833c90 # v6
+        with:
+          ci: false
+          dry_run: true
+          semantic_version: ${{ inputs.semantic_version }}
+          working_directory: ${{ matrix.app.working_dir }}
+          extra_plugins: |
+            conventional-changelog-conventionalcommits@v7.0.2
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # An empty output means the recheck never started (see the check above),
+      # which leaves the question open — that fails too rather than passing.
+      - name: Fail on a release the moved branch skipped
+        if: |
+          steps.branch_moved.outputs.moved == 'true' &&
+          steps.semantic_recheck.outputs.new_release_published != 'false'
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          APP_NAME: ${{ matrix.app.name }}
+          NEXT_VERSION: ${{ steps.semantic_recheck.outputs.new_release_version }}
+        run: |
+          printf '::error::%s%s%s\n' \
+            "No release was published for ${APP_NAME}: ${REF_NAME} moved while this run was releasing, and semantic-release skips when the local branch is behind the remote.%0A" \
+            "Rechecked on the new head, a release is still owed${NEXT_VERSION:+ (v${NEXT_VERSION})}. The newer push only releases it if it touches the same paths.%0A" \
+            "Re-run this job: it syncs to the current head of ${REF_NAME} before releasing."
+          exit 1
+
+      # ----------------- Backmerge -----------------
+      # The post-release backmerge (backmerge_source → backmerge_target) is NOT
+      # done here anymore. It now runs in the dedicated `backmerge` job below,
+      # which depends on generate_changelog so the changelog commit is already
+      # on backmerge_source (main) before it is merged into backmerge_target
+      # (develop). Running it inline here completes before generate_changelog,
+      # so the target branch never received the changelog. The pre-version
+      # prerelease sync above stays inline — it must happen before version calc.
+
+      # ----------------- Per-leg release publish marker -----------------
+      # Matrix job outputs are last-writer-wins, so we persist each leg's
+      # publish signal (plus version/tag) as an artifact and aggregate
+      # downstream — this keeps new_release_version/new_release_git_tag
+      # consistent with release_published instead of picking them from
+      # whichever leg's job output happens to write last, published or not.
+      - name: Mark publish status
+        if: always()
+        env:
+          SEMANTIC_PUBLISHED: ${{ steps.semantic.outputs.new_release_published }}
+          SEMANTIC_VERSION: ${{ steps.semantic.outputs.new_release_version }}
+          SEMANTIC_TAG: ${{ steps.semantic.outputs.new_release_git_tag }}
+          APP_NAME: ${{ matrix.app.name }}
+          STATUS_DIR: ${{ runner.temp }}/publish-status
+        run: |
+          mkdir -p "$STATUS_DIR"
+          if [[ "$SEMANTIC_PUBLISHED" == "true" ]]; then
+            {
+              echo "true"
+              echo "$SEMANTIC_VERSION"
+              echo "$SEMANTIC_TAG"
+              date +%s%N
+            } > "$STATUS_DIR/${APP_NAME}.txt"
+            echo "✅ ${APP_NAME}: release published"
+          else
+            echo "false" > "$STATUS_DIR/${APP_NAME}.txt"
+            echo "ℹ️ ${APP_NAME}: no release published"
+          fi
+
+      - name: Upload publish status
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: publish-status-${{ matrix.app.name }}
+          path: ${{ runner.temp }}/publish-status/
+          retention-days: 1
+
+  # ----------------- Aggregate publish status across matrix legs -----------------
+  publish_release_status:
+    name: Aggregate Publish Status
+    needs: publish_release
+    if: always() && needs.publish_release.result != 'cancelled'
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    outputs:
+      release_published: ${{ steps.aggregate.outputs.published }}
+      release_version: ${{ steps.aggregate.outputs.version }}
+      release_git_tag: ${{ steps.aggregate.outputs.git_tag }}
+    steps:
+      - name: Download all publish status artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: publish-status-*
+          path: /tmp/publish-status
+          merge-multiple: true
+
+      - name: Aggregate published signal
+        id: aggregate
+        run: |
+          shopt -s nullglob
+          published=false
+          version=""
+          git_tag=""
+          best_ts=-1
+          # Glob order is alphabetical by app name, not matrix execution order,
+          # so pick the leg with the latest recorded timestamp (not the
+          # alphabetically-last filename) to genuinely reflect "last leg that
+          # published wins" when multiple legs publish in the same run.
+          for f in /tmp/publish-status/*.txt; do
+            leg_published="$(sed -n '1p' "$f")"
+            if [[ "$leg_published" == "true" ]]; then
+              published=true
+              leg_ts="$(sed -n '4p' "$f")"
+              leg_ts="${leg_ts:-0}"
+              leg_version="$(sed -n '2p' "$f")"
+              leg_tag="$(sed -n '3p' "$f")"
+              if [[ "$leg_ts" -gt "$best_ts" ]]; then
+                best_ts="$leg_ts"
+                version="$leg_version"
+                git_tag="$leg_tag"
+              fi
+              echo "✅ $(basename "$f" .txt) reported a release (${leg_version})"
+            fi
+          done
+          {
+            echo "published=$published"
+            echo "version=$version"
+            echo "git_tag=$git_tag"
+          } >> "$GITHUB_OUTPUT"
+          if [[ "$published" == "true" ]]; then
+            echo "✅ At least one matrix leg published a release (latest: ${version})"
+          else
+            echo "ℹ️ No release published across matrix legs"
+          fi
+
+  # ----------------- Changelog Generation -----------------
+  generate_changelog:
+    name: Generate Changelog
+    needs: [publish_release, publish_release_status, update_major_tag]
+    if: >-
+      always() &&
+      inputs.enable_changelog &&
+      needs.publish_release_status.outputs.release_published == 'true' &&
+      (needs.update_major_tag.result == 'success' || needs.update_major_tag.result == 'skipped')
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    environment:
+      # `stable` / `rc` / `beta` by ref — see the note on the first environment
+      # block in this file.
+      name: ${{ inputs.environment_name != '' && inputs.environment_name || github.ref == 'refs/heads/main' && 'stable' || github.ref == 'refs/heads/release-candidate' && 'rc' || 'beta' }}
+    steps:
+      - name: Create GitHub App Token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ secrets.LERIAN_STUDIO_MIDAZ_PUSH_BOT_APP_ID }}
+          private-key: ${{ secrets.LERIAN_STUDIO_MIDAZ_PUSH_BOT_PRIVATE_KEY }}
+
+      - name: Generate Changelog
+        uses: LerianStudio/shared-workflows-public/src/changelog/gptchangelog@v1
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          gpg-private-key: ${{ secrets.LERIAN_CI_CD_USER_GPG_KEY }}
+          gpg-passphrase: ${{ secrets.LERIAN_CI_CD_USER_GPG_KEY_PASSWORD }}
+          git-committer-name: ${{ secrets.LERIAN_CI_CD_USER_NAME }}
+          git-committer-email: ${{ secrets.LERIAN_CI_CD_USER_EMAIL }}
+          openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          filter-paths: ${{ inputs.filter_paths }}
+          stable-releases-only: ${{ inputs.stable_releases_only }}
+          openai-model: ${{ inputs.openai_model }}
+          bot-ignore-list: ${{ inputs.changelog_bot_ignore_list }}
+          release-branch: ${{ inputs.changelog_release_branch }}
+
+  # ----------------- Backmerge (post-changelog) -----------------
+  # Runs the post-release backmerge (backmerge_source → backmerge_target) only
+  # AFTER generate_changelog has committed the CHANGELOG to backmerge_source
+  # (main). The backmerge-sync composite fetches origin/<source> fresh, so
+  # ordering this job after the changelog commit is what guarantees the
+  # changelog is carried into backmerge_target (develop). This used to be a
+  # step inside publish_release, which finishes before generate_changelog and
+  # therefore backmerged main WITHOUT the changelog.
+  backmerge:
+    name: Backmerge ${{ inputs.backmerge_source }} → ${{ inputs.backmerge_target }}
+    needs: [publish_release, publish_release_status, update_major_tag, generate_changelog]
+    if: >-
+      always() &&
+      inputs.backmerge_enabled &&
+      needs.publish_release_status.outputs.release_published == 'true' &&
+      github.ref_name == inputs.backmerge_source &&
+      (needs.update_major_tag.result == 'success' || needs.update_major_tag.result == 'skipped') &&
+      (needs.generate_changelog.result == 'success' || needs.generate_changelog.result == 'skipped')
+    runs-on: ${{ inputs.runner_type }}
+    environment:
+      # `stable` / `rc` / `beta` by ref — see the note on the first environment
+      # block in this file.
+      name: ${{ inputs.environment_name != '' && inputs.environment_name || github.ref == 'refs/heads/main' && 'stable' || github.ref == 'refs/heads/release-candidate' && 'rc' || 'beta' }}
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ secrets.LERIAN_STUDIO_MIDAZ_PUSH_BOT_APP_ID }}
+          private-key: ${{ secrets.LERIAN_STUDIO_MIDAZ_PUSH_BOT_PRIVATE_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Import GPG key
+        uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
+        with:
+          gpg_private_key: ${{ secrets.LERIAN_CI_CD_USER_GPG_KEY }}
+          passphrase: ${{ secrets.LERIAN_CI_CD_USER_GPG_KEY_PASSWORD }}
+          git_committer_name: ${{ secrets.LERIAN_CI_CD_USER_NAME }}
+          git_committer_email: ${{ secrets.LERIAN_CI_CD_USER_EMAIL }}
+          git_config_global: true
+          git_user_signingkey: true
+          git_commit_gpgsign: true
+
+      - name: Backmerge ${{ inputs.backmerge_source }} → ${{ inputs.backmerge_target }}
+        uses: LerianStudio/shared-workflows-public/src/config/backmerge-sync@v1
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          source-branch: ${{ inputs.backmerge_source }}
+          target-branch: ${{ inputs.backmerge_target }}
+          mode: ${{ inputs.backmerge_mode }}
+          dry-run: ${{ inputs.dry_run }}
+          commit-message: "chore(release): backmerge ${source} into ${target} [backmerge]"
+          pr-title: "chore(release): backmerge ${source} → ${target} (v${{ needs.publish_release_status.outputs.release_version }}) [backmerge]"
+          git-user-name: ${{ secrets.LERIAN_CI_CD_USER_NAME }}
+          git-user-email: ${{ secrets.LERIAN_CI_CD_USER_EMAIL }}
+
+  # ----------------- Major Tag Update -----------------
+  update_major_tag:
+    name: Update Major Tag
+    needs: [publish_release, publish_release_status]
+    if: inputs.enable_major_tag && needs.publish_release_status.outputs.release_published == 'true'
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    environment:
+      # `stable` / `rc` / `beta` by ref — see the note on the first environment
+      # block in this file.
+      name: ${{ inputs.environment_name != '' && inputs.environment_name || github.ref == 'refs/heads/main' && 'stable' || github.ref == 'refs/heads/release-candidate' && 'rc' || 'beta' }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ secrets.LERIAN_STUDIO_MIDAZ_PUSH_BOT_APP_ID }}
+          private-key: ${{ secrets.LERIAN_STUDIO_MIDAZ_PUSH_BOT_PRIVATE_KEY }}
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Import GPG key
+        uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
+        with:
+          gpg_private_key: ${{ secrets.LERIAN_CI_CD_USER_GPG_KEY }}
+          passphrase: ${{ secrets.LERIAN_CI_CD_USER_GPG_KEY_PASSWORD }}
+          git_committer_name: ${{ secrets.LERIAN_CI_CD_USER_NAME }}
+          git_committer_email: ${{ secrets.LERIAN_CI_CD_USER_EMAIL }}
+          git_config_global: true
+          git_user_signingkey: true
+          git_tag_gpgsign: true
+
+      - name: Update floating major version tag
+        uses: LerianStudio/shared-workflows-public/src/config/update-major-tag@v1
+
+  # ----------------- Enforce GitHub Latest -----------------
+  enforce_latest:
+    name: Enforce Latest Release
+    needs: [publish_release, publish_release_status]
+    if: always() && needs.publish_release_status.outputs.release_published == 'true'
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    permissions:
+      contents: write
+    steps:
+      - name: Re-assert highest stable semver as Latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          highest=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-pre-releases --exclude-drafts \
+            --json tagName --jq '.[].tagName' | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
+          if [ -n "$highest" ]; then
+            echo "::notice::Re-asserting GitHub Latest to highest stable semver: $highest"
+            gh release edit "$highest" --repo "$GITHUB_REPOSITORY" --latest
+          else
+            echo "ℹ️ No stable vX.Y.Z release found — leaving Latest untouched"
+          fi
+
+  # ----------------- Release Announcement -----------------
+  # Announces the published release to the channel owned by the calling
+  # repository. Routing is per-repo: the channel comes from
+  # announcement_slack_channel or the RELEASE_SLACK_CHANNEL variable, and the
+  # webhook from the RELEASE_WEBHOOK_URL (or legacy
+  # RELEASE_WEBHOOK_NOTIFICATION_URL) repository secret. Discord is off by
+  # default in release-notification.yml and is not enabled here; its webhook is
+  # still forwarded because the secrets contract requires every declared secret.
+  announce_release:
+    name: Announce Release
+    needs: [publish_release, publish_release_status, generate_changelog, backmerge, update_major_tag, enforce_latest]
+    if: >-
+      always() &&
+      inputs.enable_release_announcement &&
+      needs.publish_release_status.outputs.release_published == 'true' &&
+      (inputs.announcement_slack_channel != '' || vars.RELEASE_SLACK_CHANNEL != '')
+    uses: ./.github/workflows/release-notification.yml
+    with:
+      product_name: ${{ inputs.announcement_product_name != '' && inputs.announcement_product_name || github.event.repository.name }}
+      slack_channel: ${{ inputs.announcement_slack_channel != '' && inputs.announcement_slack_channel || vars.RELEASE_SLACK_CHANNEL }}
+      release_tag: ${{ needs.publish_release_status.outputs.release_git_tag }}
+      dry_run: ${{ inputs.dry_run }}
+    secrets:
+      APP_ID: ${{ secrets.LERIAN_STUDIO_MIDAZ_PUSH_BOT_APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.LERIAN_STUDIO_MIDAZ_PUSH_BOT_PRIVATE_KEY }}
+      SLACK_WEBHOOK_URL: ${{ secrets.RELEASE_WEBHOOK_URL || secrets.RELEASE_WEBHOOK_NOTIFICATION_URL }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+  # Slack notification
+  notify:
+    name: Notify
+    needs: [prepare, publish_release, publish_release_status, generate_changelog, backmerge, update_major_tag, enforce_latest]
+    if: always() && needs.prepare.outputs.has_changes == 'true'
+    uses: ./.github/workflows/slack-notify.yml
+    with:
+      status: >-
+        ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+            && 'failure' || 'success' }}
+      workflow_name: "Release"
+      failed_jobs: >-
+        ${{ format('{0}{1}{2}{3}{4}',
+          (needs.publish_release.result == 'failure' && 'Publish Release' || ''),
+          (needs.generate_changelog.result == 'failure' && ' / Generate Changelog' || ''),
+          (needs.backmerge.result == 'failure' && ' / Backmerge' || ''),
+          (needs.update_major_tag.result == 'failure' && ' / Update Major Tag' || ''),
+          (needs.enforce_latest.result == 'failure' && ' / Enforce Latest' || '')
+        ) }}
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

@@ -1,0 +1,182 @@
+name: Repository Routines
+
+on:
+  workflow_call:
+    inputs:
+      routine:
+        description: Routine to run (all, branch-cleanup-stale, stale-pr, stale-issue, labels-sync, workflow-runs-cleanup)
+        required: false
+        type: string
+        default: all
+      dry_run:
+        description: Preview changes without applying them
+        required: false
+        type: boolean
+        default: false
+      merged_branch:
+        description: Branch name to delete in merged-PR mode (typically github.head_ref)
+        required: false
+        type: string
+        default: ""
+      branch_stale_days:
+        description: Days without commits before a branch is considered stale
+        required: false
+        type: number
+        default: 20
+      pr_days_before_stale:
+        description: Days of PR inactivity before the stale label is applied
+        required: false
+        type: number
+        default: 20
+      pr_days_before_close:
+        description: Days after a PR is marked stale before it is closed
+        required: false
+        type: number
+        default: 7
+      pr_operations_per_run:
+        description: Maximum API operations per run for stale PR scan
+        required: false
+        type: number
+        default: 60
+      pr_operations_per_run_schedule:
+        description: Maximum API operations per run for stale PR scan when triggered by schedule
+        required: false
+        type: number
+        default: 420
+      issue_days_before_stale:
+        description: Days of issue inactivity before the stale label is applied
+        required: false
+        type: number
+        default: 30
+      issue_days_before_close:
+        description: Days after an issue is marked stale before it is closed
+        required: false
+        type: number
+        default: 7
+      workflow_runs_retention_days:
+        description: Delete workflow runs older than this many days
+        required: false
+        type: number
+        default: 45
+      protected_branches:
+        description: Comma-separated branch patterns to never delete (full override of default)
+        required: false
+        type: string
+        # `tier-*` covers repositories that publish promotion channels as
+        # branches their consumers pin `uses:` to: such a branch only advances
+        # when a promotion is approved, so it can sit past the stale threshold,
+        # and deleting one breaks every consumer pinned to it. Inert for repos
+        # that have no such branches.
+        default: "main,master,develop,release-candidate,hotfix/*,tier-*"
+      extra_protected_branches:
+        description: Comma-separated branch patterns appended to protected_branches
+        required: false
+        type: string
+        default: ""
+
+    secrets:
+      MANAGE_TOKEN:
+        description: >-
+          Token used by the stale routines so their labels and comments are
+          attributed to the Lerian bot identity. Declared so a caller can pass
+          it by name: with nothing in this contract, `secrets: inherit` was the
+          only way to reach it, and that hands every repository and
+          organization secret to this workflow and to everything it calls.
+          Optional — the routines fall back to their own GITHUB_TOKEN.
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+
+jobs:
+  # ----------------- Branch Cleanup -----------------
+
+  branch_cleanup_merged:
+    name: Delete merged branch
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && inputs.merged_branch != ''
+    uses: LerianStudio/shared-workflows-public/.github/workflows/branch-cleanup.yml@v1.28.12
+    with:
+      merged_branch: ${{ inputs.merged_branch }}
+      protected_branches: ${{ inputs.extra_protected_branches != '' && format('{0},{1}', inputs.protected_branches, inputs.extra_protected_branches) || inputs.protected_branches }}
+      dry_run: false
+
+  branch_cleanup_stale:
+    name: Clean stale branches
+    if: |
+      github.event_name == 'schedule'
+      || (github.event_name == 'workflow_dispatch' && (inputs.routine == 'all' || inputs.routine == 'branch-cleanup-stale'))
+    uses: LerianStudio/shared-workflows-public/.github/workflows/branch-cleanup.yml@v1.28.12
+    with:
+      stale_days: ${{ inputs.branch_stale_days }}
+      protected_branches: ${{ inputs.extra_protected_branches != '' && format('{0},{1}', inputs.protected_branches, inputs.extra_protected_branches) || inputs.protected_branches }}
+      dry_run: ${{ inputs.dry_run }}
+
+  # ----------------- Stale PRs -----------------
+
+  stale_pr:
+    name: Close stale PRs
+    if: |
+      github.event_name == 'schedule'
+      || (github.event_name == 'workflow_dispatch' && (inputs.routine == 'all' || inputs.routine == 'stale-pr'))
+    uses: LerianStudio/shared-workflows-public/.github/workflows/stale-pr.yml@v1.28.12
+    with:
+      days_before_stale: ${{ inputs.pr_days_before_stale }}
+      days_before_close: ${{ inputs.pr_days_before_close }}
+      operations_per_run: ${{ github.event_name == 'schedule' && inputs.pr_operations_per_run_schedule || inputs.pr_operations_per_run }}
+      dry_run: ${{ inputs.dry_run }}
+    # `inherit` rather than `MANAGE_TOKEN: ...` by name: the reference above is
+    # pinned to a release that predates the secret's declaration in that
+    # workflow, and naming a secret the called workflow does not declare fails
+    # the run before it starts. What `inherit` forwards from here is only as
+    # wide as what the caller handed over: pass MANAGE_TOKEN by name and this
+    # workflow holds only that, and only that reaches the child. Switch this to
+    # the named form once the pin moves past the release carrying the contract.
+    secrets: inherit
+
+  # ----------------- Stale Issues -----------------
+
+  stale_issue:
+    name: Close stale issues
+    if: |
+      github.event_name == 'schedule'
+      || (github.event_name == 'workflow_dispatch' && (inputs.routine == 'all' || inputs.routine == 'stale-issue'))
+    uses: LerianStudio/shared-workflows-public/.github/workflows/stale-issue.yml@v1.28.12
+    with:
+      days_before_stale: ${{ inputs.issue_days_before_stale }}
+      days_before_close: ${{ inputs.issue_days_before_close }}
+      dry_run: ${{ inputs.dry_run }}
+    # `inherit` rather than `MANAGE_TOKEN: ...` by name: the reference above is
+    # pinned to a release that predates the secret's declaration in that
+    # workflow, and naming a secret the called workflow does not declare fails
+    # the run before it starts. What `inherit` forwards from here is only as
+    # wide as what the caller handed over: pass MANAGE_TOKEN by name and this
+    # workflow holds only that, and only that reaches the child. Switch this to
+    # the named form once the pin moves past the release carrying the contract.
+    secrets: inherit
+
+  # ----------------- Labels Sync -----------------
+
+  labels_sync:
+    name: Sync labels
+    if: |
+      github.event_name == 'push'
+      || github.event_name == 'schedule'
+      || (github.event_name == 'workflow_dispatch' && (inputs.routine == 'all' || inputs.routine == 'labels-sync'))
+    uses: LerianStudio/shared-workflows-public/.github/workflows/labels-sync.yml@v1.28.12
+    with:
+      dry_run: ${{ inputs.dry_run }}
+
+  # ----------------- Workflow Runs Cleanup -----------------
+
+  workflow_runs_cleanup:
+    name: Delete old workflow runs
+    if: |
+      github.event_name == 'schedule'
+      || (github.event_name == 'workflow_dispatch' && (inputs.routine == 'all' || inputs.routine == 'workflow-runs-cleanup'))
+    uses: LerianStudio/shared-workflows-public/.github/workflows/workflow-runs-cleanup.yml@v1.28.12
+    with:
+      retention_days: ${{ inputs.workflow_runs_retention_days }}
+      dry_run: ${{ inputs.dry_run }}

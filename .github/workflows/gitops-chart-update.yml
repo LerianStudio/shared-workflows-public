@@ -1,0 +1,137 @@
+name: "GitOps Chart Update"
+
+# The chart-version counterpart of gitops-update.yml. That one owns the image
+# tag in values.yaml; this one owns the release `version` in helmfile.yaml. Both
+# read the same config/deployment-matrix.yml, so cluster topology keeps a single
+# source of truth.
+#
+# Called by the chart repository release, once per published chart.
+
+on:
+  workflow_call:
+    inputs:
+      chart_name:
+        description: "Chart name, also the key used in the deployment matrix (e.g. midaz)."
+        type: string
+        required: true
+      chart_version:
+        description: "The version just published (e.g. 9.1.0, 3.2.0-beta.1)."
+        type: string
+        required: true
+      chart_ref:
+        description: "Full OCI reference. Only releases on this exact chart are touched, which stops an alpha/ pin being overwritten with the stable line."
+        type: string
+        required: true
+      gitops_repository:
+        description: "GitOps repo (org/repo). Empty uses the GITOPS_REPOSITORY org variable."
+        type: string
+        default: ''
+      deployment_matrix_ref:
+        description: "Ref of this repository to read the deployment matrix from."
+        type: string
+        default: 'main'
+      envs:
+        description: "Narrow the environment list. Space separated, e.g. dev stg. Empty means every environment."
+        type: string
+        default: ''
+      fail_on_orphan:
+        description: >-
+          Fail, rather than only report, when an environment sets a key the
+          chart does not declare. Off by default: see the composite's README
+          for why the check cannot currently tell a dropped key from one a
+          library consumes.
+        type: boolean
+        default: false
+      dry_run:
+        description: "Resolve and run both gates, then stop. Nothing is committed, pushed or opened as a pull request."
+        type: boolean
+        default: false
+      enable_argocd_sync:
+        description: "Sync the affected ArgoCD applications after a direct commit and wait for them to report healthy. Set to false to write to git and let ArgoCD reconcile on its own schedule."
+        type: boolean
+        default: true
+      argocd_sync_timeout:
+        description: "Seconds to wait for each application to become healthy."
+        type: number
+        default: 600
+    secrets:
+      MANAGE_TOKEN:
+        description: "Write access to the GitOps repository; the same secret the image-tag path uses."
+        required: true
+      LERIAN_CI_CD_USER_GPG_KEY:
+        required: true
+      LERIAN_CI_CD_USER_GPG_KEY_PASSWORD:
+        required: true
+      LERIAN_CI_CD_USER_NAME:
+        required: true
+      LERIAN_CI_CD_USER_EMAIL:
+        required: true
+      ARGOCD_TOKEN:
+        description: "Only read when enable_argocd_sync is true."
+        required: false
+    outputs:
+      has_changes:
+        description: "String boolean: 'true' when at least one pinned version changed."
+        value: ${{ jobs.chart_update.outputs.has_changes }}
+      level:
+        description: "Most restrictive transition across every environment touched."
+        value: ${{ jobs.chart_update.outputs.level }}
+      synced:
+        description: "String boolean: 'true' when every affected ArgoCD application reported healthy."
+        value: ${{ jobs.chart_update.outputs.synced }}
+
+permissions:
+  contents: read
+
+jobs:
+  chart_update:
+    # GITOPS_RUNNERS, not the general pool: the ArgoCD this syncs against
+    # resolves to a private address (10.123.10.12) on the on-prem cluster,
+    # which a hosted runner cannot reach — the sync times out after the
+    # commit has already landed. gitops-update.yml resolves its runner the
+    # same way for the same reason.
+    runs-on: ${{ vars.GITOPS_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
+    outputs:
+      has_changes: ${{ steps.update.outputs.has-changes }}
+      level: ${{ steps.update.outputs.level }}
+      synced: ${{ steps.update.outputs.synced }}
+    steps:
+      # ----------------- Preflight -----------------
+      # The fallback above is a hosted runner, which cannot reach an ArgoCD on a
+      # private address. Without this the run would resolve, gate, commit, and
+      # only then time out on the sync — reporting failure over a change that
+      # had already landed, which is the worst shape this failure can take.
+      # Fail here instead, before anything is written.
+      # Not on a dry run: the composite skips both delivery and the sync there,
+      # so nothing is written and nothing is synced. Failing a preview because
+      # the sync runner is absent would block the one mode that exists to be
+      # safe to run anywhere.
+      - name: Refuse to sync from a runner that cannot reach ArgoCD
+        if: inputs.enable_argocd_sync && !inputs.dry_run && vars.GITOPS_RUNNERS == ''
+        shell: bash
+        run: |
+          echo "::error::enable_argocd_sync is on but the GITOPS_RUNNERS variable is unset, so this job is running on the hosted fallback. ArgoCD is reachable only from the self-hosted pool. Set GITOPS_RUNNERS, or pass enable_argocd_sync: false and let ArgoCD reconcile on its own."
+          exit 1
+
+      # ----------------- Chart Update -----------------
+      - name: Update the pinned chart version
+        id: update
+        uses: LerianStudio/shared-workflows-public/src/deploy/gitops-chart-update@v1
+        with:
+          chart-name: ${{ inputs.chart_name }}
+          chart-version: ${{ inputs.chart_version }}
+          chart-ref: ${{ inputs.chart_ref }}
+          gitops-repository: ${{ inputs.gitops_repository || vars.GITOPS_REPOSITORY }}
+          gitops-token: ${{ secrets.MANAGE_TOKEN }}
+          gpg-private-key: ${{ secrets.LERIAN_CI_CD_USER_GPG_KEY }}
+          gpg-passphrase: ${{ secrets.LERIAN_CI_CD_USER_GPG_KEY_PASSWORD }}
+          git-user-name: ${{ secrets.LERIAN_CI_CD_USER_NAME }}
+          git-user-email: ${{ secrets.LERIAN_CI_CD_USER_EMAIL }}
+          deployment-matrix-ref: ${{ inputs.deployment_matrix_ref }}
+          target-envs: ${{ inputs.envs }}
+          fail-on-orphan: ${{ inputs.fail_on_orphan }}
+          dry-run: ${{ inputs.dry_run }}
+          enable-argocd-sync: ${{ inputs.enable_argocd_sync }}
+          argocd-url: ${{ vars.ARGOCD_URL }}
+          argocd-token: ${{ secrets.ARGOCD_TOKEN }}
+          argocd-sync-timeout: ${{ inputs.argocd_sync_timeout }}

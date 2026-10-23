@@ -1,0 +1,54 @@
+name: Self — Repository Routines
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  pull_request:
+    types: [closed]
+  push:
+    branches: [main]
+    paths:
+      - .github/labels.yml
+  workflow_dispatch:
+    inputs:
+      routine:
+        description: Routine to run
+        type: choice
+        options:
+          - all
+          - branch-cleanup-stale
+          - stale-pr
+          - stale-issue
+          - labels-sync
+          - workflow-runs-cleanup
+        default: all
+      dry_run:
+        description: Preview changes without applying them
+        type: boolean
+        default: true
+      protected_branches:
+        description: Comma-separated branch patterns to never delete (full override of default)
+        type: string
+        default: "main,master,develop,release-candidate,hotfix/*,tier-*"
+      extra_protected_branches:
+        description: Comma-separated branch patterns appended to protected_branches
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+
+jobs:
+  routine:
+    uses: ./.github/workflows/routine.yml
+    with:
+      routine: ${{ inputs.routine || 'all' }}
+      dry_run: ${{ inputs.dry_run || false }}
+      merged_branch: ${{ github.head_ref }}
+      protected_branches: ${{ inputs.protected_branches || 'main,master,develop,release-candidate,hotfix/*,tier-*' }}
+      extra_protected_branches: ${{ inputs.extra_protected_branches || '' }}
+    secrets:
+      MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}

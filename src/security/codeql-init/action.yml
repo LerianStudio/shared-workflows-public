@@ -1,0 +1,25 @@
+name: CodeQL Init
+description: Initialize CodeQL analysis for specified languages with configurable query suite
+
+inputs:
+  languages:
+    description: 'Languages to analyze (comma-separated, e.g., actions, javascript-typescript, go)'
+    required: true
+  queries:
+    description: 'Query suite to use (security-standard, security-extended, security-and-quality)'
+    required: false
+    default: 'security-extended'
+  config-file:
+    description: 'Path to CodeQL configuration file'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+      with:
+        languages: ${{ inputs.languages }}
+        queries: ${{ inputs.queries }}
+        config-file: ${{ inputs.config-file || '' }}

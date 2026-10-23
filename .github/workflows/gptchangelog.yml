@@ -1,0 +1,185 @@
+name: "GPT Changelog"
+
+# Thin caller over `src/changelog/gptchangelog`, which is where the changelog logic
+# actually lives (stability gate, release-line resolution, bot filtering, contributor
+# resolution via the commit->login API, monorepo tag patterns, the CHANGELOG commit).
+#
+# This workflow used to carry an inlined fork of an earlier version of that logic and had
+# drifted badly: its stability gate still asked the API for the DEFAULT branch and rejected
+# any tag commit not contained in it, with no `maintenance/*` / `release/*` fallback. That
+# premise is silently wrong for repositories that keep `develop` as the default and cut
+# stable on `main`, and for any patch cut from an older minor — the job exits `success` and
+# the release is published with an empty body. See issues #851 / #853 / #854.
+#
+# The `workflow_call` inputs below are kept as the public surface so existing callers need
+# no change; three of them are no-ops and documented as such.
+
+on:
+  workflow_call:
+    inputs:
+      runner_type:
+        description: 'Runner to use for the workflow'
+        type: string
+        default: 'blacksmith'
+      filter_paths:
+        description: 'Newline-separated list of path prefixes to filter. If not provided, treats as single app repo.'
+        type: string
+        required: false
+        default: ''
+      shared_paths:
+        description: 'DEPRECATED — no-op. Kept for compatibility. App selection comes from which stable tags exist on the release line, not from changed files.'
+        type: string
+        required: false
+        default: ''
+      path_level:
+        description: 'DEPRECATED — no-op. Kept for compatibility. App names are derived from the basename of each entry in filter_paths.'
+        type: string
+        default: '2'
+      stable_releases_only:
+        description: 'Only generate changelogs for stable releases (skip beta/rc/alpha tags)'
+        type: boolean
+        default: true
+      openai_model:
+        description: 'Model to use for changelog generation (OpenRouter format)'
+        type: string
+        default: 'openai/gpt-4o'
+      max_context_tokens:
+        description: 'DEPRECATED — no-op. Kept for compatibility; it has never been wired to the API call.'
+        type: string
+        default: '80000'
+      changelog_release_branch:
+        description: |
+          Branch whose tags get a changelog. Empty derives it from the run: the branch that
+          triggered the release, falling back to searching which branch contains the tag
+          commit for tag-triggered runs. Set it only for layouts neither step can infer.
+          A value that does not exist on origin fails the job.
+        type: string
+        required: false
+        default: ''
+      bot_ignore_list:
+        description: |
+          Additional space-separated GitHub login substrings to treat as bots and exclude
+          from the changelog. Logins ending in [bot] are always excluded regardless.
+        type: string
+        required: false
+        default: ''
+      backmerge_enabled:
+        description: 'Backmerge the release line into backmerge_target after the CHANGELOG is committed. Skipped when the target branch does not exist.'
+        type: boolean
+        default: true
+      backmerge_target:
+        description: 'Branch to backmerge the release line into.'
+        type: string
+        default: 'develop'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  generate_changelog:
+    name: Generate Consolidated Changelog
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    outputs:
+      has_changes: ${{ steps.changelog.outputs.has-changes }}
+
+    steps:
+      - name: Create GitHub App Token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        id: app-token
+        with:
+          client-id: ${{ secrets.LERIAN_STUDIO_MIDAZ_PUSH_BOT_APP_ID }}
+          private-key: ${{ secrets.LERIAN_STUDIO_MIDAZ_PUSH_BOT_PRIVATE_KEY }}
+
+      # Checks out the repository, runs the stability gate, generates the per-app
+      # CHANGELOGs, updates the GitHub Release notes and pushes the CHANGELOG commit to the
+      # resolved release line. It also imports the GPG key, so the backmerge step below
+      # inherits signed commits.
+      - name: Generate changelog
+        id: changelog
+        uses: LerianStudio/shared-workflows-public/src/changelog/gptchangelog@v1
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          gpg-private-key: ${{ secrets.LERIAN_CI_CD_USER_GPG_KEY }}
+          gpg-passphrase: ${{ secrets.LERIAN_CI_CD_USER_GPG_KEY_PASSWORD }}
+          git-committer-name: ${{ secrets.LERIAN_CI_CD_USER_NAME }}
+          git-committer-email: ${{ secrets.LERIAN_CI_CD_USER_EMAIL }}
+          openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          filter-paths: ${{ inputs.filter_paths }}
+          stable-releases-only: ${{ inputs.stable_releases_only }}
+          openai-model: ${{ inputs.openai_model }}
+          release-branch: ${{ inputs.changelog_release_branch }}
+          bot-ignore-list: ${{ inputs.bot_ignore_list }}
+
+      # backmerge-sync fails hard when either branch is missing, so resolve and probe first:
+      # most callers have no `develop` and must skip, not fail.
+      - name: Resolve backmerge branches
+        id: backmerge-scope
+        if: inputs.backmerge_enabled && steps.changelog.outputs.apps-updated != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          RELEASE_LINE: ${{ steps.changelog.outputs.release-line }}
+          TARGET_BRANCH: ${{ inputs.backmerge_target }}
+        run: |
+          # `backmerge_target` is caller-supplied and reaches git unquoted-by-convention
+          # below; reject anything that is not a branch name before it gets there.
+          if ! git check-ref-format --branch "$TARGET_BRANCH" >/dev/null 2>&1; then
+            echo "❌ Invalid backmerge_target: '$TARGET_BRANCH'"
+            exit 1
+          fi
+
+          SOURCE_BRANCH="$RELEASE_LINE"
+          if [ -z "$SOURCE_BRANCH" ]; then
+            SOURCE_BRANCH=$(gh repo view --json defaultBranchRef -q '.defaultBranchRef.name')
+            echo "📌 No release line reported by the gate — falling back to the default branch: $SOURCE_BRANCH"
+          fi
+
+          if [ "$SOURCE_BRANCH" = "$TARGET_BRANCH" ]; then
+            echo "✅ Release line is already $TARGET_BRANCH — nothing to backmerge"
+            echo "should_sync=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Full ref, not `--heads <pattern>`: ls-remote matches patterns against the TAIL
+          # of a ref name, so `develop` also matches `refs/heads/feature/develop` and the
+          # probe would wave through a branch backmerge-sync then fails to find.
+          if ! git ls-remote --exit-code origin "refs/heads/$TARGET_BRANCH" >/dev/null 2>&1; then
+            echo "⚠️ No $TARGET_BRANCH branch on origin — skipping backmerge"
+            echo "should_sync=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "📌 Backmerging $SOURCE_BRANCH → $TARGET_BRANCH"
+          echo "source_branch=$SOURCE_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "should_sync=true" >> "$GITHUB_OUTPUT"
+
+      - name: Backmerge release line into ${{ inputs.backmerge_target }}
+        if: steps.backmerge-scope.outputs.should_sync == 'true'
+        uses: LerianStudio/shared-workflows-public/src/config/backmerge-sync@v1
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          source-branch: ${{ steps.backmerge-scope.outputs.source_branch }}
+          target-branch: ${{ inputs.backmerge_target }}
+          # A conflict opens a PR instead of failing the release: the inline version this
+          # replaced exited 1 and left the backmerge for someone to notice.
+          mode: direct-with-pr-fallback
+          commit-message: "chore(changelog): backmerge ${source} into ${target} [backmerge]"
+          pr-title: "chore(changelog): backmerge ${source} → ${target} [backmerge]"
+          git-user-name: ${{ secrets.LERIAN_CI_CD_USER_NAME }}
+          git-user-email: ${{ secrets.LERIAN_CI_CD_USER_EMAIL }}
+
+  # Slack notification for workflow status
+  notify:
+    name: Notify
+    needs: [generate_changelog]
+    # `has_changes` is only published once the composite reaches its matrix step, so a job
+    # that dies earlier (app token, or the release-branch override failing the gate) would
+    # report nothing at all — which is precisely when the notification matters.
+    if: always() && (needs.generate_changelog.result == 'failure' || needs.generate_changelog.outputs.has_changes == 'true')
+    uses: ./.github/workflows/slack-notify.yml
+    with:
+      status: ${{ needs.generate_changelog.result }}
+      workflow_name: "GPT Changelog"
+      failed_jobs: ${{ needs.generate_changelog.result == 'failure' && 'Generate Changelog' || '' }}
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

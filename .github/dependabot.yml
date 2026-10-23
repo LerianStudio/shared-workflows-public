@@ -1,0 +1,150 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    # The github-actions ecosystem only honors `directory: "/"` — Dependabot
+    # scans `.github/workflows/` and the root-level action.yml, and ignores any
+    # other path or glob. Composites under `src/**/action.yml` are NOT monitored
+    # by this config; their action versions require a separate drift check.
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "America/Sao_Paulo"
+    target-branch: "develop"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    open-pull-requests-limit: 15
+    # Reviewers are resolved via CODEOWNERS (the `reviewers` field is deprecated).
+    # `semver-major-days` is not supported for the github-actions ecosystem;
+    # only `default-days` is honored here.
+    cooldown:
+      default-days: 3
+    ignore:
+      # LerianStudio internal actions follow our own pinning strategy:
+      # composites use floating @vN (auto-track minor/patch), reusable workflows
+      # use exact @vN.M.P. Dependabot opt-out — bumps handled via release tooling.
+      - dependency-name: "LerianStudio/*"
+    groups:
+      # Core GitHub-provided actions (checkout, setup-*, upload/download-artifact, etc.).
+      # Specific actions/* entries owned by semantic groups below are excluded so
+      # Dependabot routes them to their intended group instead of this catch-all.
+      actions-core:
+        patterns:
+          - "actions/*"
+        exclude-patterns:
+          - "actions/dependency-review-action"
+          - "actions/create-github-app-token"
+          - "actions/labeler"
+          - "actions/github-script"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+
+      # Docker build and registry actions
+      docker:
+        patterns:
+          - "docker/*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+
+      # GitHub-owned security and analysis actions (CodeQL, dependency-review)
+      github-security:
+        patterns:
+          - "github/codeql-action*"
+          - "actions/dependency-review-action"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+
+      # Third-party security scanning tools
+      security-scanners:
+        patterns:
+          - "aquasecurity/trivy-action"
+          - "securego/gosec"
+          - "sonatype-nexus-community/nancy-github-action"
+          - "trufflesecurity/trufflehog"
+          - "anchore/sbom-action"
+          - "sigstore/cosign-installer"
+          # Only reachable if SocketDev/action is ever referenced from a workflow;
+          # its current use is in src/security/socket-firewall, which the
+          # github-actions ecosystem does not scan (see note at the top).
+          - "SocketDev/action"
+        update-types:
+          - "minor"
+          - "patch"
+
+      # Go ecosystem tooling
+      go-tooling:
+        patterns:
+          - "golangci/golangci-lint-action"
+          - "goreleaser/goreleaser-action"
+          - "fgrosse/go-coverage-report"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+
+      # Release and versioning actions
+      release:
+        patterns:
+          - "cycjimmy/semantic-release-action"
+          - "crazy-max/ghaction-import-gpg"
+          - "actions/create-github-app-token"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+
+      # Notification actions (Slack, Discord)
+      notifications:
+        patterns:
+          - "rtCamp/action-slack-notify"
+          - "SethCohen/github-releases-to-discord"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+
+      # AWS actions (OIDC, credentials, S3)
+      aws:
+        patterns:
+          - "aws-actions/*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+
+      # Linting and code quality actions
+      linting:
+        patterns:
+          - "ibiqlik/action-yamllint"
+          - "raven-actions/actionlint"
+          - "crate-ci/typos"
+          - "tcort/github-action-markdown-link-check"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+
+      # Miscellaneous third-party utilities
+      utilities:
+        patterns:
+          - "amannn/action-semantic-pull-request"
+          - "actions/labeler"
+          - "actions/github-script"
+          - "mikefarah/yq"
+          - "crazy-max/ghaction-github-labeler"
+          - "Mattraks/delete-workflow-runs"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"

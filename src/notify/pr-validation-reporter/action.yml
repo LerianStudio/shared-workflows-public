@@ -1,0 +1,193 @@
+name: PR Validation Reporter
+description: Posts a single mergeability summary comment aggregating all PR validation check results, updating it on subsequent runs.
+
+inputs:
+  github-token:
+    description: GitHub token with pull-requests:write and issues:write permissions
+    required: true
+  source-branch-result:
+    description: Result of source branch validation (success/failure/skipped)
+    required: false
+    default: "skipped"
+  title-result:
+    description: Result of PR title validation (success/failure/skipped)
+    required: false
+    default: "skipped"
+  description-result:
+    description: Result of PR description validation (success/failure/skipped)
+    required: false
+    default: "skipped"
+  size-result:
+    description: Result of PR size check (success/failure/skipped)
+    required: false
+    default: "skipped"
+  label-result:
+    description: Result of auto-label step (success/failure/skipped)
+    required: false
+    default: "skipped"
+  metadata-result:
+    description: Result of PR metadata check (success/failure/skipped)
+    required: false
+    default: "skipped"
+  commit-signatures-result:
+    description: Result of commit signature validation (success/failure/skipped)
+    required: false
+    default: "skipped"
+  commit-signatures-detail:
+    description: >-
+      Rendered Markdown listing the offending commits, from the pr-commit-signatures
+      `findings-markdown` output. Embedded under the summary table when the check failed, so the
+      commits are clickable where the verdict is read instead of only inside the job summary.
+    required: false
+    default: ""
+  breaking-change-result:
+    description: Result of breaking change guard (success/failure/cancelled/skipped)
+    required: false
+    default: skipped
+  blocking-checks-result:
+    description: Runtime result of the blocking checks job
+    required: false
+    default: skipped
+  dry-run:
+    description: When true, skip posting the summary comment
+    required: false
+    default: "false"
+
+outputs:
+  has-breaking-change-guard:
+    description: Whether the breaking change guard result was reported (true/false)
+    value: ${{ steps.guard-state.outputs.has-breaking-change-guard }}
+  has-blocking-checks-runtime-failure:
+    description: Whether the blocking checks runtime result is non-success and non-skipped (true/false)
+    value: ${{ steps.guard-state.outputs.has-blocking-checks-runtime-failure }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve breaking change guard state
+      id: guard-state
+      shell: bash
+      env:
+        BREAKING_CHANGE_RESULT: ${{ inputs.breaking-change-result }}
+        BLOCKING_CHECKS_RESULT: ${{ inputs.blocking-checks-result }}
+      run: |
+        set -euo pipefail
+        if [ "$BREAKING_CHANGE_RESULT" != "skipped" ]; then
+          echo "has-breaking-change-guard=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "has-breaking-change-guard=false" >> "$GITHUB_OUTPUT"
+        fi
+        if [ "$BLOCKING_CHECKS_RESULT" != "success" ] && [ "$BLOCKING_CHECKS_RESULT" != "skipped" ]; then
+          echo "has-blocking-checks-runtime-failure=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "has-blocking-checks-runtime-failure=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Post PR validation summary
+      if: inputs.dry-run != 'true'
+      uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+      env:
+        SOURCE_BRANCH_RESULT: ${{ inputs.source-branch-result }}
+        TITLE_RESULT: ${{ inputs.title-result }}
+        DESCRIPTION_RESULT: ${{ inputs.description-result }}
+        SIZE_RESULT: ${{ inputs.size-result }}
+        LABEL_RESULT: ${{ inputs.label-result }}
+        METADATA_RESULT: ${{ inputs.metadata-result }}
+        COMMIT_SIGNATURES_RESULT: ${{ inputs.commit-signatures-result }}
+        COMMIT_SIGNATURES_DETAIL: ${{ inputs.commit-signatures-detail }}
+        BREAKING_CHANGE_RESULT: ${{ inputs.breaking-change-result }}
+        BLOCKING_CHECKS_RESULT: ${{ inputs.blocking-checks-result }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const checks = [
+            { label: 'Source Branch',  result: process.env.SOURCE_BRANCH_RESULT, blocking: true  },
+            { label: 'PR Title',       result: process.env.TITLE_RESULT,         blocking: true  },
+            { label: 'PR Description', result: process.env.DESCRIPTION_RESULT,   blocking: true  },
+            ...(process.env.COMMIT_SIGNATURES_RESULT !== 'skipped'
+              ? [{ label: 'Commit Signatures', result: process.env.COMMIT_SIGNATURES_RESULT, blocking: true }]
+              : []),
+            { label: 'PR Size',        result: process.env.SIZE_RESULT,          blocking: false },
+            { label: 'Auto Labels',    result: process.env.LABEL_RESULT,         blocking: false },
+            { label: 'PR Metadata',    result: process.env.METADATA_RESULT,      blocking: false },
+          ];
+
+          if (process.env.BLOCKING_CHECKS_RESULT !== 'success' &&
+              process.env.BLOCKING_CHECKS_RESULT !== 'skipped') {
+            checks.splice(3, 0, {
+              label: 'Blocking Checks Runtime',
+              result: process.env.BLOCKING_CHECKS_RESULT,
+              blocking: true,
+              strict: true,
+            });
+          }
+
+          if (process.env.BREAKING_CHANGE_RESULT !== 'skipped') {
+            checks.splice(3, 0, {
+              label: 'Breaking Change Guard',
+              result: process.env.BREAKING_CHANGE_RESULT,
+              blocking: true,
+              strict: true,
+            });
+          }
+
+          const icon = (r) => ({ success: '✅', failure: '❌', skipped: '⏭️' }[r] ?? '⚠️');
+
+          const blockingFailures = checks.filter(c =>
+            c.blocking && (c.strict ? c.result !== 'success' : c.result === 'failure')
+          );
+          const verdictHeader = blockingFailures.length > 0
+            ? `## 🚫 PR Blocked — ${blockingFailures.length} blocking failure${blockingFailures.length === 1 ? '' : 's'}\n\n`
+            : `## ✅ PR Mergeable — no blocking failures\n\n`;
+
+          let table = '| Check | Status | Blocking |\n|-------|--------|----------|\n';
+          for (const c of checks) {
+            table += `| ${c.label} | ${icon(c.result)} ${c.result} | ${c.blocking ? 'yes' : 'no'} |\n`;
+          }
+          table += '\n';
+
+          const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+          const marker = '<!-- pr-validation-report -->';
+          let body = `${marker}\n`;
+          body += `## 🔍 PR Validation Summary\n\n`;
+          body += verdictHeader;
+          body += table;
+
+          // Detail for the one check whose failure is not self-explanatory from a status
+          // word: which commits, and a link to each. Rendered upstream so this reporter
+          // stays a formatter and does not re-query the API.
+          const signatureDetail = (process.env.COMMIT_SIGNATURES_DETAIL || '').trim();
+          if (signatureDetail && process.env.COMMIT_SIGNATURES_RESULT === 'failure') {
+            body += `<details open>\n<summary><strong>Commit Signatures</strong></summary>\n\n`;
+            body += `${signatureDetail}\n\n`;
+            body += `</details>\n\n`;
+          }
+
+          if (blockingFailures.length > 0) {
+            body += `> Fix the blocking checks above before merge.\n\n`;
+          }
+          body += `---\n<sub>🔍 [View workflow run](${runUrl})</sub>\n`;
+
+          const viewerLogin = await github.rest.users.getAuthenticated()
+            .then(({ data }) => data.login)
+            .catch(() => null);
+
+          const comments = await github.paginate(github.rest.issues.listComments, {
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            per_page: 100,
+          });
+
+          const marked = comments.filter(c => c.body?.includes(marker));
+          const existing = viewerLogin
+            ? marked.find(c => c.user?.login === viewerLogin)
+            : marked.find(c => c.user?.type === 'Bot');
+          const params = { owner: context.repo.owner, repo: context.repo.repo, body };
+
+          if (existing) {
+            await github.rest.issues.updateComment({ ...params, comment_id: existing.id });
+          } else {
+            await github.rest.issues.createComment({ ...params, issue_number: context.issue.number });
+          }

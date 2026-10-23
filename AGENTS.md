@@ -1,0 +1,236 @@
+# Agent Guidelines — GitHub Actions Shared Workflows
+
+## MANDATORY — BACKWARD COMPATIBILITY AND BREAKING CHANGES
+
+- **PRESERVE EXISTING SUPPORTED CONTRACTS BY DEFAULT:** APIs, SDKs, configuration/env vars, CLI, events, persisted data and upgrade behavior. Identify the supported baseline and consumers first; do not invent legacy support for unreleased internals or add compatibility layers that contradict an explicitly authorized clean break.
+- **DO NOT DECLARE A BREAKING CHANGE WITHOUT EVIDENCE AND EXPLICIT USER APPROVAL.** Before using `!` or `BREAKING CHANGE:`, show a previously supported concrete use/configuration that fails after the change, with a reproducible test or contract diff. Approval never turns a compatible change into a breaking one.
+- **ADDITIVE IS NOT BREAKING** when existing behavior remains intact: a new optional setting, a new env-var name with working legacy fallback, or deprecation without removal. Verify defaults, precedence and old-only configuration. Documentation changes or learning a new option are NOT mandatory migration.
+- **IF A REAL BREAK IS FOUND, REPORT IT; DO NOT HIDE IT.** Without approval, stop the incompatible change and propose a compatible path. Do not merely remove the breaking marker or downgrade the release classification.
+- **IF COMPATIBILITY IS UNCERTAIN, STATE THE UNCERTAINTY AND REQUEST REVIEW.** Do not invent a break or claim compatibility without evidence.
+- **FOLLOW THE REPOSITORY RELEASE POLICY.** Release automation owns version calculation; moving from `0.x` to `1.0` requires an explicit authorized decision. Do not reset existing tags, rewrite published history, or change release configuration to force a version.
+- **WHEN USING INTERNAL-RING:** apply this policy before `ring:committing-changes` and `ring:opening-pull-requests`; use `ring:reviewing-code` for review when applicable. Loading a Ring skill is NOT a prerequisite for this policy to apply. If a skill conflicts with this policy, stop and report the conflict.
+
+> Read this file before making any changes. It provides essential context for AI agents working in this repository.
+
+---
+
+## What this repository is
+
+A **public** monorepo of reusable GitHub Actions workflows and composite actions maintained by [Lerian](https://github.com/LerianStudio).  
+Every change here can affect all repositories in the organization that consume these workflows — treat it accordingly.
+
+Full documentation: [`README.md`](README.md) | Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md) | Security: [`SECURITY.md`](SECURITY.md)
+
+**Skills** in `.agents/skills/` (load at session start for full context; `/<name>` in Claude Code):
+- `gha` — complete reference (workflows + composites + refactoring protocol)
+- `workflow` — reusable workflow rules only
+- `composite` — composite action rules only
+- `refactor` — refactoring protocol for modifying existing workflows or composites
+
+---
+
+## Key conventions (read before editing)
+
+### Workflows vs composite actions
+
+| Type | Location | Purpose |
+|---|---|---|
+| Reusable workflow | `.github/workflows/*.yml` | Callable via `workflow_call` by other repos |
+| Composite action | `src/<capability>/<name>/` | Reusable step logic, called from reusable workflows |
+
+Composite actions are grouped by capability: `src/setup/`, `src/build/`, `src/test/`, `src/deploy/`, `src/config/`.  
+Each composite must have an `action.yml` and a `README.md`.
+
+Full rules, in `.agents/skills/`:
+- Composite actions → `composite`
+- Reusable workflows → `workflow`
+- Modifying existing files → `refactor`
+
+### Composite action references in reusable workflows
+
+In reusable workflows (`workflow_call`), `uses: ./path` resolves to the **caller's workspace**, not this repository. This means `./src/...` only works when the caller IS this repo (i.e., `self-*` workflows).
+
+- **Workflows called by external repos** — use an external ref pinned to a tier channel:
+
+  ```yaml
+  uses: LerianStudio/shared-workflows-public/src/notify/discord-release@tier-1  # ✅ tier channel
+  uses: LerianStudio/shared-workflows-public/src/notify/discord-release@develop # ⚠️ testing only
+  uses: ./src/notify/discord-release  # ❌ resolves to caller's workspace
+  ```
+
+- **`self-*` workflows (internal only)** — use a local path:
+
+  ```yaml
+  uses: ./.github/workflows/labels-sync.yml  # ✅ caller is this repo
+  ```
+
+### Skip-enabling outputs
+
+Every reusable workflow and composite action that performs conditional work (e.g. change detection, feature-flag checks) **must expose boolean outputs** so callers can skip downstream jobs when there is nothing to do.
+
+```yaml
+# Reusable workflow example
+outputs:
+  has_builds:
+    description: 'Whether any components were detected for building (true/false)'
+    value: ${{ jobs.prepare.outputs.has_builds }}
+
+# Composite action example
+outputs:
+  has_changes:
+    description: 'Whether any changes were detected (true/false)'
+    value: ${{ steps.detect.outputs.has_changes }}
+```
+
+Callers use these outputs to gate dependent jobs:
+
+```yaml
+jobs:
+  build:
+    uses: LerianStudio/shared-workflows-public/.github/workflows/build.yml@tier-1
+  deploy:
+    needs: build
+    if: needs.build.outputs.has_builds == 'true'
+    uses: LerianStudio/shared-workflows-public/.github/workflows/deploy.yml@tier-1
+```
+
+### dry_run
+
+Every reusable workflow must include a `dry_run` input (`boolean`, `default: false`).
+`dry_run: true` must be verbose (print all resolved values, use tool debug flags). `dry_run: false` must be silent (no extra echo, no debug flags).
+
+### Branches and commits
+
+- PRs always target `develop` — never `main` directly
+- Follow [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): subject`
+- See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full type/version-bump table and scope list
+
+### Files never to edit manually
+
+| File | Reason |
+|---|---|
+| `CHANGELOG.md` | Auto-generated by semantic-release on every release |
+| `.releaserc.yml` | Drives all release automation — changes need DevOps review |
+| `.github/CODEOWNERS` | Controls review routing — discuss with the team first |
+
+**File extension:** always use `.yml`, never `.yaml` — for workflows, composites, and any YAML config files.
+
+---
+
+## Opening issues
+
+Always use the structured templates in `.github/ISSUE_TEMPLATE/`. Choose the right one based on the nature of the request:
+
+| Template | File | When to use |
+|---|---|---|
+| Bug Report | `bug_report.yml` | Something in a workflow is broken or behaving unexpectedly |
+| Feature Request | `feature_request.yml` | New workflow, new input/output, or enhancement to an existing one |
+| Documentation | `documentation.yml` | Missing, incorrect, or unclear documentation |
+
+Read the chosen template file before drafting the issue to ensure all required fields are filled in correctly. Never open a blank issue — `blank_issues_enabled: false` is enforced by `config.yml`.
+
+For security vulnerabilities, **never open a public issue** — follow the process in [`SECURITY.md`](SECURITY.md).
+
+---
+
+## Opening pull requests
+
+Always read `.github/pull_request_template.md` before drafting a PR description. Fill in every section — do not leave placeholder comments in place.
+
+Key fields to always complete:
+
+- **Description** — what changed and why, specific to the affected workflow(s)
+- **Type of Change** — mark all that apply
+- **Breaking Changes** — if none, leave `None.`; if yes, describe what breaks and how to migrate
+- **Testing** — check off what was actually validated; add the caller repo / run link if a real run was triggered
+
+PR titles must follow Conventional Commits: `type(scope): subject` (lowercase, imperative, max 72 chars).  
+PRs always target `develop` — never `main` directly.
+
+---
+
+## Refactoring existing workflows or composites
+
+Before modifying any existing file, follow the refactoring protocol in `.agents/skills/refactor/` (`/refactor` in Claude Code):
+
+1. Summarize the current state of the file (inputs, outputs, jobs/steps, dry_run presence)
+2. Produce a numbered plan with impact classification for each change
+3. Flag breaking changes explicitly and provide a migration guide
+4. Propose test examples using `dry_run: true` on `@develop`
+5. **Ask the user to confirm each step before applying** — never apply changes without confirmation
+6. Apply one step at a time and update documentation after all confirmed steps
+
+**What must never change without explicit confirmation:** input/output names, default values, step ordering that affects downstream outputs, required secrets.
+
+---
+
+## Security rules
+
+- **Third-party actions (outside `LerianStudio` org) must be pinned by commit SHA**, not by tag — tags are mutable and can be force-pushed by upstream maintainers. Add a `# vX.Y.Z` comment for readability. Dependabot keeps SHA pins updated automatically.
+  ```yaml
+  uses: actions/checkout@abc123def456 # v6        # ✅ third-party pinned by SHA
+  uses: crazy-max/ghaction-import-gpg@2dc316d # v7 # ✅ third-party pinned by SHA
+  uses: LerianStudio/shared-workflows-public/src/notify/discord-release@tier-1 # ✅ org-owned pinned by tier channel
+  ```
+- `LerianStudio/*` actions pin a **tier channel** (`@tier-0` / `@tier-1` / `@tier-2`), or `@develop` for testing — no SHA pinning needed for org-owned actions. A tier is a branch promoted ring by ring, so the pin is set once and never edited; see [`docs/tiers.md`](docs/tiers.md). An exact `@vX.Y.Z` still works but opts the repository out of the rings
+- Never use `@main` or `@master` for third-party actions
+- Never hardcode tokens, org names, or internal URLs — use `inputs` or `secrets`
+- Never print secrets via `echo`, `run` output, or step summaries
+- Vulnerability reports go through private channels only — see [`SECURITY.md`](SECURITY.md)
+
+### pull_request_target — NEVER checkout fork code
+
+- NEVER use `actions/checkout` with `ref: ${{ github.event.pull_request.head.ref }}` or `ref: ${{ github.event.pull_request.head.sha }}` in `pull_request_target` workflows
+- If `pull_request_target` is needed (e.g., labeling, commenting), it MUST NOT run any code from the fork (no build, no test, no script execution from the PR branch)
+- Prefer `pull_request` trigger over `pull_request_target` unless write permissions to the base repo are explicitly required
+- NEVER use `secrets: inherit` in workflows triggered by `pull_request_target` — it exposes all repository secrets to fork code
+
+### Expression injection — sanitize ALL untrusted inputs
+
+Never use these directly in `run:` steps — always pass through an env var:
+
+```yaml
+# ❌ These are injectable — NEVER interpolate directly in run:
+${{ github.event.pull_request.title }}   ${{ github.event.pull_request.body }}
+${{ github.event.issue.title }}           ${{ github.event.issue.body }}
+${{ github.event.comment.body }}          ${{ github.event.head_commit.message }}
+${{ github.event.head_commit.author.name }}
+${{ github.event.commits[*].message }}   ${{ github.event.discussion.title }}
+${{ github.event.discussion.body }}       ${{ github.event.review.body }}
+${{ github.head_ref }}
+${{ github.event.pages[*].page_name }}
+
+# ✅ Safe — map to env var first
+env:
+  PR_TITLE: ${{ github.event.pull_request.title }}
+run: echo "$PR_TITLE"
+```
+
+### workflow_run — treat artifacts as untrusted
+
+- Workflows triggered by `workflow_run` MUST NOT trust artifacts from the triggering workflow blindly
+- Validate/sanitize any data extracted from artifacts before use in shell commands or API calls
+- Never extract and execute scripts from artifacts without verification
+
+### Permissions — principle of least privilege
+
+- ALWAYS declare explicit `permissions:` block at workflow level; default to `contents: read`
+- Only escalate permissions per-job when needed
+- NEVER use `permissions: write-all` or leave permissions undeclared (defaults to broad access in public repos)
+- For comment/label-only workflows: `permissions: { pull-requests: write }` — nothing else
+
+### Secrets in fork contexts
+
+- NEVER pass secrets to steps that run fork code
+- `pull_request` from a fork does NOT have access to secrets by default — do not circumvent this
+- If a workflow needs secrets + fork code, split: `pull_request` (no secrets, runs fork code) + `workflow_run` (has secrets, trusted code only)
+
+### Script injection via labels/branches
+
+- Validate branch names and label names before using in shell commands
+- Branch names can contain shell metacharacters — always quote variables and map through `env:`
+
+### Self-hosted runners
+
+- NEVER use self-hosted runners for `pull_request` or `pull_request_target` from public repos — a fork can execute arbitrary code on the runner
+- Self-hosted runners are only safe for `push`, `workflow_dispatch`, `schedule`, and other non-fork triggers

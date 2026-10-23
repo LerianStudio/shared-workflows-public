@@ -1,0 +1,189 @@
+name: Stale PRs and Issues
+description: Flags and closes stale PRs and issues using actions/stale with Lerian defaults.
+
+inputs:
+  github-token:
+    description: GitHub token with pull-requests:write and issues:write permissions
+    required: true
+  days-before-pr-stale:
+    description: Days of PR inactivity before the stale label is applied
+    required: false
+    default: "30"
+  days-before-pr-close:
+    description: Days after a PR is marked stale before it is closed
+    required: false
+    default: "14"
+  days-before-issue-stale:
+    description: Days of issue inactivity before the stale label is applied
+    required: false
+    default: "60"
+  days-before-issue-close:
+    description: Days after an issue is marked stale before it is closed
+    required: false
+    default: "14"
+  stale-pr-label:
+    description: Label applied to stale PRs
+    required: false
+    default: "stale"
+  stale-issue-label:
+    description: Label applied to stale issues
+    required: false
+    default: "stale"
+  exempt-pr-labels:
+    description: Comma-separated labels that prevent a PR from going stale
+    required: false
+    default: "no-stale,security,work-in-progress"
+  exempt-issue-labels:
+    description: Comma-separated labels that prevent an issue from going stale
+    required: false
+    default: "no-stale,security,pinned"
+  exempt-draft-pr:
+    description: Skip draft PRs when scanning for stale items
+    required: false
+    default: "true"
+  operations-per-run:
+    description: Maximum number of API operations in a single run
+    required: false
+    default: "60"
+  dry-run:
+    description: Preview changes without applying them (debug-only mode)
+    required: false
+    default: "false"
+  docs-url:
+    description: URL appended to stale/close comments so contributors can read about the routine and exempt labels
+    required: false
+    default: "https://github.com/LerianStudio/shared-workflows-public/blob/main/instructions/repository-routines.md"
+
+runs:
+  using: composite
+  steps:
+    # ----------------- Pre-flight Scope Banner -----------------
+    # actions/stale logs every item as "Issue #N" because it iterates the
+    # unified `/issues` API, where pull requests are a subtype of issue.
+    # That terminology can mislead a reader of the log into thinking the
+    # PR-only or issue-only job is acting on the wrong type. This banner
+    # states the actual scope (decided by the `-1` toggles) and the real
+    # repo counts before actions/stale runs, so the per-item logs that
+    # follow can be read in context.
+    - name: Announce stale scan scope
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        GH_REPO: ${{ github.repository }}
+        DAYS_BEFORE_PR_STALE: ${{ inputs.days-before-pr-stale }}
+        DAYS_BEFORE_ISSUE_STALE: ${{ inputs.days-before-issue-stale }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: |
+        pr_disabled="false"; issue_disabled="false"
+        [ "$DAYS_BEFORE_PR_STALE" = "-1" ] && pr_disabled="true"
+        [ "$DAYS_BEFORE_ISSUE_STALE" = "-1" ] && issue_disabled="true"
+
+        if [ "$pr_disabled" = "true" ] && [ "$issue_disabled" = "true" ]; then
+          scope="nothing — both sides disabled"
+        elif [ "$pr_disabled" = "true" ]; then
+          scope="issues only (PRs disabled via days-before-pr-stale=-1)"
+        elif [ "$issue_disabled" = "true" ]; then
+          scope="pull requests only (issues disabled via days-before-issue-stale=-1)"
+        else
+          scope="pull requests AND issues"
+        fi
+
+        # Count items via dedicated endpoints so the numbers are precise.
+        # `--paginate --slurp` returns an array of pages; aggregate across
+        # all pages so the count isn't capped at 100 on large repos.
+        pr_count=$(gh api --paginate --slurp \
+          "repos/${GH_REPO}/pulls?state=open&per_page=100" \
+          --jq 'map(length) | add' 2>/dev/null || echo "?")
+        issue_count=$(gh api --paginate --slurp \
+          "repos/${GH_REPO}/issues?state=open&per_page=100" \
+          --jq '[.[][] | select(.pull_request == null)] | length' 2>/dev/null || echo "?")
+
+        echo "::notice title=Stale scan scope::${scope}"
+        echo "::notice title=Open items in ${GH_REPO}::${pr_count} pull request(s), ${issue_count} issue(s)"
+        if [ "$DRY_RUN" = "true" ]; then
+          echo "::notice title=Dry run::No labels or comments will be applied (debug-only mode)"
+        fi
+
+        # Open a collapsible group around the verbose actions/stale per-item
+        # output that follows. The group is closed in the post-run summary
+        # step. Readers see the noisy log collapsed by default in the UI.
+        echo "::group::actions/stale per-item log (verbose; expand to inspect)"
+
+    - name: Flag and close stale PRs and issues
+      id: stale
+      uses: actions/stale@b5d41d4e1d5dceea10e7104786b73624c18a190f # v10.2.0
+      with:
+        repo-token: ${{ inputs.github-token }}
+        days-before-pr-stale: ${{ inputs.days-before-pr-stale }}
+        days-before-pr-close: ${{ inputs.days-before-pr-close }}
+        days-before-issue-stale: ${{ inputs.days-before-issue-stale }}
+        days-before-issue-close: ${{ inputs.days-before-issue-close }}
+        stale-pr-label: ${{ inputs.stale-pr-label }}
+        stale-issue-label: ${{ inputs.stale-issue-label }}
+        exempt-pr-labels: ${{ inputs.exempt-pr-labels }}
+        exempt-issue-labels: ${{ inputs.exempt-issue-labels }}
+        exempt-draft-pr: ${{ inputs.exempt-draft-pr }}
+        operations-per-run: ${{ inputs.operations-per-run }}
+        debug-only: ${{ inputs.dry-run }}
+        stale-pr-message: >-
+          This PR has had no activity for ${{ inputs.days-before-pr-stale }} days and is now marked stale.
+          It will be closed in ${{ inputs.days-before-pr-close }} days unless updated.
+          Add the `no-stale` label to keep it open indefinitely.
+
+
+          Learn more about the routine and exempt labels: ${{ inputs.docs-url }}
+        stale-issue-message: >-
+          This issue has had no activity for ${{ inputs.days-before-issue-stale }} days and is now marked stale.
+          It will be closed in ${{ inputs.days-before-issue-close }} days unless updated.
+          Add the `no-stale` label to keep it open indefinitely.
+
+
+          Learn more about the routine and exempt labels: ${{ inputs.docs-url }}
+        close-pr-message: >-
+          Closing this PR due to prolonged inactivity. Reopen if work resumes.
+
+
+          Learn more about the routine and exempt labels: ${{ inputs.docs-url }}
+        close-issue-message: >-
+          Closing this issue due to prolonged inactivity. Reopen if it is still relevant.
+
+
+          Learn more about the routine and exempt labels: ${{ inputs.docs-url }}
+
+    # ----------------- Post-run Summary -----------------
+    # Closes the collapsible group opened in the pre-flight step and emits
+    # a clean, deduplicated summary derived from the action's outputs so
+    # readers don't have to scan the verbose log to know what happened.
+    - name: Summarize stale scan outcome
+      if: always()
+      shell: bash
+      env:
+        STALE_OUTCOME: ${{ steps.stale.outcome }}
+        STALED: ${{ steps.stale.outputs.staled-issues-prs }}
+        CLOSED: ${{ steps.stale.outputs.closed-issues-prs }}
+      run: |
+        echo "::endgroup::"
+        echo ""
+
+        # When actions/stale didn't succeed, its outputs are empty for the
+        # wrong reason — reporting 0 marked / 0 closed would lie about the
+        # state of the run. Surface the real outcome instead.
+        if [ "$STALE_OUTCOME" != "success" ]; then
+          echo "::warning title=Stale scan summary unavailable::actions/stale outcome=${STALE_OUTCOME}; counts are not reliable."
+          exit 0
+        fi
+
+        count_csv() {
+          local csv="$1"
+          [ -z "$csv" ] && { echo 0; return; }
+          # Items are comma-separated; awk avoids subshell + tr cost.
+          awk -v s="$csv" 'BEGIN { n = split(s, a, ","); print n }'
+        }
+
+        staled_count=$(count_csv "$STALED")
+        closed_count=$(count_csv "$CLOSED")
+
+        echo "::notice title=Stale scan summary::Marked stale: ${staled_count} | Closed: ${closed_count}"
+        [ -n "$STALED" ] && echo "  Marked stale: ${STALED}"
+        [ -n "$CLOSED" ] && echo "  Closed: ${CLOSED}"
+        echo ""

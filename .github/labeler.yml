@@ -1,0 +1,143 @@
+# Labeler configuration for shared-workflows-public
+# Used by actions/labeler in the pr-validation workflow
+# Docs: https://github.com/actions/labeler
+
+# ── Workflows ──────────────────────────────────────────────────────────────────
+
+# Any change to a reusable workflow file
+workflow:
+  - changed-files:
+    - any-glob-to-any-file: ".github/workflows/*.yml"
+
+# ── Ecosystems ─────────────────────────────────────────────────────────────────
+
+# Changes to Go-related workflows (go-ci, go-security, go-release, go-pr-analysis)
+golang:
+  - changed-files:
+    - any-glob-to-any-file: ".github/workflows/go-*.yml"
+
+# Changes to TypeScript or Frontend workflows
+typescript:
+  - changed-files:
+    - any-glob-to-any-file:
+      - ".github/workflows/typescript-*.yml"
+      - ".github/workflows/frontend-*.yml"
+
+# Changes to security workflows or the vulnerability reporting policy
+security:
+  - changed-files:
+    - any-glob-to-any-file:
+      - ".github/workflows/go-security.yml"
+      - ".github/workflows/pr-security-scan.yml"
+      - "src/security/**"
+      - "SECURITY.md"
+
+# ── Change types ───────────────────────────────────────────────────────────────
+
+# Changes to docs/, any top-level markdown file, or markdown inside .github/
+documentation:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "docs/**"
+      - "*.md"
+      - ".github/**/*.md"
+      - "src/**/*.md"
+
+# Changes to dependabot.yml (usually opened automatically by Dependabot itself)
+dependencies:
+  - changed-files:
+    - any-glob-to-any-file: ".github/dependabot.yml"
+
+# Changes to repository-level configuration: issue templates, PR template,
+# labeler, CODEOWNERS, release config, or gitignore
+github-config:
+  - changed-files:
+    - any-glob-to-any-file:
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/pull_request_template.md"
+      - ".github/labeler.yml"
+      - ".github/CODEOWNERS"
+      - ".releaserc.yml"
+      - ".gitignore"
+
+# Changes to the canonical deployment matrix consumed by gitops-update.yml
+deployment-matrix:
+  - changed-files:
+    - any-glob-to-any-file: "config/deployment-matrix.yml"
+
+# ── Capabilities ──────────────────────────────────────────────────────────────
+
+build:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "src/build/**"
+      - ".github/workflows/go-lambda-release.yml"
+
+config:
+  - changed-files:
+    - any-glob-to-any-file: "src/config/**"
+
+deploy:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "src/deploy/**"
+      - ".github/workflows/spa-deploy.yml"
+      - ".github/workflows/s3-upload.yml"
+
+notify:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "src/notify/**"
+      - ".github/workflows/slack-notify.yml"
+      - ".github/workflows/release-notification.yml"
+
+lint:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "src/lint/**"
+      - ".yamllint.yml"
+      - ".golangci.yml"
+
+validate:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "src/validate/**"
+      - ".github/workflows/pr-validation.yml"
+      - ".github/workflows/go-pr-validation.yml"
+      - ".github/workflows/self-pr-validation.yml"
+
+changelog:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "src/changelog/**"
+      - ".github/workflows/gptchangelog.yml"
+
+routine:
+  - changed-files:
+    - any-glob-to-any-file:
+      - ".github/workflows/routine.yml"
+      - ".github/workflows/self-routine.yml"
+      - ".github/workflows/stale.yml"
+      - ".github/workflows/stale-issue.yml"
+      - ".github/workflows/stale-pr.yml"
+      - ".github/workflows/branch-cleanup.yml"
+      - ".github/workflows/workflow-runs-cleanup.yml"
+
+test:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "src/test/**"
+
+# ── File-type generic rules (apply across all src/ composites) ────────────────
+
+composite:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "src/**/*.yml"
+      - "src/**/*.yaml"
+
+scripts:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "src/**/*.sh"
+      - "src/**/*.bash"

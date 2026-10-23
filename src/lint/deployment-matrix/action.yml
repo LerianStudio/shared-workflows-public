@@ -1,0 +1,348 @@
+name: Deployment Matrix Lint
+description: Validate the deployment matrix manifest schema, app/cluster integrity, and detect duplicates or orphans.
+
+inputs:
+  manifest-file:
+    description: Path to the deployment matrix YAML manifest
+    required: false
+    default: "config/deployment-matrix.yml"
+
+runs:
+  using: composite
+  steps:
+    # ----------------- Setup -----------------
+    - name: Install dependencies
+      shell: bash
+      run: |
+        if ! python3 -c "import yaml" 2>/dev/null; then
+          sudo apt-get install -y --no-install-recommends python3-yaml
+        fi
+
+    # ----------------- Log -----------------
+    - name: Log manifest under analysis
+      shell: bash
+      env:
+        MANIFEST: ${{ inputs.manifest-file }}
+      run: |
+        echo "::group::Deployment matrix file"
+        echo "  - $MANIFEST"
+        echo "::endgroup::"
+
+    # ----------------- Check -----------------
+    - name: Validate deployment matrix
+      shell: bash
+      env:
+        MANIFEST: ${{ inputs.manifest-file }}
+      run: |
+        python3 - <<'PYEOF'
+        import os, re, sys, yaml
+
+        path = os.environ.get('MANIFEST', '')
+        violations = 0
+        warnings   = 0
+
+        def err(msg, line=None):
+            global violations
+            loc = f',line={line}' if line else ''
+            print(f'::error file={path}{loc}::{msg}')
+            violations += 1
+
+        def warn(msg):
+            global warnings
+            print(f'::warning file={path}::{msg}')
+            warnings += 1
+
+        if not path or not os.path.isfile(path):
+            print(f'::error::Manifest file not found: {path!r}')
+            sys.exit(1)
+
+        try:
+            with open(path) as f:
+                data = yaml.safe_load(f)
+        except Exception as e:
+            err(f'Could not parse YAML: {e}')
+            sys.exit(1)
+
+        if not isinstance(data, dict):
+            err('Manifest root must be a YAML mapping.')
+            sys.exit(1)
+
+        # ── version ──
+        version = data.get('version')
+        if not isinstance(version, int):
+            err('"version" must be an integer.')
+        elif version != 1:
+            err(f'Unsupported manifest version {version}; this composite only knows version 1.')
+
+        # ── apps.registry ──
+        apps_block = data.get('apps')
+        if not isinstance(apps_block, dict):
+            err('"apps" must be a mapping containing a "registry" list.')
+            registry = []
+        else:
+            registry = apps_block.get('registry')
+            if not isinstance(registry, list):
+                err('"apps.registry" must be a list of app names.')
+                registry = []
+            else:
+                for i, item in enumerate(registry):
+                    if not isinstance(item, str) or not item.strip():
+                        err(f'apps.registry[{i}] must be a non-empty string.')
+                seen = set()
+                for item in registry:
+                    if isinstance(item, str):
+                        if item in seen:
+                            err(f'Duplicate app in apps.registry: "{item}".')
+                        seen.add(item)
+
+        registry_set = {a for a in registry if isinstance(a, str)}
+
+        # ── charts ──
+        # Optional: only the charts whose name is not the app name need an
+        # entry. Present entries are validated strictly, because a wrong one
+        # here silently sends a release to the wrong application.
+        charts = data.get('charts')
+        if charts is not None:
+            if not isinstance(charts, dict):
+                err('"charts" must be a mapping of <chart-name> \u2192 chart spec.')
+                charts = {}
+            for chart_name, chart_spec in charts.items():
+                if not isinstance(chart_name, str) or not chart_name.strip():
+                    err(f'Chart name must be a non-empty string (got {chart_name!r}).')
+                    continue
+                if not isinstance(chart_spec, dict):
+                    err(f'charts.{chart_name} must be a mapping.')
+                    continue
+
+                has_apps = 'apps' in chart_spec
+                has_ignored = 'ignored' in chart_spec
+                if has_apps and has_ignored:
+                    err(f'charts.{chart_name} sets both "apps" and "ignored"; they are mutually exclusive.')
+                    continue
+                if not has_apps and not has_ignored:
+                    err(f'charts.{chart_name} must set either "apps" or "ignored".')
+                    continue
+
+                if has_ignored:
+                    reason = chart_spec['ignored']
+                    if not isinstance(reason, str) or not reason.strip():
+                        err(f'charts.{chart_name}.ignored must be a non-empty reason string.')
+                    continue
+
+                chart_apps = chart_spec['apps']
+                if not isinstance(chart_apps, list) or not chart_apps:
+                    err(f'charts.{chart_name}.apps must be a non-empty list of app names.')
+                    continue
+                seen_apps = set()
+                for i, app in enumerate(chart_apps):
+                    if not isinstance(app, str) or not app.strip():
+                        err(f'charts.{chart_name}.apps[{i}] must be a non-empty string.')
+                        continue
+                    if app in seen_apps:
+                        err(f'charts.{chart_name}.apps lists "{app}" more than once.')
+                    seen_apps.add(app)
+                    if app not in registry_set:
+                        err(f'charts.{chart_name}.apps references "{app}", which is not in apps.registry.')
+
+                # An entry that only restates the identity rule is dead weight
+                # and drifts out of date silently.
+                if chart_apps == [chart_name]:
+                    err(f'charts.{chart_name} maps to itself; drop the entry and let identity resolution handle it.')
+
+        # ── clusters ──
+        clusters = data.get('clusters')
+        if not isinstance(clusters, dict):
+            err('"clusters" must be a mapping of <cluster-name> → cluster spec.')
+            clusters = {}
+
+        referenced_apps = set()
+
+        for cluster_name, cluster_spec in clusters.items():
+            if not isinstance(cluster_name, str) or not cluster_name.strip():
+                err(f'Cluster name must be a non-empty string (got {cluster_name!r}).')
+                continue
+
+            if not isinstance(cluster_spec, dict):
+                err(f'clusters.{cluster_name} must be a mapping.')
+                continue
+
+            cluster_apps = cluster_spec.get('apps')
+            if not isinstance(cluster_apps, list):
+                err(f'clusters.{cluster_name}.apps must be a list of app names.')
+                continue
+
+            seen = set()
+            for i, app in enumerate(cluster_apps):
+                if not isinstance(app, str) or not app.strip():
+                    err(f'clusters.{cluster_name}.apps[{i}] must be a non-empty string.')
+                    continue
+                if app in seen:
+                    err(f'Duplicate app "{app}" in clusters.{cluster_name}.apps.')
+                seen.add(app)
+                if app not in registry_set:
+                    err(f'clusters.{cluster_name}.apps lists "{app}" which is missing from apps.registry.')
+                referenced_apps.add(app)
+
+            # ── env_suffixes (optional) ──
+            # List of strings; defaults to [""] (empty suffix) in the workflow.
+            # Allows clusters that host multiple parallel variants per environment
+            # (e.g. -st single-tenant + -mt multi-tenant on benedita).
+            env_suffixes = cluster_spec.get('env_suffixes')
+            if env_suffixes is not None:
+                if not isinstance(env_suffixes, list):
+                    err(f'clusters.{cluster_name}.env_suffixes must be a list of strings.')
+                else:
+                    if not env_suffixes:
+                        err(f'clusters.{cluster_name}.env_suffixes is empty; omit the field or set ["", ...].')
+                    seen_suffix = set()
+                    for i, s in enumerate(env_suffixes):
+                        if not isinstance(s, str):
+                            err(f'clusters.{cluster_name}.env_suffixes[{i}] must be a string.')
+                            continue
+                        if s in seen_suffix:
+                            err(f'Duplicate suffix "{s}" in clusters.{cluster_name}.env_suffixes.')
+                        seen_suffix.add(s)
+
+            # ── suffix_excludes_envs (optional) ──
+            # List of tag-derived env names that should NOT receive any suffix
+            # (e.g. ["sandbox"] keeps sandbox bare on a multi-variant cluster).
+            # Only meaningful when env_suffixes is set with non-empty suffixes.
+            suffix_excludes_envs = cluster_spec.get('suffix_excludes_envs')
+            valid_envs = {'dev', 'stg', 'prd', 'sandbox'}
+            if suffix_excludes_envs is not None:
+                if not isinstance(suffix_excludes_envs, list):
+                    err(f'clusters.{cluster_name}.suffix_excludes_envs must be a list of env names.')
+                else:
+                    seen_env = set()
+                    for i, e in enumerate(suffix_excludes_envs):
+                        if not isinstance(e, str) or not e.strip():
+                            err(f'clusters.{cluster_name}.suffix_excludes_envs[{i}] must be a non-empty string.')
+                            continue
+                        if e in seen_env:
+                            err(f'Duplicate env "{e}" in clusters.{cluster_name}.suffix_excludes_envs.')
+                        seen_env.add(e)
+                        if e not in valid_envs:
+                            warn(f'clusters.{cluster_name}.suffix_excludes_envs lists "{e}" which is not one of the tag-derived envs ({sorted(valid_envs)}); it will have no effect.')
+                    if seen_env and not env_suffixes:
+                        warn(f'clusters.{cluster_name}.suffix_excludes_envs is set but env_suffixes is not — suffix_excludes_envs will have no effect.')
+
+            # ── env_contexts (optional) ──
+            # List of context prefix strings inserted before the env in the helmfile path.
+            # When set, path becomes applications/{context}/{env}/{app}/ instead of
+            # applications/{env}/{app}/. Combines with env_suffixes for full expansion.
+            env_contexts = cluster_spec.get('env_contexts')
+            if env_contexts is not None:
+                if not isinstance(env_contexts, list):
+                    err(f'clusters.{cluster_name}.env_contexts must be a list of strings.')
+                else:
+                    if not env_contexts:
+                        err(f'clusters.{cluster_name}.env_contexts is empty; omit the field or provide at least one context name.')
+                    seen_ctx = set()
+                    for i, c in enumerate(env_contexts):
+                        if not isinstance(c, str) or not c.strip():
+                            err(f'clusters.{cluster_name}.env_contexts[{i}] must be a non-empty string.')
+                            continue
+                        if '/' in c:
+                            err(f'clusters.{cluster_name}.env_contexts[{i}] "{c}" must not contain "/" (it is a single path segment).')
+                        if c in seen_ctx:
+                            err(f'Duplicate context "{c}" in clusters.{cluster_name}.env_contexts.')
+                        seen_ctx.add(c)
+                if env_contexts and not env_suffixes:
+                    warn(f'clusters.{cluster_name}.env_contexts is set but env_suffixes is not — contexts will host bare envs (no suffix variants).')
+
+            # ── app_helmfile_env (optional) ──
+            # Per-app override for the helmfile applications sub-directory.
+            # Existing field; validate keys reference apps in the cluster's app list.
+            app_helmfile_env = cluster_spec.get('app_helmfile_env')
+            if app_helmfile_env is not None:
+                if not isinstance(app_helmfile_env, dict):
+                    err(f'clusters.{cluster_name}.app_helmfile_env must be a mapping of app -> env-name.')
+                else:
+                    cluster_app_set = set(seen)
+                    for k, v in app_helmfile_env.items():
+                        if not isinstance(k, str) or not k.strip():
+                            err(f'clusters.{cluster_name}.app_helmfile_env has a non-string key {k!r}.')
+                            continue
+                        if not isinstance(v, str) or not v.strip():
+                            err(f'clusters.{cluster_name}.app_helmfile_env["{k}"] must be a non-empty string.')
+                            continue
+                        if k not in cluster_app_set:
+                            err(f'clusters.{cluster_name}.app_helmfile_env references app "{k}" which is not listed in clusters.{cluster_name}.apps.')
+
+            # ── app_extra_envs (optional) ──
+            # Per-app, per-release-type extra envs unioned into the expanded env
+            # list. Values are literal env names (already suffixed/prefixed) —
+            # the workflow appends them verbatim without re-expanding.
+            app_extra_envs = cluster_spec.get('app_extra_envs')
+            valid_release_types = {'beta', 'rc', 'stable', 'sandbox'}
+            if app_extra_envs is not None:
+                if not isinstance(app_extra_envs, dict):
+                    err(f'clusters.{cluster_name}.app_extra_envs must be a mapping of app -> release-type -> env list.')
+                else:
+                    cluster_app_set = set(seen)
+                    helmfile_overrides = app_helmfile_env if isinstance(app_helmfile_env, dict) else {}
+                    for app, per_type in app_extra_envs.items():
+                        if not isinstance(app, str) or not app.strip():
+                            err(f'clusters.{cluster_name}.app_extra_envs has a non-string key {app!r}.')
+                            continue
+                        if app not in cluster_app_set:
+                            err(f'clusters.{cluster_name}.app_extra_envs references app "{app}" which is not listed in clusters.{cluster_name}.apps.')
+                        # app_helmfile_env wins in the workflow's env loop, which
+                        # would collapse every extra env onto the override path —
+                        # the extras would silently do nothing.
+                        if app in helmfile_overrides:
+                            err(f'clusters.{cluster_name}.app_extra_envs["{app}"] conflicts with app_helmfile_env["{app}"]; the helmfile override takes precedence and the extra envs would have no effect.')
+                        if not isinstance(per_type, dict):
+                            err(f'clusters.{cluster_name}.app_extra_envs["{app}"] must be a mapping of release-type -> env list.')
+                            continue
+                        if not per_type:
+                            err(f'clusters.{cluster_name}.app_extra_envs["{app}"] is empty; omit the app instead.')
+                        for release_type, envs in per_type.items():
+                            if release_type not in valid_release_types:
+                                err(f'clusters.{cluster_name}.app_extra_envs["{app}"] has release type "{release_type}"; must be one of {sorted(valid_release_types)}.')
+                                continue
+                            if not isinstance(envs, list) or not envs:
+                                err(f'clusters.{cluster_name}.app_extra_envs["{app}"]["{release_type}"] must be a non-empty list of env names.')
+                                continue
+                            seen_extra = set()
+                            for i, e in enumerate(envs):
+                                if not isinstance(e, str) or not e.strip():
+                                    err(f'clusters.{cluster_name}.app_extra_envs["{app}"]["{release_type}"][{i}] must be a non-empty string.')
+                                    continue
+                                # These values become HELMFILE_ENV and land in the
+                                # values-file path, and the workflow carries its env
+                                # list as a space-separated string. So a value with
+                                # whitespace would silently split into two envs, and
+                                # one with ".." or a leading "/" would point outside
+                                # the applications/ directory. Restrict to the
+                                # characters real env names use — which still allows
+                                # context paths like "chaos/dev-mt".
+                                if not re.fullmatch(r'[A-Za-z0-9._/-]+', e):
+                                    err(f'clusters.{cluster_name}.app_extra_envs["{app}"]["{release_type}"][{i}] "{e}" may only contain letters, digits, ".", "_", "-" and "/" (no whitespace or shell metacharacters).')
+                                    continue
+                                if e.startswith('/'):
+                                    err(f'clusters.{cluster_name}.app_extra_envs["{app}"]["{release_type}"][{i}] "{e}" must be a relative env name, not an absolute path.')
+                                    continue
+                                if any(part in ('', '.', '..') for part in e.split('/')):
+                                    err(f'clusters.{cluster_name}.app_extra_envs["{app}"]["{release_type}"][{i}] "{e}" must not contain empty, "." or ".." path components.')
+                                    continue
+                                if e in seen_extra:
+                                    err(f'Duplicate env "{e}" in clusters.{cluster_name}.app_extra_envs["{app}"]["{release_type}"].')
+                                seen_extra.add(e)
+
+        # ── orphans (warning only) ──
+        orphans = registry_set - referenced_apps
+        for app in sorted(orphans):
+            warn(f'App "{app}" is in apps.registry but not referenced by any cluster — pre-onboarding entry?')
+
+        # ── summary ──
+        if violations > 0:
+            print(f'::error::Deployment matrix has {violations} violation(s) and {warnings} warning(s).')
+            sys.exit(1)
+
+        msg = f'Deployment matrix is valid ({len(registry_set)} apps registered, {len(clusters)} clusters defined'
+        if warnings:
+            msg += f', {warnings} warning(s)'
+        msg += ').'
+        print(msg)
+        PYEOF

@@ -1,0 +1,53 @@
+name: Workflow Runs Cleanup
+description: Deletes old workflow runs to keep the repository's Actions history within storage limits.
+
+inputs:
+  github-token:
+    description: GitHub token with actions:write permission
+    required: true
+  retention-days:
+    description: Delete workflow runs older than this many days
+    required: false
+    default: "90"
+  keep-minimum-runs:
+    description: Minimum number of runs to retain per workflow (prevents wiping sparse workflows)
+    required: false
+    default: "10"
+  delete-workflow-pattern:
+    description: |
+      Workflow name or filename to target. Leave empty (default) to target all
+      workflows — the action treats any value, including `*`, as a literal
+      substring match, so wildcards do not expand.
+    required: false
+    default: ""
+  delete-run-by-conclusion-pattern:
+    description: |
+      Comma-separated run conclusions to target.
+      Supported values: "action_required,cancelled,failure,skipped,success" or "ALL".
+    required: false
+    default: "ALL"
+  delete-workflow-by-state-pattern:
+    description: |
+      Comma-separated workflow states to target.
+      Supported values: "active,deleted,disabled_fork,disabled_inactivity,disabled_manually".
+    required: false
+    default: "ALL"
+  dry-run:
+    description: Preview deletions without applying them
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Delete old workflow runs
+      uses: Mattraks/delete-workflow-runs@b3018382ca039b53d238908238bd35d1fb14f8ee # v2.1
+      with:
+        token: ${{ inputs.github-token }}
+        repository: ${{ github.repository }}
+        retain_days: ${{ inputs.retention-days }}
+        keep_minimum_runs: ${{ inputs.keep-minimum-runs }}
+        delete_workflow_pattern: ${{ inputs.delete-workflow-pattern }}
+        delete_run_by_conclusion_pattern: ${{ inputs.delete-run-by-conclusion-pattern }}
+        delete_workflow_by_state_pattern: ${{ inputs.delete-workflow-by-state-pattern }}
+        dry_run: ${{ inputs.dry-run }}

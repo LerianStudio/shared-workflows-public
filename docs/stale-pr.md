@@ -1,0 +1,64 @@
+<table border="0" cellspacing="0" cellpadding="0">
+  <tr>
+    <td><img src="https://github.com/LerianStudio.png" width="72" alt="Lerian" /></td>
+    <td><h1>stale-pr</h1></td>
+  </tr>
+</table>
+
+Reusable workflow that flags and closes stale pull requests. Wraps the [`stale`](../src/config/stale/README.md) composite with issue scanning disabled, so the run only touches PRs.
+
+## Inputs
+
+| Input | Description | Required | Default |
+|---|---|:---:|---|
+| `days_before_stale` | Days of PR inactivity before applying the stale label | No | `30` |
+| `days_before_close` | Days after a PR is marked stale before it is closed | No | `14` |
+| `exempt_labels` | Comma-separated labels exempting a PR from the stale scan | No | `no-stale,security,work-in-progress,pinned` |
+| `operations_per_run` | Maximum API operations per run | No | `60` |
+| `dry_run` | Preview changes without applying them | No | `false` |
+
+## Usage
+
+### Testing (against `@develop`)
+
+```yaml
+jobs:
+  stale-pr:
+    uses: LerianStudio/shared-workflows-public/.github/workflows/stale-pr.yml@develop
+    with:
+      dry_run: true
+    secrets:
+      MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}
+```
+
+### Production (pinned)
+
+```yaml
+jobs:
+  stale-pr:
+    uses: LerianStudio/shared-workflows-public/.github/workflows/stale-pr.yml@tier-1
+    secrets:
+      MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}
+```
+
+## Secrets
+
+`MANAGE_TOKEN` is declared in the `workflow_call` contract, so a caller can pass
+it by name. `secrets: inherit` works too, but it hands this workflow every secret
+the caller holds — naming the one secret is what keeps the others out:
+
+```yaml
+    secrets:
+      MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}
+```
+
+It is optional — without it the scan runs on the job's `GITHUB_TOKEN`, and the
+labels and comments are attributed to `github-actions[bot]` instead of the
+Lerian bot identity.
+
+## Permissions required
+
+```yaml
+permissions:
+  pull-requests: write
+```

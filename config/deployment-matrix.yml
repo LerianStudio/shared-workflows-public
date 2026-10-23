@@ -1,0 +1,392 @@
+# Deployment Matrix
+#
+# Source of truth for which apps deploy to which Kubernetes clusters via the
+# `gitops-update.yml` reusable workflow.
+#
+# Cluster-centric layout — mirrors how clusters are operated (lifecycle,
+# capacity, incident response). To answer "what runs on cluster X?", read
+# the cluster block. To answer "where does app X deploy?", run the helper
+# script described in docs/gitops-update.md (or grep across blocks).
+#
+# Schema:
+#   version                       integer, required, currently 1
+#   apps.registry                 list of every app name allowed to appear in any cluster
+#   charts.<name>                 optional, chart-version path only: maps a published
+#                                 chart to the app(s) it delivers. Only needed when the
+#                                 chart name is not the app name. `apps` (list, all must
+#                                 exist in apps.registry) or `ignored` (reason string),
+#                                 never both. No entry means identity: the chart name is
+#                                 taken as the app name, and a name that is in neither
+#                                 place is an error rather than a silent no-op.
+#   clusters.<name>               cluster block with explicit `apps:` list (no `all_apps`
+#                                 shortcut today — every cluster has its own subset)
+#   clusters.<name>.env_contexts  optional list of context prefixes inserted before the
+#                                 env in the helmfile path. When set, the path becomes
+#                                 helmfile/applications/{context}/{env}/{app}/values.yaml
+#                                 instead of helmfile/applications/{env}/{app}/values.yaml.
+#                                 Combines with env_suffixes: full expansion is
+#                                 contexts × envs × suffixes. Example: env_contexts:
+#                                 ["chaos", "fuzzing"] + env_suffixes: ["-st", "-mt"] on a
+#                                 beta tag yields chaos/dev-st, chaos/dev-mt,
+#                                 fuzzing/dev-st, fuzzing/dev-mt. Defaults to [] (no prefix).
+#   clusters.<name>.env_suffixes  optional list of suffixes to append to each tag-derived
+#                                 env (e.g. ["-st", "-mt"] produces dev-st, dev-mt, stg-st,
+#                                 stg-mt, ...). Defaults to [""] (no suffix) for backward
+#                                 compatibility. Use this when one cluster hosts multiple
+#                                 parallel variants per environment (e.g. single-tenant and
+#                                 multi-tenant) as sibling namespaces / helmfile dirs /
+#                                 ArgoCD apps.
+#   clusters.<name>.suffix_excludes_envs
+#                                 optional list of tag-derived env names that should NOT
+#                                 receive any suffix from `env_suffixes` and stay bare
+#                                 (e.g. ["sandbox"] keeps sandbox as "sandbox", not
+#                                 "sandbox-st" / "sandbox-mt"). Defaults to [].
+#   clusters.<name>.app_extra_envs
+#                                 optional per-app exception: extra envs to update for a
+#                                 given release type, on top of the normal expansion.
+#                                 Shape: app_extra_envs.<app>.<release_type> → list of
+#                                 env names, where release_type ∈ beta | rc | stable |
+#                                 sandbox. The values are LITERAL env names that already
+#                                 carry the cluster's suffix/context (e.g. "stg-mt") —
+#                                 they are appended verbatim, never re-expanded against
+#                                 env_suffixes / env_contexts. Duplicates of an env the
+#                                 tag already produced are dropped.
+#                                 Use it when an app's variant only exists in an env the
+#                                 tag-derived list cannot reach: benedita has no dev-mt,
+#                                 so a beta release would never refresh the multi-tenant
+#                                 variant — `beta: ["stg-mt"]` makes it do so.
+#                                 Mutually exclusive with app_helmfile_env for the same
+#                                 app (the helmfile override wins and would collapse the
+#                                 extras onto the override path); the lint rejects it.
+#                                 Ignored when the caller uses gitops_layout=kustomize.
+#                                 Defaults to {}.
+#
+# Resolution at runtime:
+#   1. Workflow reads this file at the pinned ref of the shared-workflows repo.
+#   2. For the caller's `app_name`, the loader collects every cluster whose
+#      `apps:` list contains it.
+#   3. The `deploy_in_<cluster>` workflow inputs act as **force-off** overrides:
+#      setting any of them to `false` removes that cluster from the resolved
+#      set even if the manifest includes the app.
+#   4. For each resolved cluster, the tag-derived env list (e.g. dev/stg/prd/sandbox
+#      for a production tag) is expanded against `env_suffixes` and `env_contexts`,
+#      except for envs listed in `suffix_excludes_envs` which remain bare.
+#   5. Any `app_extra_envs.<app>.<release_type>` entries for the app are then unioned
+#      into that list verbatim. The final env list is what the workflow uses to build
+#      helmfile paths and ArgoCD app names.
+#
+# Out of scope (managed manually or by other tooling — do NOT add here):
+#   - jd-mock-api, fakebtg, control-plane,
+#     platform-console (no CI commit history in gitops repo)
+#   - ledger, dockerhub-secret (no values.yaml — kustomize / k8s Secret)
+#   - hortencia-apps (legacy umbrella, not workflow-managed)
+#   - environments/production/* (platform infra: addons, observability)
+#   - ungoliant-controller and severino-bot use gitops_layout=kustomize — they ARE
+#     in this manifest for cluster resolution, but callers must set gitops_layout=kustomize,
+#     kustomize_base_path, and kustomize_image_name; no helmfile values.yaml exists for them
+
+version: 1
+
+apps:
+  registry:
+    # Core platform
+    - midaz
+    - fetcher
+    - flowker
+    - matcher
+    - reporter
+    - tracer
+    - product-console
+    - notifications
+
+    # Plugins
+    - plugin-access-manager       # caller repo may push as plugin-identity / plugin-auth / casdoor
+    - plugin-access-manager-caradhras  # pre-promotion test instance of the plugin-access-manager auth-backend, running the caradhras image; pushed by LerianStudio/caradhras via gitops_app_name (its image is ghcr.io/lerianstudio/caradhras, so the repo name alone does not match this app dir)
+    - plugin-fees
+    - plugin-br-pix-indirect-btg
+    - plugin-br-pix-jd
+    - plugin-br-pix-lerian        # new name of plugin-br-pix-switch; both entries coexist until the repo rename cutover completes
+    - plugin-br-pix-switch
+    - plugin-br-bank-transfer
+    - plugin-br-payments
+    - plugin-bc-correios
+    - underwriter
+    - lender                      # credit journey engine (Underwriter family); UI console pin (lenderConsole.image.tag) is bumped manually, not by this workflow
+    - br-sta
+    - br-slc
+    - br-ccs
+    - br-sisbajud
+    - br-sfn
+    - br-spi                      # benedita; SPI/Pix rail of br-sfn (applications/<env>/br-spi), beta tags only
+    - br-consignado-gw
+    - streaming-hub
+
+    # Test/mock infrastructure
+    - mock-btg-server             # benedita only (-st variant); companion to plugin-br-pix-indirect-btg
+    - br-spi-mock-bacen           # benedita dev-st only; internal BACEN simulator for the SPI rail
+
+    # Lerian internal platform suite (Benedita cross/)
+    - backoffice-console
+    - cs-platform
+    - forge
+    - severino
+    - lerian-map
+    - tenant-manager
+
+    # Kustomize-managed (gitops_layout=kustomize callers; no helmfile values.yaml)
+    - ungoliant-controller        # anacleto only
+    - severino-bot                # benedita only
+
+    # Benedita-exclusive
+    - rosiehr                     # internal HR app (benedita only); values at cross/
+    - go-boilerplate-ddd          # Go service boilerplate (reference/template)
+    - go-boilerplate-ddd-fullstack  # Go API + React UI boilerplate (reference/template); values at dev-st
+    - billing-api                 # Lago-backed billing gateway (benedita only); values at dev-st/stg-st. The Lago install it fronts lives at cross/, the gateway itself does not
+
+    # Provisioned by Severino (app-provisioning automation)
+    - billing-worker
+    - br-pcr
+    - br-sfn-sims
+    - finance-hub
+    - plugin-br-ted-lerian
+    - public-bedatty-application
+    - status-page-lerian
+    - system-facts
+
+# Chart -> app resolution for the chart-version path (gitops-chart-update).
+#
+# The image-tag path keys off the app name, and for most charts the chart name
+# IS the app name — 31 of the 50 charts published across LerianStudio/helm and
+# LerianStudio/helm-internal resolve that way and need no entry here.
+#
+# The rest do not, and without this section they fail silently: the resolver
+# finds no app, warns, and exits green while nothing was updated.
+# plugin-br-pix-direct-jd is the clearest case — the chart delivers the
+# plugin-br-pix-jd application and matches nothing by its own name.
+#
+# Resolution order:
+#   1. charts.<name>.apps      -> use that list
+#   2. charts.<name>.ignored   -> deliberate no-op, exit 0 with a notice
+#   3. <name> is in apps.registry -> identity
+#   4. none of the above       -> ERROR. A chart nobody mapped must fail the
+#                                 release, not pass as "nothing to do"
+#
+# `apps` and `ignored` are mutually exclusive. Every name under `apps` must
+# exist in apps.registry.
+charts:
+  # ---------- chart name differs from the app name ----------
+  plugin-br-pix-direct-jd:
+    apps:
+      - plugin-br-pix-jd
+
+  # ---------- published, deliberately not delivered by this path ----------
+  # Absence alone cannot express this: it is indistinguishable from a chart
+  # somebody forgot to map, which is exactly the failure this section prevents.
+  jd-mock-api:
+    ignored: managed manually, no CI commit history in the gitops repo
+  plugin-br-payments-fakebtg:
+    ignored: managed manually, no CI commit history in the gitops repo
+  control-plane:
+    ignored: managed manually
+  platform-console:
+    ignored: managed manually
+  otel-collector-lerian:
+    ignored: cluster-wide addon, lives under helmfile/addons, not applications
+  lerian-common:
+    ignored: library chart, consumed as a dependency and never deployed alone
+  lerian-consul:
+    ignored: library chart, consumed as a dependency and never deployed alone
+  canary-rollout:
+    ignored: rollout helper, applied outside the application path
+  vault-lerian:
+    ignored: platform infrastructure, not an application
+
+  # ---------- internal charts awaiting a decision ----------
+  # Deployed today but absent from apps.registry, so the chart-version path
+  # cannot resolve them. Listed as ignored rather than left out, so the gap is
+  # recorded instead of rediscovered by a silent no-op. Add the app to
+  # apps.registry and drop the entry to bring one of these in.
+  agent:
+    ignored: deployed on anacleto cross, not yet registered as an app
+  cdp:
+    ignored: deployed, not yet registered as an app
+  mock-nuclea:
+    ignored: deployed, not yet registered as an app
+  mock-sta-server:
+    ignored: deployed, not yet registered as an app
+  caradhras-ui:
+    ignored: not registered as an app
+  gestao-acessos-console:
+    ignored: not registered as an app
+  lerian-hq:
+    ignored: not registered as an app
+  operations-center:
+    ignored: not registered as an app
+
+clusters:
+  anacleto:
+    # Anacleto hosts two parallel test types (chaos, fuzzing), each with two
+    # tenant variants per environment. The two-level path structure is:
+    #   helmfile/applications/{context}/{env-with-suffix}/{app}/values.yaml
+    # where context ∈ {chaos, fuzzing} and env-with-suffix ∈ {dev-st, dev-mt}.
+    env_contexts: ["chaos", "fuzzing"]
+    env_suffixes: ["-st", "-mt"]
+    apps:
+      - midaz
+      - fetcher
+      - flowker
+      - matcher
+      - reporter
+      - tracer
+      - product-console
+      - plugin-access-manager
+      - plugin-fees
+      - plugin-br-pix-indirect-btg
+      - plugin-br-pix-jd
+      - plugin-br-pix-lerian
+      - plugin-br-pix-switch
+      - br-sisbajud
+      - lender
+      - ungoliant-controller
+
+      # Provisioned by Severino (app-provisioning automation)
+      - billing-worker
+      - plugin-br-ted-lerian
+      - system-facts
+
+  benedita:
+    # Benedita hosts two parallel variants per environment as sibling namespaces:
+    #   single-tenant (-st): dev-st, stg-st, prd-st
+    #   multi-tenant  (-mt): stg-mt (dev-mt and prd-mt do not exist)
+    # Sandbox is shared across variants and stays bare (no suffix).
+    env_suffixes: ["-st", "-mt"]
+    suffix_excludes_envs: ["sandbox"]
+
+    # app_extra_envs: per-app exception list of extra envs per release type.
+    # Because dev-mt does not exist, a beta release never refreshes the
+    # multi-tenant variant of an app. Listing an app here with
+    # `beta: ["stg-mt"]` makes every beta tag update stg-mt as well, on top of
+    # the normal dev-st / dev-mt expansion. Note this leaves a beta image
+    # running in stg-mt until the next rc overwrites it — stg-mt stops being an
+    # rc-only environment for the apps listed here.
+    #
+    # The list below mirrors every app that has a stg-mt values.yaml in
+    # lerian-internal-gitops (environments/benedita/helmfile/applications/stg-mt).
+    # When an app gains or loses that directory, update this list to match.
+    app_extra_envs:
+      billing-worker:
+        beta: ["stg-mt"]
+      br-ccs:
+        beta: ["stg-mt"]
+      br-sisbajud:
+        beta: ["stg-mt"]
+      br-sta:
+        beta: ["stg-mt"]
+      fetcher:
+        beta: ["stg-mt"]
+      flowker:
+        beta: ["stg-mt"]
+      matcher:
+        beta: ["stg-mt"]
+      midaz:
+        beta: ["stg-mt"]
+      notifications:
+        beta: ["stg-mt"]
+      # plugin-access-manager also runs a multi-tenant install under cross/
+      # (ArgoCD app benedita-plugin-access-manager-cross) that tracks every
+      # release type. It cannot use app_helmfile_env: that override would
+      # replace dev-st/stg-*/prd-st instead of adding cross to them.
+      plugin-access-manager:
+        beta: ["stg-mt", "cross"]
+        rc: ["cross"]
+        stable: ["cross"]
+      plugin-br-bank-transfer:
+        beta: ["stg-mt"]
+      plugin-br-payments:
+        beta: ["stg-mt"]
+      plugin-br-pix-jd:
+        beta: ["stg-mt"]
+      plugin-br-pix-lerian:
+        beta: ["stg-mt"]
+      plugin-fees:
+        beta: ["stg-mt"]
+      product-console:
+        beta: ["stg-mt"]
+      reporter:
+        beta: ["stg-mt"]
+      streaming-hub:
+        beta: ["stg-mt"]
+
+    # app_helmfile_env: per-app override for the helmfile applications sub-directory.
+    # Default path: environments/benedita/helmfile/applications/{env}/{app}/values.yaml
+    # where {env} is the tag-derived env with env_suffixes applied (dev-st, stg-mt, ...).
+    # Apps whose values.yaml lives under cross/ must be listed here; otherwise the
+    # workflow warns "values file not found" and skips them. When an override is set,
+    # env_suffixes are NOT applied — the app deploys exactly once at the override path.
+    #
+    # IMPORTANT: only list apps whose ArgoCD app name follows the standard
+    # {server}-{app}-{env} pattern (e.g. benedita-rosiehr-cross, benedita-forge-cross).
+    app_helmfile_env:
+      backoffice-console: cross
+      cs-platform: cross
+      forge: cross
+      severino: cross
+      lerian-map: cross
+      rosiehr: cross
+      tenant-manager: cross
+
+      # Provisioned by Severino (app-provisioning automation)
+      finance-hub: cross
+      status-page-lerian: cross
+    apps:
+      - midaz
+      - fetcher
+      - flowker
+      - matcher
+      - reporter
+      - tracer
+      - product-console
+      - plugin-access-manager
+      - plugin-access-manager-caradhras
+      - plugin-fees
+      - plugin-br-pix-indirect-btg
+      - plugin-br-pix-jd
+      - plugin-br-pix-lerian
+      - plugin-br-pix-switch
+      - plugin-br-bank-transfer
+      - plugin-br-payments
+      - plugin-bc-correios
+      - underwriter
+      - lender
+      - br-sta
+      - br-slc
+      - br-ccs
+      - br-sisbajud
+      - br-sfn
+      - br-spi
+      - br-consignado-gw
+      - mock-btg-server
+      - br-spi-mock-bacen
+      - backoffice-console
+      - cs-platform
+      - forge
+      - severino
+      - lerian-map
+      - tenant-manager
+      - notifications
+      - rosiehr
+      - go-boilerplate-ddd
+      - go-boilerplate-ddd-fullstack
+      - severino-bot
+      - streaming-hub
+      - billing-api
+
+      # Provisioned by Severino (app-provisioning automation)
+      - billing-worker
+      - br-pcr
+      - br-sfn-sims
+      - finance-hub
+      - plugin-br-ted-lerian
+      - public-bedatty-application
+      - status-page-lerian
+      - system-facts

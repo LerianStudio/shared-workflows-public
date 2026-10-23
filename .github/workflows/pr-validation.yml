@@ -1,0 +1,577 @@
+name: "PR Validation"
+
+# Reusable workflow for pull_request events only.
+# A mandatory fail-closed breaking-change guard runs for every PR, including drafts, and is enforced
+# through Blocking Checks. Non-draft PRs also run the existing title, source branch, description,
+# commit signature, advisory, reporting, and notification flow.
+
+on:
+  workflow_call:
+    outputs:
+      has_breaking_changes:
+        description: 'Whether the PR contains breaking changes (true/false)'
+        value: ${{ jobs.breaking-change-guard.outputs.has-breaking-changes == 'true' && 'true' || 'false' }}
+      breaking_change_approved:
+        description: 'Compatibility field: whether the exact PR author acknowledgement is present (true/false); this does not grant maintainer permission'
+        value: ${{ jobs.breaking-change-guard.outputs.approved == 'true' && 'true' || 'false' }}
+      breaking_change_result:
+        description: 'Breaking change guard result (success/failure)'
+        value: ${{ jobs.breaking-change-guard.outputs.result == 'success' && 'success' || 'failure' }}
+      breaking_change_approval_result:
+        description: >-
+          Human approval gate result — `success`, `failure`, or `skipped` when the
+          gate did not run (disabled, draft, or not a pull_request). `skipped` is
+          reported rather than folded into `success`: a gate that never ran and a
+          gate that passed are not the same fact, and only the caller knows which
+          one it is willing to merge on.
+        # The disabled case is spelled out rather than inferred from the job
+        # being skipped. The job now runs with approval off, so that it can
+        # still carry the acknowledgement feedback — but nothing was approved,
+        # and reporting `success` here would claim otherwise.
+        value: >-
+          ${{ !inputs.enable_breaking_change_approval && 'skipped'
+              || (jobs.breaking-change-approval.outputs.result || 'skipped') }}
+      breaking_change_approved_by_reviewer:
+        description: 'Whether a reviewer approved the breaking change through the `breaking-approval` Environment (true/false)'
+        value: >-
+          ${{ inputs.enable_breaking_change_approval
+              && jobs.breaking-change-approval.outputs.approved == 'true' && 'true' || 'false' }}
+    inputs:
+      runner_type:
+        description: 'GitHub runner type to use'
+        type: string
+        default: 'blacksmith-4vcpu-ubuntu-2404'
+      pr_checks_summary_runner_type:
+        description: 'Optional runner override for the PR Checks Summary job only. Empty = vars.GENERAL_RUNNERS, then runner_type.'
+        type: string
+        default: ''
+      dry_run:
+        description: Preview validations without posting comments or labels
+        required: false
+        type: boolean
+        default: false
+      pr_title_types:
+        description: 'Allowed commit types (pipe-separated)'
+        type: string
+        default: |
+          feat
+          fix
+          docs
+          style
+          refactor
+          perf
+          test
+          chore
+          ci
+          build
+          revert
+      pr_title_scopes:
+        description: 'Allowed scopes (pipe-separated, empty = any scope allowed)'
+        type: string
+        default: ''
+      require_scope:
+        description: 'Require scope in PR title'
+        type: boolean
+        default: false
+      enable_auto_labeler:
+        description: 'Enable automatic labeling based on changed files'
+        type: boolean
+        default: true
+      enable_slack_notification:
+        description: 'Send the PR validation verdict to Slack. Set to false in repositories without SLACK_WEBHOOK_URL to skip the job entirely instead of running it just to skip internally.'
+        type: boolean
+        default: true
+      labeler_config_path:
+        description: 'Path to labeler configuration file'
+        type: string
+        default: '.github/labeler.yml'
+      enforce_source_branches:
+        description: 'Enforce that PRs to protected branches come from specific source branches. The composite auto-skips when the target branch is not in target_branches_for_source_check.'
+        type: boolean
+        default: true
+      allowed_source_branches:
+        description: 'Allowed source branches for PRs to protected branches (pipe-separated, supports prefix matching with *)'
+        type: string
+        default: 'hotfix/*|release-candidate'
+      target_branches_for_source_check:
+        description: 'Target branches that require source branch validation (pipe-separated)'
+        type: string
+        default: 'main'
+      source_branch_rules:
+        description: >-
+          Per-target source rules as JSON, for repositories where each protected
+          branch accepts a different set of sources — e.g.
+          {"main": "develop|hotfix/*", "release-candidate": "develop-*|hotfix/*"}.
+          A target listed here uses its own patterns; every other target still
+          follows allowed_source_branches/target_branches_for_source_check.
+        type: string
+        default: ''
+      automation_only_source_patterns:
+        description: >-
+          Source patterns (pipe-separated) accepted only on pull requests opened by
+          automation — e.g. "backmerge/*". This restricts rather than grants: the
+          pattern must still be allowed by allowed_source_branches or
+          source_branch_rules, and this adds the condition that the author be a bot.
+          Lets a repository authorise the backmerge mechanism without authorising
+          `main` and `release-candidate` as promotion sources.
+        type: string
+        default: ''
+      automation_source_actors:
+        description: >-
+          Comma-separated logins that count as automation for
+          automation_only_source_patterns. A list is authoritative — those logins
+          are accepted whatever their account type, which matters because
+          lerian-studio is a User, not a Bot. Set to empty to accept any author of
+          type Bot instead.
+        type: string
+        default: 'lerian-studio-midaz-push-bot[bot],lerian-studio'
+      require_verified_commits:
+        description: 'Block the PR when any of its commits is unsigned or has an unverified signature'
+        type: boolean
+        default: true
+      enable_breaking_change_approval:
+        description: >-
+          Hold a pull request that carries breaking-change commits at the
+          `breaking-approval` Environment until a reviewer approves it. Requires the
+          Environment to exist with required reviewers — see
+          docs/breaking-change-approval.md. Set to false in repositories that have
+          not created it yet.
+        type: boolean
+        default: true
+      breaking_change_scope_rules:
+        description: 'JSON object mapping an exact base branch to the pipe-separated head globs gated for breaking changes.'
+        type: string
+        default: '{"develop": "*", "main": "hotfix/*"}'
+      breaking_change_additional_scope_rules:
+        description: 'JSON object merged over `breaking_change_scope_rules`, key by key, for repository-specific promotion paths.'
+        type: string
+        default: ''
+      breaking_change_force_labels:
+        description: 'Comma-separated labels that put an out-of-scope pull request into the breaking-change gate.'
+        type: string
+        default: breaking-change-review
+      breaking_change_skip_labels:
+        description: 'Comma-separated labels that take a pull request out of the breaking-change gate. Empty keeps it closed.'
+        type: string
+        default: ''
+      breaking_change_close_on_rejection:
+        description: 'Close the pull request when a reviewer rejects the breaking change.'
+        type: boolean
+        default: true
+      breaking_change_status_context:
+        description: >-
+          Publish the gate's verdict as a commit status under this name. A
+          reusable workflow's check carries the caller's job path, so the same
+          gate appears under a different name in each repository and an
+          organisation ruleset cannot require it. A commit status does not,
+          so one name works everywhere.
+
+          Defaults to the `BREAKING_APPROVAL_STATUS_CONTEXT` organisation
+          variable. Empty publishes nothing.
+        required: false
+        type: string
+        default: ''
+      breaking_change_fallback_reviewers:
+        description: >-
+          Who answers the breaking-change gate in a repository whose CODEOWNERS
+          has no catch-all `*` rule — the common case, which otherwise leaves
+          the Environment uncreatable and the first breaking change blocked by
+          a gate nobody can answer.
+
+          Defaults to the `BREAKING_APPROVAL_FALLBACK_REVIEWERS` organisation
+          variable, so it is set once for the organisation rather than per
+          repository. Same `team:<slug>` / `user:<login>` form.
+        required: false
+        type: string
+        default: ''
+      breaking_change_approval_reviewers:
+        description: >-
+          Who may answer the breaking-change gate, as comma-separated `team:<slug>`
+          or `user:<login>`. Empty — the default — takes the repository's own
+          CODEOWNERS. Used only to create the `breaking-approval` Environment when
+          it does not exist.
+        type: string
+        default: ''
+      breaking_change_create_environment:
+        description: >-
+          Create `breaking-approval` when missing. Needs a MANAGE_TOKEN with
+          repository administration rights; the default token cannot do it.
+        type: boolean
+        default: true
+      breaking_change_require_protected_environment:
+        description: 'Refuse to gate when `breaking-approval` has no required reviewers, instead of silently passing. Leave on.'
+        type: boolean
+        default: true
+    secrets:
+      MANAGE_TOKEN:
+        required: false
+      SLACK_WEBHOOK_URL:
+        required: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  # ----------------- Mandatory Breaking Change Detection (always runs, including drafts) -----------------
+  breaking-change-guard:
+    name: Breaking Change Guard
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    permissions:
+      contents: read
+    outputs:
+      has-breaking-changes: ${{ steps.normalize.outputs.has-breaking-changes }}
+      approved: ${{ steps.normalize.outputs.approved }}
+      result: ${{ steps.normalize.outputs.result }}
+      detection-succeeded: ${{ steps.normalize.outputs.detection-succeeded }}
+
+    steps:
+      - name: Validate original event
+        id: event-validation
+        continue-on-error: true
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "PR Validation only accepts pull_request events; received ${EVENT_NAME:-missing}." >&2
+            exit 1
+          fi
+
+          if [ -z "$PR_NUMBER" ] || [ -z "$PR_HEAD_REF" ] || [ -z "$PR_HEAD_SHA" ] \
+            || [ -z "$PR_BASE_REF" ] || [ -z "$PR_BASE_SHA" ]; then
+            echo "The pull_request event is missing required PR number, head, or base data." >&2
+            exit 1
+          fi
+
+      - name: Checkout code
+        id: checkout
+        if: steps.event-validation.outcome == 'success'
+        continue-on-error: true
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect breaking changes
+        id: guard
+        if: steps.event-validation.outcome == 'success' && steps.checkout.outcome == 'success'
+        continue-on-error: true
+        uses: LerianStudio/shared-workflows-public/src/validate/breaking-change-guard@v1
+        with:
+          base-ref: ${{ github.base_ref }}
+          breaking-change-acknowledgement: 'Breaking change acknowledged: I understand that this PR intentionally introduces a breaking change and requires the next release to be a major version.'
+          acknowledgement-match-mode: exact-visible-line
+
+      - name: Normalize breaking change result
+        id: normalize
+        if: always()
+        shell: bash
+        env:
+          EVENT_VALIDATION_OUTCOME: ${{ steps.event-validation.outcome }}
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          GUARD_OUTCOME: ${{ steps.guard.outcome }}
+          RAW_HAS_BREAKING_CHANGES: ${{ steps.guard.outputs.has-breaking-changes }}
+          RAW_APPROVED: ${{ steps.guard.outputs.approved }}
+        run: |
+          set -euo pipefail
+
+          has_breaking_changes=false
+          approved=false
+          result=failure
+          detection_succeeded=false
+
+          if [ "$EVENT_VALIDATION_OUTCOME" = "success" ] \
+            && [ "$CHECKOUT_OUTCOME" = "success" ] && [ "$GUARD_OUTCOME" = "success" ] \
+            && { [ "$RAW_HAS_BREAKING_CHANGES" = "true" ] || [ "$RAW_HAS_BREAKING_CHANGES" = "false" ]; } \
+            && { [ "$RAW_APPROVED" = "true" ] || [ "$RAW_APPROVED" = "false" ]; }; then
+            has_breaking_changes="$RAW_HAS_BREAKING_CHANGES"
+            approved="$RAW_APPROVED"
+            detection_succeeded=true
+
+            if [ "$has_breaking_changes" = "false" ] || [ "$approved" = "true" ]; then
+              result=success
+            fi
+          fi
+
+          {
+            echo "has-breaking-changes=$has_breaking_changes"
+            echo "approved=$approved"
+            echo "result=$result"
+            echo "detection-succeeded=$detection_succeeded"
+          } >> "$GITHUB_OUTPUT"
+
+  # ----------------- Human approval for breaking changes -----------------
+  # The guard above asks the author to acknowledge; this asks the team to agree.
+  # It runs as a side branch — nothing in the validation graph depends on it — so
+  # a pull request waiting days for its approval still gets its title, source
+  # branch, signature and report verdicts immediately.
+  #
+  # The detection is handed over rather than repeated: the guard job already ran
+  # the same composite over the same commits, and a second full-history checkout
+  # would buy nothing. `unknown` is passed when that detection did not complete,
+  # so the gate fails closed instead of reading the normalised `false`.
+  breaking-change-approval:
+    name: Breaking Change Approval
+    needs: [breaking-change-guard]
+    # Deliberately not gated on `enable_breaking_change_approval`. That input
+    # turns off the human approval, not the acknowledgement — which Blocking
+    # Checks still enforces. Skipping the whole job took the only comment
+    # carrying the line to paste with it, leaving the author a red check and
+    # no instructions. The flag is passed through instead.
+    if: >-
+      always()
+      && github.event_name == 'pull_request'
+      && github.event.pull_request.draft != true
+    uses: ./.github/workflows/breaking-change-approval.yml
+    with:
+      enable_approval: ${{ inputs.enable_breaking_change_approval }}
+      detected_breaking_changes: ${{ needs.breaking-change-guard.result == 'success' && needs.breaking-change-guard.outputs.detection-succeeded == 'true' && needs.breaking-change-guard.outputs.has-breaking-changes || 'unknown' }}
+      # The acknowledgement state travels with it, so one comment can speak for
+      # both controls. It replaces `breaking-change-comment`, removed here: two
+      # bot comments about the same breaking change, one headed by a ✅ for the
+      # author's acknowledgement and one asking for a decision, read as a
+      # contradiction. The ✅ was taken for the approval.
+      detected_acknowledged: ${{ needs.breaking-change-guard.outputs.approved }}
+      # Passed explicitly rather than left to the gate's default. The comment
+      # tells the author which line to paste, and the detector decides whether
+      # what they pasted counts — two literals in two files, previously kept
+      # equal by hand. A drift would have the gate teaching a line that fails.
+      author_acknowledgement: 'Breaking change acknowledged: I understand that this PR intentionally introduces a breaking change and requires the next release to be a major version.'
+      scope_rules: ${{ inputs.breaking_change_scope_rules }}
+      additional_scope_rules: ${{ inputs.breaking_change_additional_scope_rules }}
+      force_labels: ${{ inputs.breaking_change_force_labels }}
+      skip_labels: ${{ inputs.breaking_change_skip_labels }}
+      close_on_rejection: ${{ inputs.breaking_change_close_on_rejection }}
+      approval_reviewers: ${{ inputs.breaking_change_approval_reviewers }}
+      # The caller's value wins; the organisation variable is the default, so
+      # a repository that never heard of this gate still has someone to ask.
+      fallback_reviewers: ${{ inputs.breaking_change_fallback_reviewers != '' && inputs.breaking_change_fallback_reviewers || vars.BREAKING_APPROVAL_FALLBACK_REVIEWERS }}
+      status_context: ${{ inputs.breaking_change_status_context != '' && inputs.breaking_change_status_context || vars.BREAKING_APPROVAL_STATUS_CONTEXT }}
+      create_approval_environment: ${{ inputs.breaking_change_create_environment }}
+      require_protected_environment: ${{ inputs.breaking_change_require_protected_environment }}
+      dry_run: ${{ inputs.dry_run }}
+      runner_type: ${{ inputs.runner_type }}
+    secrets:
+      MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}
+
+  # ----------------- Tier 1: Blocking Checks (no checkout, fail-fast) -----------------
+  blocking-checks:
+    name: Blocking Checks
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    needs: [breaking-change-guard]
+    if: always()
+    outputs:
+      source-branch-result: ${{ steps.collect.outputs.source_branch }}
+      title-result: ${{ steps.collect.outputs.title }}
+      description-result: ${{ steps.collect.outputs.description }}
+      commit-signatures-result: ${{ steps.collect.outputs.commit_signatures }}
+      commit-signatures-detail: ${{ steps.commit-signatures.outputs.findings-markdown }}
+
+    steps:
+      # The composite auto-skips when target branch is not in target_branches_for_source_check (default: main)
+      - name: Validate source branch
+        id: source-branch
+        if: github.event_name == 'pull_request' && github.event.pull_request.draft != true && inputs.enforce_source_branches
+        continue-on-error: true
+        # TODO: pin to @v1 once released. @v1 predates branch-rules, and passing
+        # an input the action does not declare fails silently — validation would
+        # quietly fall back to allowed-branches and let the blocked merges through.
+        uses: LerianStudio/shared-workflows-public/src/validate/pr-source-branch@develop
+        with:
+          github-token: ${{ secrets.MANAGE_TOKEN || github.token }}
+          allowed-branches: ${{ inputs.allowed_source_branches }}
+          target-branches: ${{ inputs.target_branches_for_source_check }}
+          branch-rules: ${{ inputs.source_branch_rules }}
+          automation-only-patterns: ${{ inputs.automation_only_source_patterns }}
+          automation-actors: ${{ inputs.automation_source_actors }}
+          dry-run: ${{ inputs.dry_run && 'true' || 'false' }}
+
+      - name: Validate PR title
+        id: title
+        if: github.event_name == 'pull_request' && github.event.pull_request.draft != true
+        continue-on-error: true
+        uses: LerianStudio/shared-workflows-public/src/validate/pr-title@v1
+        with:
+          github-token: ${{ github.token }}
+          types: ${{ inputs.pr_title_types }}
+          scopes: ${{ inputs.pr_title_scopes }}
+          require-scope: ${{ inputs.require_scope && 'true' || 'false' }}
+
+      - name: Validate PR description
+        id: description
+        if: github.event_name == 'pull_request' && github.event.pull_request.draft != true
+        continue-on-error: true
+        uses: LerianStudio/shared-workflows-public/src/validate/pr-description@v1
+
+      - name: Validate commit signatures
+        id: commit-signatures
+        if: github.event_name == 'pull_request' && github.event.pull_request.draft != true && inputs.require_verified_commits
+        continue-on-error: true
+        uses: LerianStudio/shared-workflows-public/src/validate/pr-commit-signatures@v1
+        with:
+          github-token: ${{ github.token }}
+          dry-run: ${{ inputs.dry_run && 'true' || 'false' }}
+
+      - name: Enforce breaking change guard
+        if: always()
+        env:
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+          GUARD_JOB_RESULT: ${{ needs.breaking-change-guard.result }}
+          GUARD_RESULT: ${{ needs.breaking-change-guard.outputs.result }}
+          HAS_BREAKING_CHANGES: ${{ needs.breaking-change-guard.outputs.has-breaking-changes }}
+          BREAKING_CHANGE_ACKNOWLEDGED: ${{ needs.breaking-change-guard.outputs.approved }}
+          DETECTION_SUCCEEDED: ${{ needs.breaking-change-guard.outputs.detection-succeeded }}
+        run: |
+          set -euo pipefail
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "Breaking change guard dry run: job=$GUARD_JOB_RESULT result=${GUARD_RESULT:-missing} has_breaking_changes=${HAS_BREAKING_CHANGES:-missing} acknowledged=${BREAKING_CHANGE_ACKNOWLEDGED:-missing} detection_succeeded=${DETECTION_SUCCEEDED:-missing}"
+            exit 0
+          fi
+
+          if [ "$GUARD_JOB_RESULT" != "success" ] || [ "$GUARD_RESULT" != "success" ] \
+            || [ "$DETECTION_SUCCEEDED" != "true" ]; then
+            echo "Breaking change guard failed: job=$GUARD_JOB_RESULT result=${GUARD_RESULT:-missing} detection_succeeded=${DETECTION_SUCCEEDED:-missing}" >&2
+            exit 1
+          fi
+
+      - name: Collect results and enforce blocking
+        id: collect
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.draft != true
+        uses: LerianStudio/shared-workflows-public/src/validate/pr-blocking-collect@v1
+        with:
+          source-branch-outcome: ${{ steps.source-branch.outcome || 'skipped' }}
+          title-outcome: ${{ steps.title.outcome }}
+          description-outcome: ${{ steps.description.outcome }}
+          commit-signatures-outcome: ${{ steps.commit-signatures.outcome || 'skipped' }}
+
+  # ----------------- Tier 2: Advisory Checks (shared checkout, depends on Tier 1) -----------------
+  # Advisory by definition, so a blocking failure must not take them with it.
+  # They used to be gated on `needs.blocking-checks.result == 'success'`, from
+  # the 2-tier fail-fast model, which saved a runner at the cost of the exact
+  # pull request that needed the help: a wrong title or a missing signature
+  # meant no size label, no auto-labels and no assignee either. Those three are
+  # cheap, none of them can block, and they are most useful on a pull request
+  # that is already in trouble.
+  #
+  # `needs:` stays for ordering only. The verdict is no longer consulted.
+  advisory-checks:
+    name: Advisory Checks
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    needs: [blocking-checks]
+    if: always() && github.event_name == 'pull_request' && github.event.pull_request.draft != true
+    outputs:
+      metadata-result: ${{ steps.collect.outputs.metadata }}
+      size-result: ${{ steps.collect.outputs.size }}
+      label-result: ${{ steps.collect.outputs.label }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Check PR metadata
+        id: metadata
+        continue-on-error: true
+        uses: LerianStudio/shared-workflows-public/src/validate/pr-metadata@v1
+        with:
+          github-token: ${{ secrets.MANAGE_TOKEN || github.token }}
+          dry-run: ${{ inputs.dry_run && 'true' || 'false' }}
+
+      - name: Check PR size
+        id: size
+        continue-on-error: true
+        uses: LerianStudio/shared-workflows-public/src/validate/pr-size@v1
+        with:
+          github-token: ${{ secrets.MANAGE_TOKEN || github.token }}
+          base-ref: ${{ github.base_ref }}
+          dry-run: ${{ inputs.dry_run && 'true' || 'false' }}
+
+      - name: Auto-label PR
+        id: labels
+        if: inputs.enable_auto_labeler && !inputs.dry_run
+        continue-on-error: true
+        uses: LerianStudio/shared-workflows-public/src/validate/pr-labels@v1
+        with:
+          github-token: ${{ secrets.MANAGE_TOKEN || github.token }}
+          config-path: ${{ inputs.labeler_config_path }}
+
+      - name: Collect results
+        id: collect
+        run: |
+          {
+            echo "metadata=${{ steps.metadata.outcome }}"
+            echo "size=${{ steps.size.outcome }}"
+            echo "label=${{ steps.labels.outcome || 'skipped' }}"
+          } >> "$GITHUB_OUTPUT"
+
+  # ----------------- PR Checks Summary -----------------
+  pr-checks-summary:
+    name: PR Checks Summary
+    runs-on: ${{ inputs.pr_checks_summary_runner_type || vars.GENERAL_RUNNERS || inputs.runner_type }}
+    needs: [breaking-change-guard, blocking-checks, advisory-checks]
+    if: always()
+
+    steps:
+      - name: PR Checks Summary
+        uses: LerianStudio/shared-workflows-public/src/validate/pr-checks-summary@v1
+        with:
+          source-branch-result: ${{ needs.blocking-checks.outputs.source-branch-result || 'skipped' }}
+          title-result: ${{ needs.blocking-checks.outputs.title-result || 'skipped' }}
+          description-result: ${{ needs.blocking-checks.outputs.description-result || 'skipped' }}
+          commit-signatures-result: ${{ needs.blocking-checks.outputs.commit-signatures-result || 'skipped' }}
+          size-result: ${{ needs.advisory-checks.outputs.size-result || 'skipped' }}
+          label-result: ${{ needs.advisory-checks.outputs.label-result || 'skipped' }}
+          metadata-result: ${{ needs.advisory-checks.outputs.metadata-result || 'skipped' }}
+          breaking-change-result: ${{ needs.breaking-change-guard.result == 'success' && needs.breaking-change-guard.outputs.result == 'success' && 'success' || 'failure' }}
+          blocking-checks-result: ${{ needs.blocking-checks.result == 'success' && 'success' || 'failure' }}
+          dry-run: ${{ inputs.dry_run && 'true' || 'false' }}
+
+  # ----------------- Breaking Change Feedback Comment (best effort) -----------------
+  # ----------------- PR Validation Summary Comment -----------------
+  pr-validation-report:
+    name: PR Validation Report
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    needs: [breaking-change-guard, blocking-checks, advisory-checks]
+    if: always() && github.event_name == 'pull_request' && github.event.pull_request.draft != true
+
+    steps:
+      - name: Post PR validation summary comment
+        continue-on-error: true
+        uses: LerianStudio/shared-workflows-public/src/notify/pr-validation-reporter@v1
+        with:
+          github-token: ${{ secrets.MANAGE_TOKEN || github.token }}
+          source-branch-result: ${{ needs.blocking-checks.outputs.source-branch-result || 'skipped' }}
+          title-result: ${{ needs.blocking-checks.outputs.title-result || 'skipped' }}
+          description-result: ${{ needs.blocking-checks.outputs.description-result || 'skipped' }}
+          commit-signatures-result: ${{ needs.blocking-checks.outputs.commit-signatures-result || 'skipped' }}
+          commit-signatures-detail: ${{ needs.blocking-checks.outputs.commit-signatures-detail }}
+          size-result: ${{ needs.advisory-checks.outputs.size-result || 'skipped' }}
+          label-result: ${{ needs.advisory-checks.outputs.label-result || 'skipped' }}
+          metadata-result: ${{ needs.advisory-checks.outputs.metadata-result || 'skipped' }}
+          breaking-change-result: ${{ needs.breaking-change-guard.result == 'success' && needs.breaking-change-guard.outputs.result == 'success' && 'success' || 'failure' }}
+          blocking-checks-result: ${{ needs.blocking-checks.result == 'success' && 'success' || 'failure' }}
+          dry-run: ${{ inputs.dry_run && 'true' || 'false' }}
+
+  # ----------------- Slack Notification -----------------
+  notify:
+    name: Notify
+    needs: [breaking-change-guard, blocking-checks, advisory-checks, pr-checks-summary]
+    if: always() && inputs.enable_slack_notification && github.event_name == 'pull_request' && github.event.pull_request.draft != true && !inputs.dry_run
+    uses: LerianStudio/shared-workflows-public/.github/workflows/slack-notify.yml@v1.28.12
+    with:
+      status: ${{ (needs.breaking-change-guard.result != 'success' || needs.breaking-change-guard.outputs.result != 'success' || needs.blocking-checks.result != 'success' || needs.blocking-checks.outputs.source-branch-result == 'failure' || needs.blocking-checks.outputs.title-result == 'failure' || needs.blocking-checks.outputs.description-result == 'failure' || needs.blocking-checks.outputs.commit-signatures-result == 'failure') && 'failure' || 'success' }}
+      workflow_name: "PR Validation"
+      failed_jobs: ${{ (needs.breaking-change-guard.result != 'success' || needs.breaking-change-guard.outputs.result != 'success') && 'Breaking Change Guard, ' || '' }}${{ needs.blocking-checks.result != 'success' && 'Blocking Checks, ' || '' }}${{ needs.blocking-checks.outputs.source-branch-result == 'failure' && 'Source Branch, ' || '' }}${{ needs.blocking-checks.outputs.title-result == 'failure' && 'PR Title, ' || '' }}${{ needs.blocking-checks.outputs.description-result == 'failure' && 'PR Description, ' || '' }}${{ needs.blocking-checks.outputs.commit-signatures-result == 'failure' && 'Commit Signatures' || '' }}
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

