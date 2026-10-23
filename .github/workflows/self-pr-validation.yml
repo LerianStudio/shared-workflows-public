@@ -111,7 +111,7 @@ jobs:
             const modules = [...workflows, ...composites];
             let body = `${marker}\n## 🧪 Testar esta PR\n\n`;
             if (isFork) {
-              body += 'Esta PR vem de um fork: a branch dela não existe neste repositório, então não pode ser referenciada para teste.\n';
+              body += 'Esta PR vem de um fork: a branch dela não existe neste repositório, então não dá para referenciá-la em testes.\n';
             } else {
               body += `Para testar, referencie a branch desta PR: \`@${headRef}\`\n`;
             }
