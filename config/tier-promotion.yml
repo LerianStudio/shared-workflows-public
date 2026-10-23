@@ -61,7 +61,7 @@
 #   4. Walks `tiers` in order. For each: await `environment` approval if set,
 #      materialize the pinned tree on the tier branch, commit, push; on push
 #      failure open a PR into the tier branch.
-#   5. Pre-releases (`v*-beta.N` from `develop`) are skipped.
+#   5. Pre-releases (`v*-beta.N`, `v*-rc.N`) are skipped.
 #
 # On superseded trains: each tier has its own concurrency group with
 # `cancel-in-progress: false`, so a tier-0 promotion never queues behind an

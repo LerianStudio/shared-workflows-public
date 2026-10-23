@@ -175,7 +175,7 @@ jobs:
 ```yaml
 jobs:
   routine:
-    uses: LerianStudio/shared-workflows-public/.github/workflows/routine.yml@develop
+    uses: LerianStudio/shared-workflows-public/.github/workflows/routine.yml@<pr-branch>
     with:
       routine: all
       dry_run: true

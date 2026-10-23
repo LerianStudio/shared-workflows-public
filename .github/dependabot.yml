@@ -11,7 +11,7 @@ updates:
       day: "monday"
       time: "08:00"
       timezone: "America/Sao_Paulo"
-    target-branch: "develop"
+    target-branch: "main"
     labels:
       - "dependencies"
       - "github-actions"

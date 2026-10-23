@@ -106,7 +106,7 @@ jobs:
 Testing against a branch:
 
 ```yaml
-uses: LerianStudio/shared-workflows-public/.github/workflows/helm-update-chart.yml@develop
+uses: LerianStudio/shared-workflows-public/.github/workflows/helm-update-chart.yml@<pr-branch>
 ```
 
 Legacy routing disabled — every payload lands on `base_branch`:
