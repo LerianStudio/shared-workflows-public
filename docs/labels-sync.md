@@ -74,10 +74,10 @@ jobs:
 ### Dry run (preview only)
 
 ```yaml
-# Use @develop or your feature branch to validate before releasing
+# Use the pull request branch to validate before merging
 jobs:
   preview:
-    uses: LerianStudio/shared-workflows-public/.github/workflows/labels-sync.yml@develop
+    uses: LerianStudio/shared-workflows-public/.github/workflows/labels-sync.yml@<pr-branch>
     with:
       dry_run: true
     secrets: inherit

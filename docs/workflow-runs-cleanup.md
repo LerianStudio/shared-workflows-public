@@ -20,12 +20,12 @@ Reusable workflow that deletes old GitHub Actions workflow runs. Wraps the [`wor
 
 ## Usage
 
-### Testing (against `@develop`)
+### Testing (against the pull request branch)
 
 ```yaml
 jobs:
   cleanup:
-    uses: LerianStudio/shared-workflows-public/.github/workflows/workflow-runs-cleanup.yml@develop
+    uses: LerianStudio/shared-workflows-public/.github/workflows/workflow-runs-cleanup.yml@<pr-branch>
     with:
       dry_run: true
     secrets: inherit

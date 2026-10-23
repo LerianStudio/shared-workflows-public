@@ -8,7 +8,7 @@ name: "Update Helm Chart"
 # Usage:
 #   jobs:
 #     update:
-#       uses: LerianStudio/shared-workflows-public/.github/workflows/helm-update-chart.yml@v1.54.0
+#       uses: LerianStudio/shared-workflows-public/.github/workflows/helm-update-chart.yml@v1
 #       with:
 #         payload: ${{ inputs.payload }}
 #         base_branch: develop

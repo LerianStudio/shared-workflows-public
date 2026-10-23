@@ -112,9 +112,9 @@ jobs:
         run: exit 1
 ```
 
-## Pre-release testing
+## Testing a change
 
-Use `@develop` only to test the composite before it is published in `v1`:
+Pin the pull request branch to test a change to the composite before it merges:
 
 ```yaml
 jobs:
@@ -127,7 +127,7 @@ jobs:
         with:
           fetch-depth: 0
       - id: guard
-        uses: LerianStudio/shared-workflows-public/src/validate/breaking-change-guard@develop
+        uses: LerianStudio/shared-workflows-public/src/validate/breaking-change-guard@<pr-branch>
         with:
           base-ref: ${{ github.base_ref }}
           breaking-change-acknowledgement: Breaking change approved by the release owner.

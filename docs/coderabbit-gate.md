@@ -356,7 +356,7 @@ jobs:
 at all and the verdict never gets evaluated.
 
 Pin to a released version in production. When testing a change to the gate itself,
-point at the branch instead — `@develop`, or `@feat/<branch>`.
+point at the pull request branch instead — `@<pr-branch>`.
 
 ## Escape hatches
 

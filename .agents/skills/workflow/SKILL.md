@@ -25,7 +25,7 @@ Before implementing custom steps inside a workflow, search the [Marketplace](htt
 - Prefer a well-maintained action over custom shell scripting for non-trivial logic
 - If the action needs wrapping (normalization, extra steps), create a composite in `src/` and call it from the workflow — don't inline complex shell in the workflow itself
 - **Third-party actions (outside `LerianStudio` org) must be pinned by commit SHA**, not by tag — add a `# vX.Y.Z` comment for readability (e.g., `uses: actions/checkout@abc123 # v6`). Tags are mutable and can be force-pushed by upstream maintainers. Dependabot proposes SHA bumps automatically.
-- `LerianStudio/*` actions are pinned by **release tag** (`@v1.2.3`) or branch (`@develop` for testing)
+- `LerianStudio/*` actions are pinned by **release tag** (`@v1.2.3`) or branch (the PR branch, `@<pr-branch>`, for testing)
 - Never use `@main` or `@master` for third-party actions
 - Document in `docs/<workflow-name>.md` why that action was chosen
 
@@ -257,7 +257,7 @@ In reusable workflows (`workflow_call`), `uses: ./path` resolves to the **caller
 - **Workflows called by external repos** — must use an external ref pinned to a release tag:
   ```yaml
   uses: LerianStudio/shared-workflows-public/src/notify/discord-release@v1.2.3  # ✅ pinned
-  uses: LerianStudio/shared-workflows-public/src/notify/discord-release@develop # ⚠️ testing only
+  uses: LerianStudio/shared-workflows-public/src/notify/discord-release@<pr-branch> # ⚠️ testing only — the PR branch
   uses: ./src/notify/discord-release  # ❌ resolves to caller's workspace, will fail
   ```
 - **`self-*` workflows (internal only)** — may use local path for reusable workflows only (not composites):
@@ -323,8 +323,8 @@ Every new reusable workflow must have a corresponding `docs/<workflow-name>.md`.
 Examples in `docs/` must never use `@main`. Use the correct ref for each context:
 
 ```yaml
-# ✅ Testing — point to develop or feature branch
-uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@develop
+# ✅ Testing — point to the pull request branch
+uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@<pr-branch>
 uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@feat/my-branch
 
 # ✅ Production — always a pinned stable version

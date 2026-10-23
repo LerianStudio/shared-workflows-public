@@ -19,12 +19,12 @@ Reusable workflow that flags and closes stale pull requests. Wraps the [`stale`]
 
 ## Usage
 
-### Testing (against `@develop`)
+### Testing (against the pull request branch)
 
 ```yaml
 jobs:
   stale-pr:
-    uses: LerianStudio/shared-workflows-public/.github/workflows/stale-pr.yml@develop
+    uses: LerianStudio/shared-workflows-public/.github/workflows/stale-pr.yml@<pr-branch>
     with:
       dry_run: true
     secrets:

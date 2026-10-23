@@ -3,8 +3,6 @@ name: release
 on:
   push:
     branches:
-      - develop
-      - release-candidate
       - main
     paths-ignore:
       - '.gitignore'
@@ -31,7 +29,7 @@ on:
   # changes only self-* workflows or meta files is skipped by paths-ignore or
   # by the gate even though semantic-release would find a version to cut. A
   # dispatch has no `before` ref, so the gate treats it as code. Run it on
-  # develop, release-candidate or main; any other ref is refused below.
+  # main; any other ref is refused below.
   workflow_dispatch:
 
 permissions:
@@ -44,7 +42,7 @@ jobs:
   publish-release:
     if: >-
       github.event_name == 'push'
-      || contains(fromJSON('["refs/heads/develop", "refs/heads/release-candidate", "refs/heads/main"]'), github.ref)
+      || github.ref == 'refs/heads/main'
     uses: ./.github/workflows/release.yml
     with:
       runner_type: ubuntu-latest
@@ -56,6 +54,9 @@ jobs:
       # self-* workflows, the controller matrices) is already dropped by the
       # trigger's paths-ignore above.
       enable_doc_gate: false
+      # Trunk-based: main is the only long-lived branch, so there is nothing to
+      # backmerge a release into.
+      backmerge_enabled: false
     secrets: inherit
 
   # The `propagate-version` job that rewrote `@vX.Y.Z` pins in each downstream

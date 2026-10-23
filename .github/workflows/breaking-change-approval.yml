@@ -254,15 +254,6 @@ on:
 permissions:
   contents: read
 
-# TODO: pin the five composites below to @v1 once this ships in a release.
-# They are @develop because @v1 is the previous release and does not contain
-# them — a composite cannot be consumed at @v1 by the very pull request that
-# introduces it. `breaking-change-guard` is already released, so it stays at @v1.
-#
-# Until this lands on `develop`, the three jobs here fail to resolve their
-# actions. None of them is a required check, so that blocks nothing; it clears
-# itself on merge.
-
 jobs:
   # ----------------- Scope resolution and breaking-change detection -----------------
   detect:
@@ -292,7 +283,7 @@ jobs:
     steps:
       - name: Resolve the gate scope
         id: scope
-        uses: LerianStudio/shared-workflows-public/src/validate/pr-gate-scope@develop
+        uses: LerianStudio/shared-workflows-public/src/validate/pr-gate-scope@v1
         with:
           github-token: ${{ secrets.MANAGE_TOKEN || github.token }}
           pr-number: ${{ inputs.pr_number != 0 && inputs.pr_number || github.event.pull_request.number }}
@@ -342,7 +333,7 @@ jobs:
         if: steps.scope.outputs.in-scope == 'true'
         continue-on-error: true
         # No checkout: it reads the pull request through the API.
-        uses: LerianStudio/shared-workflows-public/src/validate/breaking-change-commits@develop
+        uses: LerianStudio/shared-workflows-public/src/validate/breaking-change-commits@v1
         with:
           github-token: ${{ secrets.MANAGE_TOKEN || github.token }}
           pr-number: ${{ steps.scope.outputs.pr-number }}
@@ -621,7 +612,7 @@ jobs:
         id: approved-set
         if: steps.prior.outputs.candidate-head != ''
         continue-on-error: true
-        uses: LerianStudio/shared-workflows-public/src/validate/breaking-change-commits@develop
+        uses: LerianStudio/shared-workflows-public/src/validate/breaking-change-commits@v1
         with:
           github-token: ${{ secrets.MANAGE_TOKEN || github.token }}
           pr-number: ${{ needs.detect.outputs.pr-number }}
@@ -684,7 +675,7 @@ jobs:
           && inputs.approval_reviewers == ''
           && inputs.create_approval_environment
           && !inputs.dry_run
-        uses: LerianStudio/shared-workflows-public/src/validate/codeowners-reviewers@develop
+        uses: LerianStudio/shared-workflows-public/src/validate/codeowners-reviewers@v1
         with:
           github-token: ${{ secrets.MANAGE_TOKEN || github.token }}
           ref: ${{ needs.detect.outputs.base-ref }}
@@ -700,7 +691,7 @@ jobs:
           && needs.detect.outputs.has-breaking-changes == 'true'
           && inputs.require_protected_environment
           && !inputs.dry_run
-        uses: LerianStudio/shared-workflows-public/src/validate/environment-protection@develop
+        uses: LerianStudio/shared-workflows-public/src/validate/environment-protection@v1
         with:
           github-token: ${{ secrets.MANAGE_TOKEN || github.token }}
           environment: breaking-approval
@@ -724,7 +715,7 @@ jobs:
           && needs.detect.outputs.has-breaking-changes == 'true'
           && !inputs.dry_run
         continue-on-error: true
-        uses: LerianStudio/shared-workflows-public/src/notify/breaking-change-approval-reporter@develop
+        uses: LerianStudio/shared-workflows-public/src/notify/breaking-change-approval-reporter@v1
         with:
           github-token: ${{ secrets.MANAGE_TOKEN || github.token }}
           pr-number: ${{ needs.detect.outputs.pr-number }}
@@ -813,7 +804,7 @@ jobs:
           && needs.detect.outputs.has-breaking-changes == 'true'
           && steps.reuse.outputs.already-approved != 'true'
           && !inputs.dry_run
-        uses: LerianStudio/shared-workflows-public/src/notify/breaking-change-approval-reporter@develop
+        uses: LerianStudio/shared-workflows-public/src/notify/breaking-change-approval-reporter@v1
         with:
           github-token: ${{ secrets.MANAGE_TOKEN || github.token }}
           pr-number: ${{ needs.detect.outputs.pr-number }}
@@ -916,7 +907,7 @@ jobs:
         id: decisions
         if: needs.detect.outputs.has-breaking-changes == 'true' && !inputs.dry_run
         continue-on-error: true
-        uses: LerianStudio/shared-workflows-public/src/validate/environment-approvals@develop
+        uses: LerianStudio/shared-workflows-public/src/validate/environment-approvals@v1
         with:
           github-token: ${{ secrets.MANAGE_TOKEN || github.token }}
           environment: breaking-approval
@@ -1161,7 +1152,7 @@ jobs:
           && (steps.verdict.outputs.state == 'approved' || steps.verdict.outputs.state == 'rejected'
               || steps.verdict.outputs.state == 'unresolved' || steps.verdict.outputs.state == 'blocked')
         continue-on-error: true
-        uses: LerianStudio/shared-workflows-public/src/notify/breaking-change-approval-reporter@develop
+        uses: LerianStudio/shared-workflows-public/src/notify/breaking-change-approval-reporter@v1
         with:
           github-token: ${{ secrets.MANAGE_TOKEN || github.token }}
           pr-number: ${{ needs.detect.outputs.pr-number }}

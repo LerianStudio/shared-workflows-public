@@ -19,12 +19,12 @@ Reusable workflow that flags and closes stale issues. Wraps the [`stale`](../src
 
 ## Usage
 
-### Testing (against `@develop`)
+### Testing (against the pull request branch)
 
 ```yaml
 jobs:
   stale-issue:
-    uses: LerianStudio/shared-workflows-public/.github/workflows/stale-issue.yml@develop
+    uses: LerianStudio/shared-workflows-public/.github/workflows/stale-issue.yml@<pr-branch>
     with:
       dry_run: true
     secrets:
