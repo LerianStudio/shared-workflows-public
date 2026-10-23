@@ -109,14 +109,14 @@ jobs:
               .map(m => m[1]))].sort();
 
             const modules = [...workflows, ...composites];
-            let body = `${marker}\n## 🧪 Testar esta PR\n\n`;
+            let body = `${marker}\n## 🧪 Test this pull request\n\n`;
             if (isFork) {
-              body += 'Esta PR vem de um fork: a branch dela não existe neste repositório, então não dá para referenciá-la em testes.\n';
+              body += 'This pull request comes from a fork: its branch does not exist in this repository, so it cannot be referenced for testing.\n';
             } else {
-              body += `Para testar, referencie a branch desta PR: \`@${headRef}\`\n`;
+              body += `To test, reference this pull request's branch: \`@${headRef}\`\n`;
             }
             if (modules.length) {
-              body += '\n**Módulos alterados:**\n' + modules.map(m => `- \`${m}\``).join('\n') + '\n';
+              body += '\n**Changed modules:**\n' + modules.map(m => `- \`${m}\``).join('\n') + '\n';
             }
 
             const { owner, repo: name } = context.repo;
