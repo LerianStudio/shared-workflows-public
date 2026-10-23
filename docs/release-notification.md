@@ -155,7 +155,7 @@ jobs:
 ```yaml
 jobs:
   notify:
-    uses: LerianStudio/shared-workflows-public/.github/workflows/release-notification.yml@develop
+    uses: LerianStudio/shared-workflows-public/.github/workflows/release-notification.yml@<pr-branch>
     with:
       product_name: "MyProduct"
       slack_channel: "test-channel"

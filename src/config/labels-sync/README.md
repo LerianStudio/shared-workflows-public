@@ -65,8 +65,8 @@ jobs:
 ### Dry run (preview only)
 
 ```yaml
-# Use @develop or your feature branch to test before releasing
-- uses: LerianStudio/shared-workflows-public/src/config/labels-sync@develop
+# Use the pull request branch to test before merging
+- uses: LerianStudio/shared-workflows-public/src/config/labels-sync@<pr-branch>
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     dry-run: "true"

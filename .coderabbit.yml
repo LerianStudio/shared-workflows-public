@@ -87,13 +87,13 @@ reviews:
     - path: "src/**/README.md"
       instructions: |
         Composite action README. Verify inputs table matches `action.yml` exactly (name, required, default).
-        Flag any usage example that references `@main`. Production examples pin a tier channel (`@tier-0`/`@tier-1`/`@tier-2`); testing examples use `@develop` or `@feat/<branch>`. An exact `@vX.Y.Z` is not wrong but opts the caller out of the promotion rings, so do not teach it as the default.
+        Flag any usage example that references `@main`. Production examples pin a tier channel (`@tier-0`/`@tier-1`/`@tier-2`); testing examples use the pull request branch (`@<branch>`); there is no `develop` branch. An exact `@vX.Y.Z` is not wrong but opts the caller out of the promotion rings, so do not teach it as the default.
 
     - path: "docs/*.md"
       instructions: |
         Workflow documentation. Filename must exactly match the workflow file (e.g., `go-ci.yml` → `docs/go-ci.md`).
         Flag if inputs table is out of sync with the corresponding workflow changes in this PR.
-        Flag any usage example that references `@main`. Production examples pin a tier channel (`@tier-0`/`@tier-1`/`@tier-2`); testing examples use `@develop` or `@feat/<branch>`. An exact `@vX.Y.Z` is not wrong but opts the caller out of the promotion rings, so do not teach it as the default.
+        Flag any usage example that references `@main`. Production examples pin a tier channel (`@tier-0`/`@tier-1`/`@tier-2`); testing examples use the pull request branch (`@<branch>`); there is no `develop` branch. An exact `@vX.Y.Z` is not wrong but opts the caller out of the promotion rings, so do not teach it as the default.
 
   auto_review:
     # Nothing is reviewed automatically. `Self — PR Validation` posts
@@ -109,11 +109,11 @@ reviews:
     enabled: false
     drafts: false
     # Kept even though nothing is auto-reviewed: `base_branches` is a separate
-    # filter from the trigger, and leaving it out made every pull request into
-    # develop ineligible (#712/#713). Harmless here, and correct if `enabled`
-    # is ever turned back on.
+    # filter from the trigger, and leaving it out made every pull request
+    # ineligible (#712/#713). Harmless here, and correct if `enabled` is ever
+    # turned back on.
     base_branches:
-      - "develop"
+      - "main"
     ignore_title_keywords:
       - "WIP"
       - "wip"

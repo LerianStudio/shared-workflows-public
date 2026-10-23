@@ -43,8 +43,9 @@ jobs:
 
 Releases follow [Semantic Versioning](https://semver.org/) via [semantic-release](https://github.com/semantic-release/semantic-release):
 
-- Merges to `develop` → beta pre-release (`v1.2.3-beta.1`)
-- Merges to `main` → stable release (`v1.2.3`)
+- Pull requests target `main`, the only long-lived branch — there is no `develop` and no beta channel
+- Before merging, test a change by pinning the pull request branch: `uses: LerianStudio/shared-workflows-public/.github/workflows/<workflow>.yml@<pr-branch>`. Every pull request gets a comment naming its branch and the modules it changes
+- Merges to `main` → stable release (`v1.2.3`), then promoted through `tier-0` → `tier-1` → `tier-2`
 
 ## Repository Routines
 
@@ -62,7 +63,7 @@ This repository runs a consolidated weekly routine (`.github/workflows/self-rout
 ### Jobs
 
 #### Branch cleanup (`branch_cleanup_stale`)
-Deletes branches with no commits for **20 days**. Protected patterns (`main`, `master`, `develop`, `release/*`, `hotfix/*`, `tier-*`) are never touched. A separate job (`branch_cleanup_merged`) deletes feature branches the moment a PR is merged.
+Deletes branches with no commits for **20 days**. Protected patterns (`main`, `master`, `hotfix/*`, `tier-*`) are never touched. A separate job (`branch_cleanup_merged`) deletes feature branches the moment a PR is merged.
 
 #### Stale PRs (`stale_pr`)
 - A PR with no activity for **20 days** receives a comment and the `stale` label.

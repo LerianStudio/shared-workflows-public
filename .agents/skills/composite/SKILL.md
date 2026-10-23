@@ -25,7 +25,7 @@ Before writing custom steps from scratch, search the [Marketplace](https://githu
 - Prefer a well-maintained marketplace action over custom shell scripting for non-trivial logic
 - Wrap it in a composite if it needs input normalization or additional steps
 - **Third-party actions (outside `LerianStudio` org) must be pinned by commit SHA**, not by tag — add a `# vX.Y.Z` comment for readability (e.g., `uses: actions/checkout@abc123 # v6`). Tags are mutable and can be force-pushed by upstream maintainers. Dependabot proposes SHA bumps automatically.
-- `LerianStudio/*` actions are pinned by **release tag** (`@v1.2.3`) or branch (`@develop` for testing)
+- `LerianStudio/*` actions are pinned by **release tag** (`@v1.2.3`) or branch (the PR branch, `@<pr-branch>`, for testing)
 - Never use `@main` or `@master` for third-party actions
 - Document in the composite `README.md` why that action was chosen
 
@@ -199,8 +199,8 @@ runs-on: self-hosted
 Examples in README.md must never use `@main`. Use the correct ref for each context:
 
 ```yaml
-# ✅ Testing — point to develop or feature branch
-uses: LerianStudio/shared-workflows-public/.github/workflows/labels-sync.yml@develop
+# ✅ Testing — point to the pull request branch
+uses: LerianStudio/shared-workflows-public/.github/workflows/labels-sync.yml@<pr-branch>
 uses: LerianStudio/shared-workflows-public/.github/workflows/labels-sync.yml@feat/my-branch
 
 # ✅ Production — always a pinned stable version

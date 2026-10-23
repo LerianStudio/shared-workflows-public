@@ -38,7 +38,7 @@ body:
     id: workflow-version
     attributes:
       label: Workflow Version / Ref
-      description: Which tag, branch or SHA are you using? (e.g. `@main`, `@v1.2.3`, `@develop`)
+      description: Which tag, branch or SHA are you using? (e.g. `@tier-1`, `@v1.2.3`, `@my-branch`)
       placeholder: "@main"
     validations:
       required: true

@@ -18,7 +18,6 @@ We actively maintain and patch the following refs:
 | Ref | Status |
 |---|---|
 | `@main` | Supported — production releases |
-| `@develop` | Supported — pre-release (beta) |
 | `@vX.Y.Z` (latest minor) | Supported |
 | `@vX.Y.Z` (older tags) | Not actively patched — upgrade to latest |
 
@@ -72,7 +71,7 @@ This repository applies the following controls to protect callers:
 - **`go-security.yml`** provides Gosec, govulncheck, Nancy, TruffleHog, license checks, and SBOM generation for Go projects.
 - **CODEOWNERS** ensures all changes to security-sensitive workflows require explicit review from `@LerianStudio/devops-team`.
 - **Semantic versioning** with GPG-signed tags ensures callers can pin to verified, immutable refs.
-- **Branch protection** on `main` and `develop` prevents direct pushes.
+- **Branch protection** on `main` prevents direct pushes.
 
 ## Supply Chain Security Recommendations for Callers
 
