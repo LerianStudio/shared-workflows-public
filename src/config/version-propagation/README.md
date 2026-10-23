@@ -105,8 +105,8 @@ The reusable wrapper `version-propagation.yml` is internal to this repo (it read
 ### Dry run (preview only)
 
 ```yaml
-# Use @develop or your feature branch to test before releasing
-- uses: LerianStudio/shared-workflows-public/src/config/version-propagation@develop
+# Use the pull request branch to test before merging
+- uses: LerianStudio/shared-workflows-public/src/config/version-propagation@<pr-branch>
   with:
     new-tag: v1.29.0
     target-filter: LerianStudio/go-boilerplate-ddd

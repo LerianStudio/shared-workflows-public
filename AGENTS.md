@@ -54,7 +54,7 @@ In reusable workflows (`workflow_call`), `uses: ./path` resolves to the **caller
 
   ```yaml
   uses: LerianStudio/shared-workflows-public/src/notify/discord-release@tier-1  # ✅ tier channel
-  uses: LerianStudio/shared-workflows-public/src/notify/discord-release@develop # ⚠️ testing only
+  uses: LerianStudio/shared-workflows-public/src/notify/discord-release@<pr-branch> # ⚠️ testing only — the PR branch
   uses: ./src/notify/discord-release  # ❌ resolves to caller's workspace
   ```
 
@@ -101,7 +101,8 @@ Every reusable workflow must include a `dry_run` input (`boolean`, `default: fal
 
 ### Branches and commits
 
-- PRs always target `develop` — never `main` directly
+- PRs always target `main` — it is the only long-lived branch; there is no `develop`
+- Test a change by pinning the PR branch (`@<pr-branch>`) from a caller repo; the PR gets a comment with the exact `uses:` lines
 - Follow [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): subject`
 - See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full type/version-bump table and scope list
 
@@ -145,7 +146,7 @@ Key fields to always complete:
 - **Testing** — check off what was actually validated; add the caller repo / run link if a real run was triggered
 
 PR titles must follow Conventional Commits: `type(scope): subject` (lowercase, imperative, max 72 chars).  
-PRs always target `develop` — never `main` directly.
+PRs always target `main` — there is no `develop` branch.
 
 ---
 
@@ -156,7 +157,7 @@ Before modifying any existing file, follow the refactoring protocol in `.agents/
 1. Summarize the current state of the file (inputs, outputs, jobs/steps, dry_run presence)
 2. Produce a numbered plan with impact classification for each change
 3. Flag breaking changes explicitly and provide a migration guide
-4. Propose test examples using `dry_run: true` on `@develop`
+4. Propose test examples using `dry_run: true` on the PR branch (`@<pr-branch>`)
 5. **Ask the user to confirm each step before applying** — never apply changes without confirmation
 6. Apply one step at a time and update documentation after all confirmed steps
 
@@ -172,7 +173,7 @@ Before modifying any existing file, follow the refactoring protocol in `.agents/
   uses: crazy-max/ghaction-import-gpg@2dc316d # v7 # ✅ third-party pinned by SHA
   uses: LerianStudio/shared-workflows-public/src/notify/discord-release@tier-1 # ✅ org-owned pinned by tier channel
   ```
-- `LerianStudio/*` actions pin a **tier channel** (`@tier-0` / `@tier-1` / `@tier-2`), or `@develop` for testing — no SHA pinning needed for org-owned actions. A tier is a branch promoted ring by ring, so the pin is set once and never edited; see [`docs/tiers.md`](docs/tiers.md). An exact `@vX.Y.Z` still works but opts the repository out of the rings
+- `LerianStudio/*` actions pin a **tier channel** (`@tier-0` / `@tier-1` / `@tier-2`), or the PR branch (`@<pr-branch>`) for testing — no SHA pinning needed for org-owned actions. A tier is a branch promoted ring by ring, so the pin is set once and never edited; see [`docs/tiers.md`](docs/tiers.md). An exact `@vX.Y.Z` still works but opts the repository out of the rings
 - Never use `@main` or `@master` for third-party actions
 - Never hardcode tokens, org names, or internal URLs — use `inputs` or `secrets`
 - Never print secrets via `echo`, `run` output, or step summaries

@@ -3,7 +3,6 @@ name: Self — PR Validation
 on:
   pull_request:
     branches:
-      - develop
       - main
     types:
       - opened
@@ -28,14 +27,18 @@ jobs:
       checks: read
     uses: ./.github/workflows/pr-validation.yml
     with:
-      enforce_source_branches: true
-      allowed_source_branches: "develop|hotfix/*"
-      target_branches_for_source_check: "main"
+      # Trunk-based: every branch opens its pull request straight into main, so
+      # there is no promotion source to enforce.
+      enforce_source_branches: false
       # Stated rather than left to the default: this repository is the first
       # consumer of its own gate, and the `breaking-approval` Environment lives
       # here. If it is ever removed, the preflight fails loudly instead of this
       # line quietly meaning nothing.
       enable_breaking_change_approval: true
+      # Trunk-based: every pull request lands on main, so every one of them is
+      # what the next release is cut from. The default scope gates only hotfix/*
+      # into main because it assumes the rest was gated on the way into develop.
+      breaking_change_scope_rules: '{"main": "*"}'
     secrets:
       MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -63,6 +66,79 @@ jobs:
         uses: ./src/config/changed-workflows
         with:
           github-token: ${{ github.token }}
+
+  # ----------------- Branch Test Instructions -----------------
+  # There is no develop branch: a change is tested before merge by pinning the
+  # pull request's own branch from a caller repository. This job keeps a single
+  # comment on the pull request with the exact `uses:` lines for every reusable
+  # workflow and composite the pull request touches. Fork branches do not exist
+  # in this repository, so the comment says so instead of offering a ref.
+  branch-test-instructions:
+    name: Branch Test Instructions
+    needs: changed-files
+    if: github.event_name == 'pull_request' && needs.changed-files.result == 'success'
+    runs-on: ${{ vars.GENERAL_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Post branch test instructions
+        # A fork's token cannot write comments; the instructions are advisory, so
+        # that must not fail the run.
+        continue-on-error: ${{ github.event.pull_request.head.repo.fork }}
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          CHANGED_FILES: ${{ needs.changed-files.outputs.all_files }}
+        with:
+          github-token: ${{ secrets.MANAGE_TOKEN || github.token }}
+          script: |
+            const marker = '<!-- branch-test-instructions -->';
+            const repo = `${context.repo.owner}/${context.repo.repo}`;
+            const headRef = process.env.HEAD_REF;
+            const isFork = process.env.HEAD_REPO !== repo;
+            const files = (process.env.CHANGED_FILES || '').split(/\s+/).filter(Boolean);
+
+            const workflows = [...new Set(files
+              .filter(f => /^\.github\/workflows\/[^/]+\.yml$/.test(f))
+              .filter(f => !/^\.github\/workflows\/self-/.test(f)))].sort();
+            const composites = [...new Set(files
+              .map(f => f.match(/^(src\/[^/]+\/[^/]+)\//))
+              .filter(Boolean)
+              .map(m => m[1]))].sort();
+
+            let body = `${marker}\n## 🧪 Test this pull request\n\n`;
+            if (isFork) {
+              body += 'This pull request comes from a fork, so its branch does not exist in this repository and cannot be pinned by a caller. ' +
+                'A maintainer can push the branch here to test it.\n';
+            } else {
+              body += `Pin the pull request branch from a caller repository and run it with \`dry_run: true\` first:\n\n`;
+              const lines = [
+                ...workflows.map(f => `uses: ${repo}/${f}@${headRef}`),
+                ...composites.map(d => `uses: ${repo}/${d}@${headRef}`),
+              ];
+              if (lines.length) {
+                body += '```yaml\n' + lines.join('\n') + '\n```\n';
+              } else {
+                body += `No reusable workflow or composite changed. Any of them can still be pinned at \`@${headRef}\`.\n`;
+              }
+              body += '\nComposites called from inside a reusable workflow keep resolving at `@v1`; to test a composite change through a workflow, ' +
+                'temporarily point that `uses:` at this branch too and revert it before merging. ' +
+                'Once merged, the change reaches callers through the tier channels (`@tier-0` → `@tier-1` → `@tier-2`).\n';
+            }
+
+            const { owner, repo: name } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo: name, issue_number, per_page: 100 });
+            const existing = comments.find(c => c.body?.includes(marker));
+            if (existing) {
+              if (existing.body !== body) {
+                await github.rest.issues.updateComment({ owner, repo: name, comment_id: existing.id, body });
+              }
+            } else {
+              await github.rest.issues.createComment({ owner, repo: name, issue_number, body });
+            }
 
   # ----------------- Breaking Change Guard Detector Tests -----------------
   breaking-change-guard-tests:
@@ -463,11 +539,9 @@ jobs:
   # ----------------- CodeRabbit Gate -----------------
   # This repository's review scope, declared here rather than buried in the gate.
   #
-  # Only pull requests targeting develop, plus hotfix/* branches wherever they
-  # land, get a CodeRabbit review. hotfix/* is included because that code never
-  # passed through develop and was therefore never reviewed anywhere; release PRs
-  # (develop → main) are excluded because their content was already reviewed on
-  # the way into develop, and they are the largest PRs in the repo.
+  # Trunk-based: main is the only base branch, so every pull request into main
+  # gets a CodeRabbit review. The head-pattern dimension is cleared because the
+  # base already covers every branch.
   #
   # Bounded by this workflow's own `on.pull_request.branches` above: a base branch
   # named here but missing from that list never triggers a run, so the label never
@@ -531,7 +605,7 @@ jobs:
       # Binds the verdict above to the commit it was computed for, so a run
       # superseded by a newer push cannot authorise a head it never validated.
       head_sha: ${{ github.event.pull_request.head.sha }}
-      review_base_branches: develop
-      review_head_patterns: hotfix/*
+      review_base_branches: main
+      review_head_patterns: ''
     secrets:
       MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}

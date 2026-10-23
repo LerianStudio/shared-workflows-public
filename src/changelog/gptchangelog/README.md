@@ -64,7 +64,7 @@ jobs:
 ```yaml
 jobs:
   release:
-    uses: LerianStudio/shared-workflows-public/.github/workflows/release.yml@develop
+    uses: LerianStudio/shared-workflows-public/.github/workflows/release.yml@<pr-branch>
     with:
       enable_changelog: true
       stable_releases_only: true

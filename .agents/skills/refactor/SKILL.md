@@ -112,7 +112,7 @@ For every behavioral change, provide a concrete test scenario:
 
 jobs:
   test:
-    uses: LerianStudio/shared-workflows-public/.github/workflows/<workflow>.yml@develop
+    uses: LerianStudio/shared-workflows-public/.github/workflows/<workflow>.yml@<pr-branch>
     with:
       <input>: <test value>
       dry_run: true   # validate before applying

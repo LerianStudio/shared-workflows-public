@@ -103,7 +103,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify referenced images exist
-        uses: LerianStudio/shared-workflows-public/src/validate/helm-image-refs@develop
+        uses: LerianStudio/shared-workflows-public/src/validate/helm-image-refs@<pr-branch>
         with:
           chart-path: charts/plugin-br-bank-transfer
           values-file: .github/configs/helm-render-values/plugin-br-bank-transfer.yaml
