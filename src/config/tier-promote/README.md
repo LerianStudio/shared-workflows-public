@@ -98,7 +98,7 @@ jobs:
     secrets: inherit
 ```
 
-For testing, point at a branch instead: `@develop` or `@feat/<branch>`.
+For testing, point at the pull request branch instead: `@<pr-branch>`.
 
 ## Permissions required
 

@@ -5,9 +5,6 @@
   </tr>
 </table>
 
-> **Unreleased.** Until this ships in a release, reference it as `@develop` —
-> `@v1` is the previous release and does not contain it yet.
-
 Lists the commits in a pull request that carry a breaking change, and
 fingerprints the set.
 
@@ -134,14 +131,13 @@ applies to anything calling the composite directly.
 
 ## Usage
 
-Testing, while this is unreleased — `@develop` is the only ref that resolves
-today. After it ships, pin a tier channel (`@tier-0` / `@tier-1` / `@tier-2`)
-and never `@develop`, which moves under the caller.
+Pin a tier channel (`@tier-0` / `@tier-1` / `@tier-2`). To test a change
+before it merges, pin the pull request branch (`@<pr-branch>`) instead.
 
 ```yaml
 - name: List the breaking-change commits
   id: breaking
-  uses: LerianStudio/shared-workflows-public/src/validate/breaking-change-commits@develop
+  uses: LerianStudio/shared-workflows-public/src/validate/breaking-change-commits@<pr-branch>
   with:
     github-token: ${{ secrets.MANAGE_TOKEN || github.token }}
     pr-number: ${{ github.event.pull_request.number }}

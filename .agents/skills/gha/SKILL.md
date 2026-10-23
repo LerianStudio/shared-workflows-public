@@ -71,7 +71,7 @@ Migration: replace `old_input` with `new_input`.
 
 **Step 5 — Propose test examples**
 
-For every behavioral change, provide a concrete test scenario using `dry_run: true` on `@develop`.
+For every behavioral change, provide a concrete test scenario using `dry_run: true` on the PR branch (`@<pr-branch>`).
 
 **Step 6 — Confirm before applying**
 
@@ -126,7 +126,7 @@ Before writing custom steps from scratch, search the [Marketplace](https://githu
 - Prefer a well-maintained marketplace action over custom shell scripting for non-trivial logic
 - If the action needs wrapping, create a composite in `src/` — don't inline complex shell directly in a workflow
 - **Third-party actions (outside `LerianStudio` org) must be pinned by commit SHA**, not by tag — add a comment with the version for readability (e.g., `uses: actions/checkout@abc123 # v6`). Tags are mutable and can be force-pushed by upstream maintainers. Dependabot will propose SHA bumps automatically.
-- `LerianStudio/*` actions are pinned by **release tag** (e.g., `@v1.2.3`) or branch (`@develop` for testing)
+- `LerianStudio/*` actions are pinned by **release tag** (e.g., `@v1.2.3`) or branch (the PR branch, `@<pr-branch>`, for testing)
 - Never use `@main` or `@master` for third-party actions
 - Document in the README or `docs/` why that action was chosen
 
@@ -368,7 +368,7 @@ In reusable workflows (`workflow_call`), `uses: ./path` resolves to the **caller
 - **Workflows called by external repos** — must use an external ref:
   ```yaml
   uses: LerianStudio/shared-workflows-public/src/notify/discord-release@v1.2.3  # ✅ pinned
-  uses: LerianStudio/shared-workflows-public/src/notify/discord-release@develop # ⚠️ testing only
+  uses: LerianStudio/shared-workflows-public/src/notify/discord-release@<pr-branch> # ⚠️ testing only — the PR branch
   uses: ./src/notify/discord-release  # ❌ resolves to caller's workspace, will fail
   ```
 - **`self-*` workflows (internal only)** — local path for reusable workflow only:
@@ -434,8 +434,8 @@ Every new reusable workflow must have a corresponding `docs/<workflow-name>.md`.
 Examples in `docs/` and `README.md` must never use `@main`. Use the correct ref for each context:
 
 ```yaml
-# ✅ Testing — point to develop or feature branch
-uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@develop
+# ✅ Testing — point to the pull request branch
+uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@<pr-branch>
 uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@feat/my-branch
 
 # ✅ Production — always a pinned stable version

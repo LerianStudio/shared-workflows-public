@@ -62,8 +62,8 @@ permissions:
 
 jobs:
   cleanup:
-    # Testing: @develop. Production: a stable @vX.Y.Z.
-    uses: LerianStudio/shared-workflows-public/.github/workflows/helm-alpha-cleanup.yml@develop
+    # Testing: @<pr-branch>. Production: a tier channel (@tier-N).
+    uses: LerianStudio/shared-workflows-public/.github/workflows/helm-alpha-cleanup.yml@<pr-branch>
     with:
       # schedule deletes for real; manual dispatch previews unless you flip dry_run
       dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}

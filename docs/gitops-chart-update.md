@@ -73,10 +73,10 @@ jobs:
 ```
 
 ```yaml
-# Testing — develop
+# Testing — the pull request branch
 jobs:
   notify-gitops:
-    uses: LerianStudio/shared-workflows-public/.github/workflows/gitops-chart-update.yml@develop
+    uses: LerianStudio/shared-workflows-public/.github/workflows/gitops-chart-update.yml@<pr-branch>
     with:
       chart_name: midaz
       chart_version: 9.1.0
@@ -90,7 +90,7 @@ jobs:
 `dry_run: true` resolves the targets and runs both gates, then stops before the GPG import, the commit, the push and the pull request. It prints the resolved plan, the environments left alone because they are pinned to another channel, and the route it would have taken.
 
 ```yaml
-uses: LerianStudio/shared-workflows-public/.github/workflows/gitops-chart-update.yml@develop
+uses: LerianStudio/shared-workflows-public/.github/workflows/gitops-chart-update.yml@<pr-branch>
 with:
   chart_name: fetcher
   chart_version: 3.2.0

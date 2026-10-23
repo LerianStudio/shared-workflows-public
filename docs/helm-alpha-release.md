@@ -59,8 +59,8 @@ permissions:
 
 jobs:
   alpha:
-    # Testing: @develop. Production: a stable @vX.Y.Z.
-    uses: LerianStudio/shared-workflows-public/.github/workflows/helm-alpha-release.yml@develop
+    # Testing: @<pr-branch>. Production: a tier channel (@tier-N).
+    uses: LerianStudio/shared-workflows-public/.github/workflows/helm-alpha-release.yml@<pr-branch>
     with:
       chart: ${{ inputs.chart }}
       dry_run: ${{ inputs.dry_run }}

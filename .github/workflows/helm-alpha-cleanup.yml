@@ -76,8 +76,7 @@ jobs:
       packages: write # delete alpha package versions from GHCR
     steps:
       - name: Prune alphas
-        # TODO: pin to @v1 once released; @develop for testing.
-        uses: LerianStudio/shared-workflows-public/src/config/ghcr-alpha-cleanup@develop
+        uses: LerianStudio/shared-workflows-public/src/config/ghcr-alpha-cleanup@v1
         with:
           account: ${{ inputs.account }}
           token: ${{ secrets.GHCR_CLEANUP_PAT }}

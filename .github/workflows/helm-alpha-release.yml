@@ -60,8 +60,7 @@ jobs:
 
       - name: Publish alpha
         id: alpha
-        # TODO: pin to @v1 once released; @develop for testing.
-        uses: LerianStudio/shared-workflows-public/src/build/helm-alpha-publish@develop
+        uses: LerianStudio/shared-workflows-public/src/build/helm-alpha-publish@v1
         with:
           chart: ${{ inputs.chart }}
           charts-path: ${{ inputs.charts_path }}

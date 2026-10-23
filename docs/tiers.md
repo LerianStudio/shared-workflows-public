@@ -51,11 +51,11 @@ A change that only ever exercised `tier-0` has been proven to *load*, not to be 
 ## The flow
 
 ```text
-   ┌─ PR merged into develop ──────────────────────────────────┐
-   │  beta release  v1.2.3-beta.N                             │
-   │  reaches nobody: no consumer pins develop in production   │
+   ┌─ pull request into main ──────────────────────────────────┐
+   │  tested from the PR branch (@<pr-branch>)                 │
+   │  reaches nobody: no consumer pins a PR branch             │
    └──────────────────────────┬────────────────────────────────┘
-                              │  develop → main
+                              │  squash merge
                               ▼
    ┌─ stable release on main ─ v1.2.3 ─────────────────────────┐
    │                                                           │
