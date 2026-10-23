@@ -177,7 +177,7 @@ The PR will automatically:
 - Request review from `@LerianStudio/devops-team` (via CODEOWNERS)
 - Run the `Self — PR Validation` checks
 - Apply labels based on which files were changed (via `labeler.yml`)
-- Post a **Test this pull request** comment with the `uses:` lines for every workflow and composite it changes, pinned to the PR branch
+- Post a **Test this pull request** comment naming the PR branch to reference for testing and listing the workflows and composites it changes
 
 ### 5. Validate from the PR branch
 

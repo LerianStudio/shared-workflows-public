@@ -102,7 +102,7 @@ Every reusable workflow must include a `dry_run` input (`boolean`, `default: fal
 ### Branches and commits
 
 - PRs always target `main` — it is the only long-lived branch; there is no `develop`
-- Test a change by pinning the PR branch (`@<pr-branch>`) from a caller repo; the PR gets a comment with the exact `uses:` lines
+- Test a change by pinning the PR branch (`@<pr-branch>`) from a caller repo; the PR gets a comment naming the branch and the changed modules
 - Follow [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): subject`
 - See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full type/version-bump table and scope list
 

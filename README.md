@@ -44,7 +44,7 @@ jobs:
 Releases follow [Semantic Versioning](https://semver.org/) via [semantic-release](https://github.com/semantic-release/semantic-release):
 
 - Pull requests target `main`, the only long-lived branch — there is no `develop` and no beta channel
-- Before merging, test a change by pinning the pull request branch: `uses: LerianStudio/shared-workflows-public/.github/workflows/<workflow>.yml@<pr-branch>`. Every pull request gets a comment with the exact lines
+- Before merging, test a change by pinning the pull request branch: `uses: LerianStudio/shared-workflows-public/.github/workflows/<workflow>.yml@<pr-branch>`. Every pull request gets a comment naming its branch and the modules it changes
 - Merges to `main` → stable release (`v1.2.3`), then promoted through `tier-0` → `tier-1` → `tier-2`
 
 ## Repository Routines

@@ -68,11 +68,11 @@ jobs:
           github-token: ${{ github.token }}
 
   # ----------------- Branch Test Instructions -----------------
-  # There is no develop branch: a change is tested before merge by pinning the
-  # pull request's own branch from a caller repository. This job keeps a single
-  # comment on the pull request with the exact `uses:` lines for every reusable
-  # workflow and composite the pull request touches. Fork branches do not exist
-  # in this repository, so the comment says so instead of offering a ref.
+  # There is no develop branch: a change is tested before merge by referencing
+  # the pull request's own branch from a caller repository. This job keeps a
+  # single comment on the pull request naming that branch and listing the
+  # reusable workflows and composites it changes. Fork branches do not exist in
+  # this repository, so the comment says so instead of offering a ref.
   branch-test-instructions:
     name: Branch Test Instructions
     needs: changed-files
@@ -108,24 +108,15 @@ jobs:
               .filter(Boolean)
               .map(m => m[1]))].sort();
 
+            const modules = [...workflows, ...composites];
             let body = `${marker}\n## 🧪 Test this pull request\n\n`;
             if (isFork) {
-              body += 'This pull request comes from a fork, so its branch does not exist in this repository and cannot be pinned by a caller. ' +
-                'A maintainer can push the branch here to test it.\n';
+              body += 'This pull request comes from a fork: its branch does not exist in this repository, so it cannot be referenced for testing.\n';
             } else {
-              body += `Pin the pull request branch from a caller repository and run it with \`dry_run: true\` first:\n\n`;
-              const lines = [
-                ...workflows.map(f => `uses: ${repo}/${f}@${headRef}`),
-                ...composites.map(d => `uses: ${repo}/${d}@${headRef}`),
-              ];
-              if (lines.length) {
-                body += '```yaml\n' + lines.join('\n') + '\n```\n';
-              } else {
-                body += `No reusable workflow or composite changed. Any of them can still be pinned at \`@${headRef}\`.\n`;
-              }
-              body += '\nComposites called from inside a reusable workflow keep resolving at `@v1`; to test a composite change through a workflow, ' +
-                'temporarily point that `uses:` at this branch too and revert it before merging. ' +
-                'Once merged, the change reaches callers through the tier channels (`@tier-0` → `@tier-1` → `@tier-2`).\n';
+              body += `To test, reference this pull request's branch: \`@${headRef}\`\n`;
+            }
+            if (modules.length) {
+              body += '\n**Changed modules:**\n' + modules.map(m => `- \`${m}\``).join('\n') + '\n';
             }
 
             const { owner, repo: name } = context.repo;
