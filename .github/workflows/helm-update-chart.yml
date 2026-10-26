@@ -117,6 +117,46 @@ jobs:
     name: Update Chart
     runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
     steps:
+      # An org secret the calling repository has not been granted resolves to an
+      # empty string, not an error. Fail here, naming it, instead of letting a
+      # later step fail obscurely or skip and report success.
+      - name: Require secrets
+        shell: bash
+        env:
+          APP_ID: ${{ secrets.APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+          GIT_USER_NAME: ${{ secrets.GIT_USER_NAME }}
+          GIT_USER_EMAIL: ${{ secrets.GIT_USER_EMAIL }}
+        run: |
+          set -euo pipefail
+          required=(APP_ID APP_PRIVATE_KEY GIT_USER_NAME GIT_USER_EMAIL)
+          missing=()
+          for name in "${required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Empty secret(s): ${missing[*]}. Set them on the calling repository or grant it access to the organization secret."
+            exit 1
+          fi
+
+      - name: Require secrets (GPG signing)
+        if: ${{ inputs.gpg_sign_commits }}
+        shell: bash
+        env:
+          GPG_KEY: ${{ secrets.GPG_KEY }}
+          GPG_KEY_PASSWORD: ${{ secrets.GPG_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          required=(GPG_KEY GPG_KEY_PASSWORD)
+          missing=()
+          for name in "${required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Empty secret(s): ${missing[*]}. Set them on the calling repository or grant it access to the organization secret."
+            exit 1
+          fi
+
       - name: Validate branch inputs
         env:
           BASE_BRANCH: ${{ inputs.base_branch }}
@@ -785,6 +825,24 @@ jobs:
 
             echo "$COMPONENTS" | jq -r '.[] | "| \(.name) | \(.version) | \(.env_vars | if . == {} then "-" else (. | keys | join(", ")) end) |"'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require secrets (Slack notification)
+        if: ${{ inputs.slack_notification && steps.commit.outputs.has_changes == 'true' }}
+        shell: bash
+        env:
+          SLACK_BOT_TOKEN_HELM: ${{ secrets.SLACK_BOT_TOKEN_HELM }}
+          SLACK_CHANNEL_DEVOPS: ${{ inputs.slack_channel || secrets.SLACK_CHANNEL_DEVOPS }}
+        run: |
+          set -euo pipefail
+          required=(SLACK_BOT_TOKEN_HELM SLACK_CHANNEL_DEVOPS)
+          missing=()
+          for name in "${required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Empty secret(s): ${missing[*]}. Set them on the calling repository or grant it access to the organization secret."
+            exit 1
+          fi
 
       - name: Send Slack notification
         if: ${{ inputs.slack_notification && steps.commit.outputs.has_changes == 'true' }}

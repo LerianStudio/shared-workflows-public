@@ -11,6 +11,8 @@ A tag is eligible when its commit lives on the default branch **or** on a mainte
 
 Bot commits (any login ending in `[bot]` plus the entries in `bot-ignore-list`) and `[skip ci]` commits (semantic-release version bumps, changelog backmerges, etc.) are filtered out before the GPT prompt is built, ensuring the changelog only reflects meaningful human-authored changes.
 
+A hand-written `## [Unreleased]` section at the top of an existing `CHANGELOG.md` is folded into the new release: its lines land under the release heading, above the generated notes, and the `[Unreleased]` heading is dropped.
+
 ## Inputs
 
 | Input | Description | Required | Default |

@@ -82,6 +82,26 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      # An org secret the calling repository has not been granted resolves to an
+      # empty string, not an error. Fail here, naming it, instead of letting a
+      # later step fail obscurely or skip and report success.
+      - name: Require secrets
+        shell: bash
+        env:
+          LERIAN_STUDIO_MIDAZ_PUSH_BOT_APP_ID: ${{ secrets.LERIAN_STUDIO_MIDAZ_PUSH_BOT_APP_ID }}
+          LERIAN_STUDIO_MIDAZ_PUSH_BOT_PRIVATE_KEY: ${{ secrets.LERIAN_STUDIO_MIDAZ_PUSH_BOT_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          required=(LERIAN_STUDIO_MIDAZ_PUSH_BOT_APP_ID LERIAN_STUDIO_MIDAZ_PUSH_BOT_PRIVATE_KEY)
+          missing=()
+          for name in "${required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Empty secret(s): ${missing[*]}. Set them on the calling repository or grant it access to the organization secret."
+            exit 1
+          fi
+
       - name: Create GitHub App Token
         id: app-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
