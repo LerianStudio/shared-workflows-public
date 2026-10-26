@@ -153,15 +153,20 @@ jobs:
             exit 1
           fi
 
-      # The composite syncs only after delivery has committed, so an empty token found
-      # there fails a run whose change has already landed.
-      - name: Require ArgoCD secrets
+      # The composite syncs only after delivery has committed, so an empty token or URL
+      # found there fails a run whose change has already landed.
+      - name: Require ArgoCD settings
         if: ${{ inputs.enable_argocd_sync && !inputs.dry_run }}
         shell: bash
         env:
           ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
+          ARGOCD_URL: ${{ vars.ARGOCD_URL }}
         run: |
           set -euo pipefail
+          if [[ -z "${ARGOCD_URL:-}" ]]; then
+            echo "::error::The ARGOCD_URL variable is empty. Set it on the calling repository or grant it access to the organization variable."
+            exit 1
+          fi
           required=(ARGOCD_TOKEN)
           missing=()
           for name in "${required[@]}"; do
