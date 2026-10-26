@@ -153,6 +153,25 @@ jobs:
             exit 1
           fi
 
+      # The composite syncs only after delivery has committed, so an empty token found
+      # there fails a run whose change has already landed.
+      - name: Require ArgoCD secrets
+        if: ${{ inputs.enable_argocd_sync && !inputs.dry_run }}
+        shell: bash
+        env:
+          ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
+        run: |
+          set -euo pipefail
+          required=(ARGOCD_TOKEN)
+          missing=()
+          for name in "${required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Empty secret(s): ${missing[*]}. Set them on the calling repository or grant it access to the organization secret."
+            exit 1
+          fi
+
       # ----------------- Chart Update -----------------
       - name: Update the pinned chart version
         id: update

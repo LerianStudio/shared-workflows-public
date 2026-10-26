@@ -102,6 +102,27 @@ jobs:
             exit 1
           fi
 
+      # The composite signs and commits only outside a dry run.
+      - name: Require commit signing secrets
+        if: ${{ !inputs.dry_run }}
+        shell: bash
+        env:
+          LERIAN_CI_CD_USER_GPG_KEY: ${{ secrets.LERIAN_CI_CD_USER_GPG_KEY }}
+          LERIAN_CI_CD_USER_GPG_KEY_PASSWORD: ${{ secrets.LERIAN_CI_CD_USER_GPG_KEY_PASSWORD }}
+          LERIAN_CI_CD_USER_NAME: ${{ secrets.LERIAN_CI_CD_USER_NAME }}
+          LERIAN_CI_CD_USER_EMAIL: ${{ secrets.LERIAN_CI_CD_USER_EMAIL }}
+        run: |
+          set -euo pipefail
+          required=(LERIAN_CI_CD_USER_GPG_KEY LERIAN_CI_CD_USER_GPG_KEY_PASSWORD LERIAN_CI_CD_USER_NAME LERIAN_CI_CD_USER_EMAIL)
+          missing=()
+          for name in "${required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Empty secret(s): ${missing[*]}. Set them on the calling repository or grant it access to the organization secret."
+            exit 1
+          fi
+
       - name: Create GitHub App Token
         id: app-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3

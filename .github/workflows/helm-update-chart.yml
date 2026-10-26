@@ -669,6 +669,26 @@ jobs:
           echo "Committing with message: ${COMMIT_MSG}"
           git commit -m "${COMMIT_MSG}"
 
+      # Checked before the push: failing after the PR exists would report failure
+      # over a change that was already published.
+      - name: Require secrets (Slack notification)
+        if: ${{ inputs.slack_notification && steps.commit.outputs.has_changes == 'true' }}
+        shell: bash
+        env:
+          SLACK_BOT_TOKEN_HELM: ${{ secrets.SLACK_BOT_TOKEN_HELM }}
+          SLACK_CHANNEL_DEVOPS: ${{ inputs.slack_channel || secrets.SLACK_CHANNEL_DEVOPS }}
+        run: |
+          set -euo pipefail
+          required=(SLACK_BOT_TOKEN_HELM SLACK_CHANNEL_DEVOPS)
+          missing=()
+          for name in "${required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Empty secret(s): ${missing[*]}. Set them on the calling repository or grant it access to the organization secret."
+            exit 1
+          fi
+
       - name: Push branch and create PR
         id: push-pr
         if: steps.commit.outputs.has_changes == 'true'
@@ -825,24 +845,6 @@ jobs:
 
             echo "$COMPONENTS" | jq -r '.[] | "| \(.name) | \(.version) | \(.env_vars | if . == {} then "-" else (. | keys | join(", ")) end) |"'
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Require secrets (Slack notification)
-        if: ${{ inputs.slack_notification && steps.commit.outputs.has_changes == 'true' }}
-        shell: bash
-        env:
-          SLACK_BOT_TOKEN_HELM: ${{ secrets.SLACK_BOT_TOKEN_HELM }}
-          SLACK_CHANNEL_DEVOPS: ${{ inputs.slack_channel || secrets.SLACK_CHANNEL_DEVOPS }}
-        run: |
-          set -euo pipefail
-          required=(SLACK_BOT_TOKEN_HELM SLACK_CHANNEL_DEVOPS)
-          missing=()
-          for name in "${required[@]}"; do
-            [[ -n "${!name:-}" ]] || missing+=("$name")
-          done
-          if (( ${#missing[@]} > 0 )); then
-            echo "::error::Empty secret(s): ${missing[*]}. Set them on the calling repository or grant it access to the organization secret."
-            exit 1
-          fi
 
       - name: Send Slack notification
         if: ${{ inputs.slack_notification && steps.commit.outputs.has_changes == 'true' }}
