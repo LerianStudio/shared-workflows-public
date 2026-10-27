@@ -21,8 +21,8 @@ A consumer pins a tier once and never edits that pin again:
 
 ```yaml
 jobs:
-  ci:
-    uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@tier-1
+  release:
+    uses: LerianStudio/shared-workflows-public/.github/workflows/release.yml@tier-1
 ```
 
 Which tier a repository pins **is** its declaration of how fast it wants to receive. Changing tier is a PR in that repository, not an entry in a central list.
@@ -128,6 +128,18 @@ An App identity can be granted ruleset bypass on its own. That is what makes it 
 It also has to be an App rather than `GITHUB_TOKEN`: a pull request opened by `GITHUB_TOKEN` does not trigger workflows, so the fallback PR would arrive with no checks and be unmergeable in any repository that gates on them.
 
 The signing identity is separate and unchanged: commits are signed by the GPG key imported in the step after, because `tiers-rule` requires signed commits on the tier branches.
+
+## Environments
+
+Each promotion job runs in the Environment named after its tier, and that Environment is the approval gate. The workflow only names it; who may approve is configured in the repository settings, under **Settings → Environments**:
+
+| Environment | Required reviewers | Prevent self-review |
+|---|---|---|
+| `tier-0` | none — promoted on every stable release | — |
+| `tier-1` | `G_Github_Devops` | off |
+| `tier-2` | `G_Github_Devops` | off |
+
+An Environment with no required reviewers is not a gate. The job runs at once, so a release walks through every tier in seconds with nobody asked. A run where `tier-1` and `tier-2` show no pending review is the symptom. Check these settings when the repository is created, and again after anyone edits its Environments.
 
 ## Config and job chain must agree
 

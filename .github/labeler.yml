@@ -27,8 +27,6 @@ typescript:
 security:
   - changed-files:
     - any-glob-to-any-file:
-      - ".github/workflows/go-security.yml"
-      - ".github/workflows/pr-security-scan.yml"
       - "src/security/**"
       - "SECURITY.md"
 
@@ -71,7 +69,6 @@ build:
   - changed-files:
     - any-glob-to-any-file:
       - "src/build/**"
-      - ".github/workflows/go-lambda-release.yml"
 
 config:
   - changed-files:
@@ -81,8 +78,6 @@ deploy:
   - changed-files:
     - any-glob-to-any-file:
       - "src/deploy/**"
-      - ".github/workflows/spa-deploy.yml"
-      - ".github/workflows/s3-upload.yml"
 
 notify:
   - changed-files:
@@ -103,7 +98,6 @@ validate:
     - any-glob-to-any-file:
       - "src/validate/**"
       - ".github/workflows/pr-validation.yml"
-      - ".github/workflows/go-pr-validation.yml"
       - ".github/workflows/self-pr-validation.yml"
 
 changelog:
@@ -117,7 +111,6 @@ routine:
     - any-glob-to-any-file:
       - ".github/workflows/routine.yml"
       - ".github/workflows/self-routine.yml"
-      - ".github/workflows/stale.yml"
       - ".github/workflows/stale-issue.yml"
       - ".github/workflows/stale-pr.yml"
       - ".github/workflows/branch-cleanup.yml"
