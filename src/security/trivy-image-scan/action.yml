@@ -93,10 +93,13 @@ runs:
       id: set-outputs
       if: always()
       shell: bash
+      env:
+        APP_NAME: ${{ inputs.app-name }}
+        ENABLE_LICENSE_SCAN: ${{ inputs.enable-license-scan }}
       run: |
-        echo "vuln-scan-sarif=trivy-vulnerability-scan-docker-${{ inputs.app-name }}.sarif" >> "$GITHUB_OUTPUT"
-        if [ "${{ inputs.enable-license-scan }}" = "true" ]; then
-          echo "license-scan-json=trivy-license-scan-docker-${{ inputs.app-name }}.json" >> "$GITHUB_OUTPUT"
+        echo "vuln-scan-sarif=trivy-vulnerability-scan-docker-${APP_NAME}.sarif" >> "$GITHUB_OUTPUT"
+        if [ "$ENABLE_LICENSE_SCAN" = "true" ]; then
+          echo "license-scan-json=trivy-license-scan-docker-${APP_NAME}.json" >> "$GITHUB_OUTPUT"
         else
           echo "license-scan-json=" >> "$GITHUB_OUTPUT"
         fi

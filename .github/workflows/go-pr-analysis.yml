@@ -636,8 +636,9 @@ jobs:
         working-directory: ${{ matrix.app.working_dir }}
         env:
           CGO_ENABLED: 1
+          MAKE_TARGET: ${{ steps.detect-make.outputs.make_target }}
         run: |
-          make ${{ steps.detect-make.outputs.make_target }}
+          make "$MAKE_TARGET"
           # Normalize coverage file name for downstream jobs
           # Check various locations where coverage might be generated
           if [[ -f "coverage.out" ]] && [[ ! -f "coverage.txt" ]]; then
@@ -1224,7 +1225,12 @@ jobs:
       # ----------------- Integration Suite -----------------
       - name: Run integration tests
         working-directory: ${{ matrix.app.working_dir }}
-        run: ${{ inputs.integration_test_command }}
+        env:
+          INTEGRATION_TEST_COMMAND: ${{ inputs.integration_test_command }}
+        # The input is a command the caller means to execute. eval runs it in this
+        # step's shell, exactly as the inline expression did, without the value
+        # being spliced into the script text before the shell parses it.
+        run: eval "$INTEGRATION_TEST_COMMAND"
 
       - name: Verify the integration suite actually ran
         if: steps.integration-config.outputs.has-guard == 'true'
@@ -1444,8 +1450,10 @@ jobs:
 
       - name: Run tests ${{ inputs.test_determinism_runs }} times
         working-directory: ${{ matrix.app.working_dir }}
+        env:
+          DETERMINISM_RUNS: ${{ inputs.test_determinism_runs }}
         run: |
-          echo "Running tests ${{ inputs.test_determinism_runs }} times to verify determinism..."
+          echo "Running tests $DETERMINISM_RUNS times to verify determinism..."
 
           # Always use go test with shuffle for determinism, regardless of Makefile
           # The tests job validates that tests pass; this job validates they're deterministic
@@ -1455,14 +1463,14 @@ jobs:
             exit 0
           fi
 
-          for i in $(seq 1 ${{ inputs.test_determinism_runs }}); do
-            echo "Run $i/${{ inputs.test_determinism_runs }}"
+          for i in $(seq 1 "$DETERMINISM_RUNS"); do
+            echo "Run $i/$DETERMINISM_RUNS"
             if ! echo "$PACKAGES" | xargs go test -count=1 -shuffle=on; then
               echo "Tests failed on run $i"
               exit 1
             fi
           done
-          echo "All ${{ inputs.test_determinism_runs }} test runs passed (deterministic)"
+          echo "All $DETERMINISM_RUNS test runs passed (deterministic)"
 
   # ============================================
   # NO CHANGES DETECTED

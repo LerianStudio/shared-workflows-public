@@ -87,6 +87,8 @@ runs:
       id: set-outputs
       if: always()
       shell: bash
+      env:
+        APP_NAME: ${{ inputs.app-name }}
       run: |
-        echo "secret-scan-sarif=trivy-secret-scan-${{ inputs.app-name }}.sarif" >> "$GITHUB_OUTPUT"
-        echo "fs-vuln-json=trivy-fs-vuln-${{ inputs.app-name }}.json" >> "$GITHUB_OUTPUT"
+        echo "secret-scan-sarif=trivy-secret-scan-${APP_NAME}.sarif" >> "$GITHUB_OUTPUT"
+        echo "fs-vuln-json=trivy-fs-vuln-${APP_NAME}.json" >> "$GITHUB_OUTPUT"
