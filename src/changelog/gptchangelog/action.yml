@@ -530,8 +530,16 @@ runs:
             COMPARE_LINK="[View all changes](${REPO_URL}/commits/${LAST_TAG})"
           fi
 
+          UNRELEASED=""
           if [ -f "$CHANGELOG_PATH" ]; then
             EXISTING_CONTENT=$(awk '/^## \[/{found=1} found{print}' "$CHANGELOG_PATH")
+            # A leading [Unreleased] section is this release's hand-written notes:
+            # its body moves under the new heading and its heading is dropped.
+            FIRST_LINE=${EXISTING_CONTENT%%$'\n'*}
+            if [[ "${FIRST_LINE,,}" == "## [unreleased]"* ]]; then
+              UNRELEASED=$(awk 'NR>1 && /^## \[/{exit} NR>1' <<< "$EXISTING_CONTENT" | sed '/./,$!d')
+              EXISTING_CONTENT=$(awk 'NR>1 && /^## \[/{found=1} found' <<< "$EXISTING_CONTENT")
+            fi
           else
             EXISTING_CONTENT=""
             echo "📜 Creating new changelog"
@@ -542,6 +550,10 @@ runs:
             echo ""
             echo "## [${VERSION}](${REPO_URL}/releases/tag/${LAST_TAG})"
             echo ""
+            if [ -n "$UNRELEASED" ]; then
+              echo "$UNRELEASED"
+              echo ""
+            fi
             echo "$CONTENT"
             echo ""
             echo "$COMPARE_LINK"
@@ -560,6 +572,10 @@ runs:
           {
             echo "## ${APP_NAME^} v${VERSION}"
             echo ""
+            if [ -n "$UNRELEASED" ]; then
+              echo "$UNRELEASED"
+              echo ""
+            fi
             echo "$CONTENT"
             echo ""
             echo "$COMPARE_LINK"
