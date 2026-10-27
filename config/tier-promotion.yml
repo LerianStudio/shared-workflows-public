@@ -6,7 +6,7 @@
 #
 # The tiers are BRANCHES of this repository, not tags and not groups of
 # repositories. A consumer pins a tier once
-# (`uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@tier-1`)
+# (`uses: LerianStudio/shared-workflows-public/.github/workflows/release.yml@tier-1`)
 # and never edits that pin again; the release reaches it when the tier branch
 # it follows is promoted. Which tier a repository pins IS its declaration of
 # how fast it wants to receive.

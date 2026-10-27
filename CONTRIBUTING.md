@@ -274,13 +274,13 @@ Releases are GPG-signed and published as GitHub Releases with the generated `CHA
 
 ```yaml
 # ✅ Production — pin the tier that matches how fast the repo should receive
-uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@tier-1
+uses: LerianStudio/shared-workflows-public/.github/workflows/release.yml@tier-1
 
 # ⚠️ Testing only — the pull request branch, before it merges
-uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@feature/your-feature-name
+uses: LerianStudio/shared-workflows-public/.github/workflows/release.yml@feature/your-feature-name
 
 # ❌ Never — no gate, no soak, no rollback story
-uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@main
+uses: LerianStudio/shared-workflows-public/.github/workflows/release.yml@main
 ```
 
 A tier is a branch of this repository that a release is promoted into, one ring at a time. Pinning one means **the pin is never edited again**: a new release reaches the repo when its tier is promoted, not when someone opens a bump PR against it.

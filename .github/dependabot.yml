@@ -25,9 +25,9 @@ updates:
     cooldown:
       default-days: 3
     ignore:
-      # LerianStudio internal actions follow our own pinning strategy:
-      # composites use floating @vN (auto-track minor/patch), reusable workflows
-      # use exact @vN.M.P. Dependabot opt-out — bumps handled via release tooling.
+      # LerianStudio internal actions follow our own pinning strategy: callers
+      # pin a tier channel (@tier-N) and receive releases through tier
+      # promotion, not through bump PRs, so Dependabot opts out of them.
       - dependency-name: "LerianStudio/*"
     groups:
       # Core GitHub-provided actions (checkout, setup-*, upload/download-artifact, etc.).
