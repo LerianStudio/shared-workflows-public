@@ -113,6 +113,70 @@ jobs:
           echo "::error::enable_argocd_sync is on but the GITOPS_RUNNERS variable is unset, so this job is running on the hosted fallback. ArgoCD is reachable only from the self-hosted pool. Set GITOPS_RUNNERS, or pass enable_argocd_sync: false and let ArgoCD reconcile on its own."
           exit 1
 
+      # An org secret the calling repository has not been granted resolves to an
+      # empty string, not an error. Fail here, naming it, instead of letting a
+      # later step fail obscurely or skip and report success.
+      - name: Require secrets
+        shell: bash
+        env:
+          MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}
+        run: |
+          set -euo pipefail
+          required=(MANAGE_TOKEN)
+          missing=()
+          for name in "${required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Empty secret(s): ${missing[*]}. Set them on the calling repository or grant it access to the organization secret."
+            exit 1
+          fi
+
+      # The composite signs and delivers only outside a dry run.
+      - name: Require commit signing secrets
+        if: ${{ !inputs.dry_run }}
+        shell: bash
+        env:
+          LERIAN_CI_CD_USER_GPG_KEY: ${{ secrets.LERIAN_CI_CD_USER_GPG_KEY }}
+          LERIAN_CI_CD_USER_GPG_KEY_PASSWORD: ${{ secrets.LERIAN_CI_CD_USER_GPG_KEY_PASSWORD }}
+          LERIAN_CI_CD_USER_NAME: ${{ secrets.LERIAN_CI_CD_USER_NAME }}
+          LERIAN_CI_CD_USER_EMAIL: ${{ secrets.LERIAN_CI_CD_USER_EMAIL }}
+        run: |
+          set -euo pipefail
+          required=(LERIAN_CI_CD_USER_GPG_KEY LERIAN_CI_CD_USER_GPG_KEY_PASSWORD LERIAN_CI_CD_USER_NAME LERIAN_CI_CD_USER_EMAIL)
+          missing=()
+          for name in "${required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Empty secret(s): ${missing[*]}. Set them on the calling repository or grant it access to the organization secret."
+            exit 1
+          fi
+
+      # The composite syncs only after delivery has committed, so an empty token or URL
+      # found there fails a run whose change has already landed.
+      - name: Require ArgoCD settings
+        if: ${{ inputs.enable_argocd_sync && !inputs.dry_run }}
+        shell: bash
+        env:
+          ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
+          ARGOCD_URL: ${{ vars.ARGOCD_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${ARGOCD_URL:-}" ]]; then
+            echo "::error::The ARGOCD_URL variable is empty. Set it on the calling repository or grant it access to the organization variable."
+            exit 1
+          fi
+          required=(ARGOCD_TOKEN)
+          missing=()
+          for name in "${required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Empty secret(s): ${missing[*]}. Set them on the calling repository or grant it access to the organization secret."
+            exit 1
+          fi
+
       # ----------------- Chart Update -----------------
       - name: Update the pinned chart version
         id: update
