@@ -15,8 +15,8 @@ A tier is a **branch of this repository**. You pin it in `uses:` instead of a ve
 
 ```yaml
 jobs:
-  ci:
-    uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@tier-1
+  release:
+    uses: LerianStudio/shared-workflows-public/.github/workflows/release.yml@tier-1
     secrets: inherit
 ```
 
@@ -95,10 +95,10 @@ Changing tier later is a PR in your repository editing those lines. There is no 
 
 ```yaml
 # before — receives on every stable release
-uses: LerianStudio/shared-workflows-public/.github/workflows/go-release.yml@tier-0
+uses: LerianStudio/shared-workflows-public/.github/workflows/release.yml@tier-0
 
 # after — receives only after tier-0 and tier-1 have been accepted
-uses: LerianStudio/shared-workflows-public/.github/workflows/go-release.yml@tier-2
+uses: LerianStudio/shared-workflows-public/.github/workflows/release.yml@tier-2
 ```
 
 ## Build identity verification

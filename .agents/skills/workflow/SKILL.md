@@ -25,7 +25,7 @@ Before implementing custom steps inside a workflow, search the [Marketplace](htt
 - Prefer a well-maintained action over custom shell scripting for non-trivial logic
 - If the action needs wrapping (normalization, extra steps), create a composite in `src/` and call it from the workflow — don't inline complex shell in the workflow itself
 - **Third-party actions (outside `LerianStudio` org) must be pinned by commit SHA**, not by tag — add a `# vX.Y.Z` comment for readability (e.g., `uses: actions/checkout@abc123 # v6`). Tags are mutable and can be force-pushed by upstream maintainers. Dependabot proposes SHA bumps automatically.
-- `LerianStudio/*` actions are pinned by **release tag** (`@v1.2.3`) or branch (the PR branch, `@<pr-branch>`, for testing)
+- `LerianStudio/*` actions are pinned by **tier channel** (`@tier-0`, `@tier-1`, `@tier-2`) or, for testing, the PR branch (`@<pr-branch>`). An exact `@vX.Y.Z` still resolves but opts the caller out of the rings — see [`docs/tiers.md`](../../../docs/tiers.md)
 - Never use `@main` or `@master` for third-party actions
 - Document in `docs/<workflow-name>.md` why that action was chosen
 
@@ -173,7 +173,7 @@ jobs:
     steps:
       - name: Docker Scout
         if: inputs.enable_docker_scout            # skip entire step when disabled
-        uses: LerianStudio/shared-workflows-public/src/security/docker-scout@v1.2.3
+        uses: LerianStudio/shared-workflows-public/src/security/docker-scout@tier-1
         with:
           enable-recommendations: ${{ inputs.enable_docker_scout_recommendations }}
 ```
@@ -254,9 +254,9 @@ When a job has more than one logical group of steps, separate each group with a 
 
 In reusable workflows (`workflow_call`), `uses: ./path` resolves to the **caller's workspace**, not this repository. This means `./src/...` only works when the caller IS this repo (i.e., `self-*` workflows).
 
-- **Workflows called by external repos** — must use an external ref pinned to a release tag:
+- **Workflows called by external repos** — must use an external ref pinned to a tier channel:
   ```yaml
-  uses: LerianStudio/shared-workflows-public/src/notify/discord-release@v1.2.3  # ✅ pinned
+  uses: LerianStudio/shared-workflows-public/src/notify/discord-release@tier-1  # ✅ pinned
   uses: LerianStudio/shared-workflows-public/src/notify/discord-release@<pr-branch> # ⚠️ testing only — the PR branch
   uses: ./src/notify/discord-release  # ❌ resolves to caller's workspace, will fail
   ```
@@ -271,7 +271,7 @@ In reusable workflows (`workflow_call`), `uses: ./path` resolves to the **caller
 # Caller
 jobs:
   deploy:
-    uses: LerianStudio/shared-workflows-public/.github/workflows/deploy.yml@v1.2.3
+    uses: LerianStudio/shared-workflows-public/.github/workflows/deploy.yml@tier-1
     secrets:
       DOCKER_TOKEN: ${{ secrets.DOCKER_TOKEN }}
 
@@ -328,7 +328,7 @@ uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@<pr-branc
 uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@feat/my-branch
 
 # ✅ Production — always a pinned stable version
-uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@v1.2.3
+uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@tier-1
 
 # ❌ Never in examples
 uses: LerianStudio/shared-workflows-public/.github/workflows/go-ci.yml@main
@@ -365,7 +365,7 @@ uses: actions/checkout@abc123def456 # v6
 ## Security rules
 
 - **Third-party actions (outside `LerianStudio` org) must be pinned by commit SHA** — tags are mutable and can be force-pushed. Add a `# vX.Y.Z` comment for readability. Dependabot keeps SHA pins updated automatically.
-- `LerianStudio/*` actions use release tags (`@v1.2.3`) — no SHA pinning needed for org-owned actions
+- `LerianStudio/*` actions use tier channels (`@tier-N`) — no SHA pinning needed for org-owned actions
 - Never use `@main` or `@master` for third-party actions
 - Never interpolate untrusted user input directly into `run:` commands
 - Never print secrets via `echo`, env dumps, or step summaries

@@ -77,7 +77,7 @@ This repository applies the following controls to protect callers:
 
 When consuming workflows from this repository:
 
-1. **Pin to a specific tag** (`@v1.2.3`) rather than `@main` in production.
+1. **Pin a tier channel** (`@tier-0`, `@tier-1` or `@tier-2`) rather than `@main` in production. A release reaches `tier-1` and `tier-2` only after a reviewer approves its promotion. See [Tier channels](docs/tiers.md).
 2. **Review Dependabot PRs** raised in this repo before your workflows pick up updated refs.
 3. **Subscribe to releases** on this repository to be notified of security patches.
 4. **Never pass secrets as plain inputs** — always use `secrets:` blocks when calling reusable workflows.
