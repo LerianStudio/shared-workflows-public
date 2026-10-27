@@ -25,7 +25,7 @@ Before writing custom steps from scratch, search the [Marketplace](https://githu
 - Prefer a well-maintained marketplace action over custom shell scripting for non-trivial logic
 - Wrap it in a composite if it needs input normalization or additional steps
 - **Third-party actions (outside `LerianStudio` org) must be pinned by commit SHA**, not by tag — add a `# vX.Y.Z` comment for readability (e.g., `uses: actions/checkout@abc123 # v6`). Tags are mutable and can be force-pushed by upstream maintainers. Dependabot proposes SHA bumps automatically.
-- `LerianStudio/*` actions are pinned by **release tag** (`@v1.2.3`) or branch (the PR branch, `@<pr-branch>`, for testing)
+- `LerianStudio/*` actions are pinned by **tier channel** (`@tier-0`, `@tier-1`, `@tier-2`) or, for testing, the PR branch (`@<pr-branch>`). An exact `@vX.Y.Z` still resolves but opts the caller out of the rings — see [`docs/tiers.md`](../../../docs/tiers.md)
 - Never use `@main` or `@master` for third-party actions
 - Document in the composite `README.md` why that action was chosen
 
@@ -204,7 +204,7 @@ uses: LerianStudio/shared-workflows-public/.github/workflows/labels-sync.yml@<pr
 uses: LerianStudio/shared-workflows-public/.github/workflows/labels-sync.yml@feat/my-branch
 
 # ✅ Production — always a pinned stable version
-uses: LerianStudio/shared-workflows-public/.github/workflows/labels-sync.yml@v1.2.3
+uses: LerianStudio/shared-workflows-public/.github/workflows/labels-sync.yml@tier-1
 
 # ❌ Never in examples
 uses: LerianStudio/shared-workflows-public/.github/workflows/labels-sync.yml@main
