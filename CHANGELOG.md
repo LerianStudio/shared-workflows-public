@@ -1,5 +1,19 @@
 # Shared-workflows-public Changelog
 
+## [1.2.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.2.0)
+
+Features:
+- Sync `go-pr-validation` and its dependencies with `v1.90.1`. (@bedatty)
+
+Fixes:
+- End grep option parsing before the Dockerfile path in `go-pr-validation`. (@bedatty)
+- Run the ported test suites and remove the absent frontend reference in `go-pr-validation`. (@bedatty)
+- Pass ported step values through environment variables instead of inline expressions in `go-pr-validation`. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.1.1...v1.2.0)
+
+---
+
 ## [1.1.1](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.1.1)
 
 Improvements:
