@@ -1,0 +1,140 @@
+name: Slack Notification
+description: Sends a workflow status notification to Slack with rich formatting including repo, workflow, failed jobs, and author info.
+
+inputs:
+  webhook-url:
+    description: 'Slack webhook URL for notifications'
+    required: true
+  status:
+    description: 'Workflow status (success, failure, cancelled)'
+    required: true
+  workflow-name:
+    description: 'Name of the calling workflow'
+    required: true
+  failed-jobs:
+    description: 'Comma-separated list of failed job names (for failure notifications)'
+    required: false
+    default: ''
+  custom-message:
+    description: 'Optional custom message to include'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    # ----------------- Webhook Check -----------------
+    - name: Check if Slack webhook is configured
+      id: check-webhook
+      shell: bash
+      env:
+        WEBHOOK_URL: ${{ inputs.webhook-url }}
+      run: |
+        if [ -z "$WEBHOOK_URL" ]; then
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+          echo "::notice::SLACK_WEBHOOK_URL not configured — skipping notification"
+        else
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    # ----------------- Build Notification -----------------
+    - name: Determine notification settings
+      if: steps.check-webhook.outputs.skip != 'true'
+      id: settings
+      shell: bash
+      env:
+        STATUS: ${{ inputs.status }}
+      run: |
+
+        case "$STATUS" in
+          success)
+            COLOR="good"
+            EMOJI="✅"
+            STATUS_TEXT="succeeded"
+            ;;
+          failure)
+            COLOR="danger"
+            EMOJI="❌"
+            STATUS_TEXT="failed"
+            ;;
+          cancelled)
+            COLOR="#808080"
+            EMOJI="⚪"
+            STATUS_TEXT="was cancelled"
+            ;;
+          *)
+            COLOR="warning"
+            EMOJI="⚠️"
+            STATUS_TEXT="completed with status: $STATUS"
+            ;;
+        esac
+
+        {
+          echo "color=$COLOR"
+          echo "emoji=$EMOJI"
+          echo "status_text=$STATUS_TEXT"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Build notification message
+      if: steps.check-webhook.outputs.skip != 'true'
+      id: message
+      shell: bash
+      env:
+        REPO: ${{ github.repository }}
+        WORKFLOW: ${{ inputs.workflow-name }}
+        STATUS: ${{ inputs.status }}
+        STATUS_TEXT: ${{ steps.settings.outputs.status_text }}
+        EMOJI: ${{ steps.settings.outputs.emoji }}
+        ACTOR: ${{ github.actor }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        COMMIT_SHA: ${{ github.sha }}
+        EVENT_NAME: ${{ github.event_name }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        HEAD_REF: ${{ github.head_ref }}
+        REF_NAME: ${{ github.ref_name }}
+        FAILED_JOBS: ${{ inputs.failed-jobs }}
+        CUSTOM_MESSAGE: ${{ inputs.custom-message }}
+      run: |
+        REPO_NAME="${REPO##*/}"
+        SHORT_SHA="${COMMIT_SHA:0:7}"
+
+        if [ "$EVENT_NAME" = "pull_request" ]; then
+          REF="PR #$PR_NUMBER"
+          BRANCH="$HEAD_REF"
+        else
+          REF="$REF_NAME"
+          BRANCH="$REF"
+        fi
+
+        MESSAGE="$EMOJI *$WORKFLOW* $STATUS_TEXT in *$REPO_NAME*"
+
+        if [ "$STATUS" = "failure" ] && [ -n "$FAILED_JOBS" ]; then
+          MESSAGE="$MESSAGE\n💥 *Failed jobs:* $FAILED_JOBS"
+        fi
+
+        MESSAGE="$MESSAGE\n👤 *Author:* $ACTOR"
+        MESSAGE="$MESSAGE\n📌 *Branch:* \`$BRANCH\` | *Commit:* \`$SHORT_SHA\`"
+
+        if [ -n "$CUSTOM_MESSAGE" ]; then
+          MESSAGE="$MESSAGE\n\n$CUSTOM_MESSAGE"
+        fi
+
+        MESSAGE="$MESSAGE\n\n<$RUN_URL|🔗 View Workflow Run>"
+
+        {
+          echo "message<<EOF"
+          echo -e "$MESSAGE"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+
+    # ----------------- Send Notification -----------------
+    - name: Send Slack notification
+      if: steps.check-webhook.outputs.skip != 'true'
+      uses: rtCamp/action-slack-notify@e31e87e03dd19038e411e38ae27cbad084a90661 # v2
+      env:
+        SLACK_WEBHOOK: ${{ inputs.webhook-url }}
+        SLACK_COLOR: ${{ steps.settings.outputs.color }}
+        SLACK_TITLE: ${{ github.repository }}
+        SLACK_MESSAGE: ${{ steps.message.outputs.message }}
+        SLACK_FOOTER: "Workflow: ${{ inputs.workflow-name }}"
+        MSG_MINIMAL: true

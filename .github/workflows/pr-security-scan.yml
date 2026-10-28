@@ -1,0 +1,541 @@
+name: "PR Security Scan"
+
+# This reusable workflow handles security scanning for pull requests
+# - If filter_paths is provided: treats as monorepo and scans changed components
+# - If filter_paths is empty/not provided: treats as single app and scans entire repo
+# - Supports two monorepo types:
+#   * Type 1 (default): Components in separate folders with individual Dockerfiles
+#   * Type 2: Backend in root with ./Dockerfile, frontend in folder with folder/Dockerfile
+
+on:
+  workflow_call:
+    outputs:
+      checks_passed:
+        description: >-
+          'true' when no scan job failed or was cancelled. Covers the jobs that
+          scan the code — Prepare Matrix, Security Scan and CodeQL Scan. Notify
+          sits outside it, reporting on the run rather than on the code. Skipped
+          counts as passed: the jobs are conditional on the changed components
+          and on the enable_* flags, so requiring success from all of them would
+          never be satisfied. Exists so a caller can gate on the scan itself
+          rather than on this workflow's own result, which also folds in Notify —
+          a Slack delivery failure is not a security finding and should not, for
+          example, withhold a review request.
+        value: ${{ jobs.results.outputs.checks_passed }}
+    inputs:
+      # ----------------- Change gate -----------------
+      # A pull request that only touches documentation or repository metadata
+      # has nothing for a security scanner to find. The gate reuses
+      # src/config/non-doc-changes and collapses the scan matrix to '[]', which
+      # every scan job already treats as "nothing to do" and `checks_passed`
+      # already counts as passed.
+      #
+      # Callers that gate upstream (go-pr-validation.yml, js-pr-validation.yml)
+      # pass enable_doc_gate: false to avoid classifying the same PR twice.
+      enable_doc_gate:
+        description: 'Skip the scan when the pull request touches only documentation/meta files (see ignore_globs).'
+        type: boolean
+        default: true
+      ignore_globs:
+        description: 'Space-separated glob patterns treated as docs/meta; when every changed file matches one, the scan is skipped. Files under .github/workflows/, .github/actions/ and .github/scripts/ always count as code.'
+        type: string
+        default: '*.md docs/* .github/* LICENSE* .gitignore .coderabbit.yml .coderabbit.yaml'
+
+      runner_type:
+        description: 'GitHub runner type to use'
+        type: string
+        default: 'blacksmith-4vcpu-ubuntu-2404'
+      security_scan_runner_type:
+        description: 'Optional runner override for the security_scan jobs only. Empty = vars.GENERAL_RUNNERS, then runner_type.'
+        type: string
+        default: ''
+      filter_paths:
+        description: 'Paths to monitor for changes (newline separated). If not provided, treats as single app repo'
+        type: string
+        required: false
+      shared_paths:
+        description: 'Newline-separated path patterns (e.g., "go.mod\ngo.sum") that trigger a build for ALL components when matched by any changed file.'
+        type: string
+        required: false
+        default: ''
+      path_level:
+        description: 'Directory depth level to extract app name (only used for monorepo)'
+        type: string
+        default: '2'
+      app_name_prefix:
+        description: 'Prefix for app names in monorepo (e.g., "midaz" results in "midaz-agent"). Must match build workflow config.'
+        type: string
+        default: ''
+      app_name_overrides:
+        description: 'Explicit app name mappings in "path:name" format. Must match build workflow config.'
+        type: string
+        default: ''
+      normalize_to_filter:
+        description: 'Normalize changed paths to their filter path. Recommended for monorepos to match build workflow behavior.'
+        type: boolean
+        default: true
+      monorepo_type:
+        description: 'Type of monorepo: "type1" (components in folders) or "type2" (backend in root, frontend in folder)'
+        type: string
+        default: 'type1'
+      frontend_folder:
+        description: 'Name of the frontend folder for type2 monorepos'
+        type: string
+        default: 'frontend'
+      dockerhub_org:
+        description: 'DockerHub organization name'
+        type: string
+        default: 'lerianstudio'
+      docker_registry:
+        description: 'Docker registry URL'
+        type: string
+        default: 'docker.io'
+      dockerfile_name:
+        description: 'Name of the Dockerfile'
+        type: string
+        default: 'Dockerfile'
+      dockerfile_path:
+        description: 'Explicit path to a single Dockerfile to build and scan (e.g. components/ledger/Dockerfile). Overrides the working_dir/dockerfile_name resolution; intended for single-Dockerfile repos without filter_paths.'
+        type: string
+        default: ''
+      enable_docker_scan:
+        description: 'Enable Docker image build and vulnerability scanning. Set to false for projects without Dockerfile (e.g., CLI tools)'
+        type: boolean
+        default: true
+      enable_health_score:
+        description: 'Enable Docker Hub Health Score compliance checks (non-root user, CVEs, licenses)'
+        type: boolean
+        default: true
+      docker_build_args:
+        description: >-
+          Newline-separated Docker build arguments (e.g., "APP_NAME=spi\nCOMPONENT_NAME=api").
+          For sensitive values, use BuildKit secrets — build arguments are visible in image history.
+        type: string
+        required: false
+        default: ''
+      build_context_from_working_dir:
+        description: 'Use the component working_dir as Docker build context instead of repo root. Useful for independent modules (e.g., tools with their own go.mod).'
+        type: boolean
+        default: false
+      enable_codeql:
+        description: 'Enable CodeQL static analysis. Requires codeql_languages to be set.'
+        type: boolean
+        default: false
+      codeql_languages:
+        description: 'Languages to analyze with CodeQL (comma-separated, e.g., "go", "javascript-typescript", "actions")'
+        type: string
+        required: false
+        default: ''
+      codeql_fail_on_findings:
+        description: 'Fail the workflow when CodeQL detects security issues'
+        type: boolean
+        default: true
+      codeql_upload_sarif:
+        description: 'Upload CodeQL SARIF results to the GitHub Security tab. Requires Code Security (GHAS) enabled on the repo.'
+        type: boolean
+        default: false
+      enable_prerelease_check:
+        description: 'Block dependencies pinned to pre-release versions (-beta, -rc)'
+        type: boolean
+        default: true
+      enable_slack_notification:
+        description: 'Send the security scan verdict to Slack. Set to false in repositories without SLACK_WEBHOOK_URL to skip the job entirely instead of running it just to skip internally.'
+        type: boolean
+        default: true
+      prerelease_block_branches:
+        description: 'Comma-separated list of PR target branches where pre-release versions cause a hard failure. On other branches, findings are reported as warnings only.'
+        type: string
+        default: 'release-candidate,main'
+      ignore_file:
+        description: 'Path to Trivy ignore file (e.g., .trivyignore.yaml for path-scoped suppression of secrets/vulnerabilities)'
+        type: string
+        required: false
+        default: ''
+      trivy_skip_dirs:
+        description: 'Comma-separated directories to skip in the Trivy filesystem scan (appended to the default skip list: .git,node_modules,dist,build,.next,coverage,vendor).'
+        type: string
+        required: false
+        default: ''
+    secrets:
+      MANAGE_TOKEN:
+        description: Token for private module access and PR operations. Falls back to GITHUB_TOKEN where a job can work without it.
+        required: false
+      SLACK_WEBHOOK_URL:
+        description: Slack webhook for pipeline notifications. Absent disables the notification, it does not fail the job.
+        required: false
+      DOCKER_USERNAME:
+        description: Docker Hub user for authenticated image pulls, which raises the anonymous rate limit.
+        required: false
+      DOCKERHUB_IMAGE_PULL_TOKEN:
+        description: Docker Hub token paired with DOCKER_USERNAME.
+        required: false
+      NPMRC_TOKEN:
+        description: Token written into .npmrc so the image build can reach the GitHub npm registry.
+        required: false
+
+permissions:
+  actions: read         # Required for CodeQL status reporting
+  id-token: write       # Required for OIDC authentication
+  contents: read        # Required to checkout the repository
+  pull-requests: write  # Allows commenting on PRs
+  security-events: write # Required for security scanning
+
+jobs:
+  prepare_matrix:
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    outputs:
+      matrix: ${{ steps.scan-matrix.outputs.matrix }}
+    steps:
+      # ----------------- Documentation Gate -----------------
+      # Runs before the matrix is built, because in single-app mode
+      # changed-paths falls back to the repository name and never yields an
+      # empty matrix — a README-only pull request would otherwise scan the whole
+      # repo. Its `ignore-dirs: .github` only ever helped the monorepo path.
+      - name: Non-doc change gate
+        id: doc-gate
+        if: inputs.enable_doc_gate
+        # An unreadable diff is not a verdict. A caller may grant less than
+        # `pull-requests: read`, and a reusable workflow cannot elevate what its
+        # caller restricted; failing here would block the pipeline the gate only
+        # means to shorten. The empty output that follows reads as "assume code".
+        continue-on-error: true
+        uses: LerianStudio/shared-workflows-public/src/config/non-doc-changes@v1
+        with:
+          github-token: ${{ github.token }}
+          ignore-globs: ${{ inputs.ignore_globs }}
+
+      # ----------------- Detect Changes & Build Matrix -----------------
+      - name: Get changed paths
+        id: changed-paths
+        if: steps.doc-gate.outputs.code != 'false'
+        uses: LerianStudio/shared-workflows-public/src/config/changed-paths@v1
+        with:
+          filter-paths: ${{ inputs.filter_paths }}
+          shared-paths: ${{ inputs.shared_paths }}
+          get-app-name: true
+          path-level: ${{ inputs.path_level }}
+          app-name-prefix: ${{ inputs.app_name_prefix }}
+          app-name-overrides: ${{ inputs.app_name_overrides }}
+          normalize-to-filter: ${{ inputs.normalize_to_filter }}
+          ignore-dirs: |
+            .github
+            .githooks
+          fallback-app-name: ${{ github.event.repository.name }}
+          consolidate-to-root: ${{ inputs.monorepo_type == 'type2' }}
+          consolidate-keep-dirs: ${{ inputs.frontend_folder }}
+
+      # Collapsing to '[]' rather than skipping the scan jobs through a separate
+      # `needs` condition keeps the existing contract intact: '[]' is already the
+      # "nothing changed" value every downstream job and `checks_passed` handle.
+      - name: Resolve scan matrix
+        id: scan-matrix
+        env:
+          # Empty when the gate did not run (disabled by the caller); only the
+          # literal "false" collapses the matrix, so an absent verdict scans.
+          HAS_CODE: ${{ steps.doc-gate.outputs.code }}
+          CHANGED_MATRIX: ${{ steps.changed-paths.outputs.matrix }}
+        run: |
+          if [ "$HAS_CODE" = "false" ]; then
+            echo "Documentation-only pull request - nothing to scan."
+            echo "matrix=[]" >> "$GITHUB_OUTPUT"
+          else
+            echo "matrix=${CHANGED_MATRIX:-[]}" >> "$GITHUB_OUTPUT"
+          fi
+
+  security_scan:
+    needs: prepare_matrix
+    if: needs.prepare_matrix.outputs.matrix != '[]'
+    runs-on: ${{ inputs.security_scan_runner_type || vars.GENERAL_RUNNERS || inputs.runner_type }}
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.prepare_matrix.outputs.matrix) }}
+    env:
+      DOCKERHUB_ORG: ${{ inputs.dockerhub_org }}
+      APP_NAME: ${{ matrix.name }}
+      DOCKERFILE_PATH: ${{ inputs.dockerfile_path != '' && inputs.dockerfile_path || (matrix.working_dir == '.' && format('./{0}', inputs.dockerfile_name) || format('{0}/{1}', matrix.working_dir, inputs.dockerfile_name)) }}
+
+    steps:
+      # ----------------- Setup -----------------
+      # Checkout comes first so a registry login failure cannot leave the
+      # workspace empty: events that do not carry organisation secrets
+      # (Dependabot pull requests, for one) resolve the pull token to an empty
+      # string and the login below fails. With the code already on disk the
+      # filesystem scan - the one that reads go.mod/package-lock.json, and the
+      # scan that matters for a dependency bump - still runs and reports.
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          # No step in this job runs git, and the image build below takes `.` as
+          # its context on most callers - a persisted token would ride into the
+          # build context for nothing.
+          persist-credentials: false
+
+      # Only the image-scan path reads the registry, via the Docker build below
+      # pulling the Dockerfile's base image. The filesystem scan runs the Trivy
+      # binary, so unguarded this step fails the whole job for a caller with no
+      # pull token, before the first scan runs, and reports the security gate red
+      # over code nothing ever scanned.
+      - name: Login to Docker Registry
+        if: inputs.enable_docker_scan
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ${{ inputs.docker_registry }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_IMAGE_PULL_TOKEN }}
+
+      - name: Set up Docker Buildx
+        if: inputs.enable_docker_scan
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+
+      # ----------------- Filesystem Scanning (Secrets + Vulnerabilities) -----------------
+      - name: Trivy Filesystem Scan
+        id: fs-scan
+        if: always()
+        uses: LerianStudio/shared-workflows-public/src/security/trivy-fs-scan@v1
+        with:
+          scan-ref: ${{ matrix.working_dir }}
+          app-name: ${{ env.APP_NAME }}
+          ignore-file: ${{ inputs.ignore_file }}
+          skip-dirs: ".git,node_modules,dist,build,.next,coverage,vendor${{ inputs.trivy_skip_dirs != '' && format(',{0}', inputs.trivy_skip_dirs) || '' }}"
+
+      # ----------------- Docker Build -----------------
+      - name: Build Docker Image for Scanning
+        if: always() && inputs.enable_docker_scan
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          # yamllint disable-line rule:line-length
+          context: ${{ inputs.build_context_from_working_dir == true && matrix.working_dir || (inputs.monorepo_type == 'type2' && matrix.working_dir == inputs.frontend_folder && inputs.frontend_folder || '.') }}
+          file: ${{ env.DOCKERFILE_PATH }}
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ env.DOCKERHUB_ORG }}/${{ env.APP_NAME }}:pr-scan-${{ github.sha }}
+          build-args: ${{ inputs.docker_build_args }}
+          secrets: |
+            ${{ secrets.MANAGE_TOKEN && format('github_token={0}', secrets.MANAGE_TOKEN) || '' }}
+            ${{ secrets.NPMRC_TOKEN && format('npmrc=//npm.pkg.github.com/:_authToken={0}', secrets.NPMRC_TOKEN) || '' }}
+
+      # ----------------- Image Scanning (Vulnerabilities + Licenses) -----------------
+      - name: Trivy Image Scan
+        id: image-scan
+        if: always() && inputs.enable_docker_scan
+        uses: LerianStudio/shared-workflows-public/src/security/trivy-image-scan@v1
+        with:
+          image-ref: '${{ env.DOCKERHUB_ORG }}/${{ env.APP_NAME }}:pr-scan-${{ github.sha }}'
+          app-name: ${{ env.APP_NAME }}
+          enable-license-scan: ${{ inputs.enable_health_score }}
+          ignore-file: ${{ inputs.ignore_file }}
+
+      # ----------------- Dockerfile Compliance Checks -----------------
+      - name: Dockerfile Compliance Checks
+        id: dockerfile-checks
+        if: always() && inputs.enable_docker_scan && inputs.enable_health_score
+        uses: LerianStudio/shared-workflows-public/src/security/dockerfile-checks@v1
+        with:
+          dockerfile-path: ${{ env.DOCKERFILE_PATH }}
+
+      # ----------------- Pre-release Version Gate -----------------
+      - name: Pre-release Version Check
+        id: prerelease-check
+        if: always() && inputs.enable_prerelease_check
+        uses: LerianStudio/shared-workflows-public/src/security/prerelease-check@v1
+        with:
+          scan-ref: ${{ matrix.working_dir }}
+          app-name: ${{ env.APP_NAME }}
+          target-branch: ${{ github.base_ref }}
+          block-branches: ${{ inputs.prerelease_block_branches }}
+          prerelease-pattern: ${{ vars.PRERELEASE_PATTERN }}
+
+      # ----------------- Results & Security Gate -----------------
+      - name: Post Security Scan Results to PR
+        id: post-results
+        if: always() && github.event_name == 'pull_request'
+        uses: LerianStudio/shared-workflows-public/src/security/pr-security-reporter@v1
+        with:
+          github-token: ${{ secrets.MANAGE_TOKEN || secrets.GITHUB_TOKEN }}
+          app-name: ${{ env.APP_NAME }}
+          enable-docker-scan: ${{ inputs.enable_docker_scan }}
+          enable-health-score: ${{ inputs.enable_health_score && inputs.enable_docker_scan }}
+          dockerfile-has-non-root-user: ${{ steps.dockerfile-checks.outputs.has-non-root-user || 'false' }}
+          prerelease-findings-file: ${{ steps.prerelease-check.outputs.artifact-file }}
+          prerelease-target-branch: ${{ github.base_ref }}
+          prerelease-block-branches: ${{ inputs.prerelease_block_branches }}
+          fail-on-findings: 'true'
+
+      - name: Gate - Fail on Pre-release Versions
+        if: always() && inputs.enable_prerelease_check && steps.prerelease-check.outputs.has-findings == 'true'
+        env:
+          BLOCK_BRANCHES: ${{ inputs.prerelease_block_branches }}
+          TARGET_BRANCH: ${{ github.base_ref }}
+          FINDINGS_COUNT: ${{ steps.prerelease-check.outputs.findings-count }}
+        run: |
+          SHOULD_BLOCK=false
+          IFS=',' read -ra BRANCHES <<< "$BLOCK_BRANCHES"
+          for branch in "${BRANCHES[@]}"; do
+            branch=$(echo "$branch" | xargs)
+            if [ "$TARGET_BRANCH" = "$branch" ]; then
+              SHOULD_BLOCK=true
+              break
+            fi
+          done
+
+          if [ "$SHOULD_BLOCK" = "true" ]; then
+            echo "::error::Pre-release version pins detected ($FINDINGS_COUNT finding(s)). Target branch '$TARGET_BRANCH' does not allow beta or release candidate dependencies."
+            exit 1
+          else
+            echo "::warning::Pre-release version pins detected ($FINDINGS_COUNT finding(s)). Allowed on '$TARGET_BRANCH' — will be blocked on: $BLOCK_BRANCHES."
+          fi
+
+  # ----------------- CodeQL Analysis -----------------
+  codeql_scan:
+    needs: prepare_matrix
+    if: inputs.enable_codeql && inputs.codeql_languages != '' && needs.prepare_matrix.outputs.matrix != '[]'
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    steps:
+      # ----------------- Setup -----------------
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Extract changed paths from matrix
+        id: extract-paths
+        env:
+          MATRIX: ${{ needs.prepare_matrix.outputs.matrix }}
+        run: |
+          PATHS=$(echo "$MATRIX" | jq -r '.[].working_dir' | paste -sd ',' -)
+          echo "paths=$PATHS" >> "$GITHUB_OUTPUT"
+
+      # ----------------- CodeQL Config -----------------
+      - name: Generate CodeQL Config
+        id: codeql-config
+        uses: LerianStudio/shared-workflows-public/src/security/codeql-config@v1
+        with:
+          changed-paths: ${{ steps.extract-paths.outputs.paths }}
+
+      # ----------------- CodeQL Analysis -----------------
+      # init, autobuild and analyze must come from the same codeql-action release:
+      # init writes a config the other two refuse to read when versions differ.
+      # Pinned inline rather than called through `src/security/codeql-*@v1` so a
+      # caller on an older release of this workflow never mixes its pinned
+      # autobuild with whatever `v1` points at today (issue #866).
+      - name: Initialize CodeQL
+        if: steps.codeql-config.outputs.skip != 'true'
+        uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          languages: ${{ inputs.codeql_languages }}
+          queries: security-extended
+          config-file: ${{ steps.codeql-config.outputs.config-file }}
+
+      - name: Configure private Go modules access
+        if: steps.codeql-config.outputs.skip != 'true'
+        env:
+          TOKEN: ${{ secrets.MANAGE_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+          echo "GOPRIVATE=github.com/LerianStudio/*" >> "$GITHUB_ENV"
+
+      - name: Autobuild
+        if: steps.codeql-config.outputs.skip != 'true'
+        uses: github/codeql-action/autobuild@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+
+      - name: Perform CodeQL Analysis
+        if: steps.codeql-config.outputs.skip != 'true'
+        uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          category: '/language:${{ inputs.codeql_languages }}'
+          output: '../results'
+          upload: ${{ inputs.codeql_upload_sarif }}
+
+      # ----------------- Results & Security Gate -----------------
+      - name: Post CodeQL Results to PR
+        if: always() && github.event_name == 'pull_request' && steps.codeql-config.outputs.skip != 'true'
+        uses: LerianStudio/shared-workflows-public/src/security/codeql-reporter@v1
+        with:
+          github-token: ${{ secrets.MANAGE_TOKEN || secrets.GITHUB_TOKEN }}
+          languages: ${{ inputs.codeql_languages }}
+          fail-on-findings: ${{ inputs.codeql_fail_on_findings }}
+
+  # ----------------- Result Aggregation -----------------
+  # Reports the scan verdict as a workflow output so a caller can gate on the
+  # scan jobs alone. `always()` because the point is to report on jobs that were
+  # skipped or failed; without it this job would be skipped along with them.
+  results:
+    name: Results
+    needs: [prepare_matrix, security_scan, codeql_scan]
+    if: always()
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    permissions:
+      contents: read
+    outputs:
+      checks_passed: ${{ steps.aggregate.outputs.checks_passed }}
+    steps:
+      - name: Aggregate results
+        id: aggregate
+        env:
+          # Listed one by one rather than with `needs.*.result`, which here would
+          # be the same set — but keeping it explicit means a job added later is
+          # a deliberate decision to include, not a silent one.
+          RESULTS: >-
+            ${{ needs.prepare_matrix.result }} ${{ needs.security_scan.result }}
+            ${{ needs.codeql_scan.result }}
+        run: |
+          set -euo pipefail
+
+          passed=true
+          for result in $RESULTS; do
+            case "$result" in
+              failure|cancelled) passed=false ;;
+            esac
+          done
+
+          echo "checks_passed=$passed" >> "$GITHUB_OUTPUT"
+          echo "scan verdict: $passed"
+          echo "job results : $RESULTS"
+
+          # AND THE VERDICT IS ENFORCED, not merely published. This job computed
+          # `false` and exited 0, so `Results` went green while `security_scan`
+          # was red in the same run. That matters because this is the job whose
+          # NAME reads like the aggregate, so it is what a repository reaches for
+          # when filling in required status checks -- where it could never fail,
+          # and therefore never blocked anything.
+          #
+          # Observed on LerianStudio/nemoclaw-platform#170: Trivy found a HIGH CVE
+          # (grpc CVE-2026-84445, the proposed bump vulnerable and the pinned
+          # version not), `security_scan` failed, `Results` passed, and
+          # `security / Results` was a required check on that repository's main.
+          #
+          # The output is written first and stays readable either way, so anyone
+          # already gating on `checks_passed` is unaffected.
+          #
+          # Callers gating on this WORKFLOW's result also see no change: a failed
+          # scan already made the reusable workflow fail. Only the per-job check
+          # name changes behaviour, which is precisely the hole.
+          if [ "$passed" != "true" ]; then
+            echo "::error title=Security scan did not pass::One of Prepare Matrix, Security Scan or CodeQL Scan failed or was cancelled — results: ${RESULTS}"
+            exit 1
+          fi
+
+  # ----------------- Slack Notification -----------------
+  notify:
+    name: Notify
+    needs: [prepare_matrix, security_scan, codeql_scan]
+    if: always() && inputs.enable_slack_notification && needs.prepare_matrix.outputs.matrix != '[]'
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    steps:
+      - name: Slack Notification
+        uses: LerianStudio/shared-workflows-public/src/notify/slack-notify@v1
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          # yamllint disable-line rule:line-length
+          status: ${{ (needs.security_scan.result == 'failure' || needs.codeql_scan.result == 'failure') && 'failure' || needs.security_scan.result }}
+          workflow-name: "PR Security Scan"
+          # yamllint disable-line rule:line-length
+          failed-jobs: >-
+            ${{
+              needs.security_scan.result == 'failure' && needs.codeql_scan.result == 'failure'
+                && 'Security Scan, CodeQL Scan'
+              || needs.security_scan.result == 'failure' && 'Security Scan'
+              || needs.codeql_scan.result == 'failure' && 'CodeQL Scan'
+              || ''
+            }}

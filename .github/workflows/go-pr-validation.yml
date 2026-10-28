@@ -1,0 +1,793 @@
+name: "Go PR Validation"
+
+# Umbrella reusable workflow for Go service repositories.
+# Orchestrates PR metadata validation, a non-doc change gate, the Go analysis
+# pipeline and the security scan pipeline behind opt-in flags, so a caller only
+# needs to reference this single workflow.
+
+on:
+  workflow_call:
+    outputs:
+      has_breaking_changes:
+        description: 'Whether the PR contains breaking changes (true/false)'
+        value: ${{ jobs.metadata.outputs.has_breaking_changes || 'false' }}
+      breaking_change_approved:
+        description: 'Whether the exact breaking change acknowledgement is present (true/false)'
+        value: ${{ jobs.metadata.outputs.breaking_change_approved || 'false' }}
+      breaking_change_result:
+        description: 'Breaking change guard result (success/failure)'
+        value: ${{ jobs.metadata.outputs.breaking_change_result || 'failure' }}
+    inputs:
+      runner_type:
+        description: 'GitHub runner type to use'
+        type: string
+        default: 'blacksmith-4vcpu-ubuntu-2404'
+      gate_runner_type:
+        description: 'Optional runner override for the umbrella utility jobs only (Detect non-doc changes and the Go Analysis / Security / Lib Version result gates). Empty = vars.GENERAL_RUNNERS, then runner_type.'
+        type: string
+        default: ''
+      dry_run:
+        description: 'Preview metadata validations without posting comments or labels'
+        required: false
+        type: boolean
+        default: false
+
+      # ----------------- Pipeline toggles -----------------
+      run_metadata:
+        description: >-
+          Run the PR metadata pipeline (title, scopes, labeler, size, breaking-change guard). Set to false in a
+          multi-component repository that also calls js-pr-validation.yml, so exactly one umbrella owns PR
+          metadata — otherwise the title is validated twice, the labeler runs twice and two sticky summary
+          comments are posted. WARNING: this skips the Breaking Change Guard too. One umbrella in the repository
+          must keep run_metadata true; setting it false everywhere disables the guard. The breaking-change
+          outputs of THIS workflow are still produced when false, but the metadata job supplies no values, so
+          they collapse to their fail-closed fallbacks: has_breaking_changes=false,
+          breaking_change_approved=false, breaking_change_result=failure. A caller that gates on
+          breaking_change_result must read it from the umbrella that still owns metadata.
+        type: boolean
+        default: true
+      run_go_analysis:
+        description: 'Run the Go analysis pipeline (lint, tests, coverage, build)'
+        type: boolean
+        default: true
+      run_security:
+        description: 'Run the security scan pipeline (Trivy, CodeQL, prerelease checks)'
+        type: boolean
+        default: true
+      run_lib_version_check:
+        description: 'Run the Lerian library version check (fails when a direct Lerian lib is behind latest stable)'
+        type: boolean
+        default: true
+      run_manifest_nudge:
+        description: 'Run the NON-BLOCKING Access-Manager RI nudge: warns via a sticky PR comment when a lib-auth repo has no permissions.yaml manifest. Never fails or blocks the PR.'
+        type: boolean
+        default: true
+
+      # ----------------- Change gate -----------------
+      ignore_globs:
+        description: 'Space-separated glob patterns treated as docs/meta; when only these change, the analysis and security pipelines are skipped.'
+        type: string
+        default: '*.md docs/* .github/* LICENSE* .gitignore .coderabbit.yml .coderabbit.yaml'
+      analyze_on_workflow_changes:
+        description: 'Run the analysis, security and lib version pipelines when a pull request touches only .github/workflows/, .github/actions/ or .github/scripts/ (plus ignore_globs paths). On by default: a pull request editing the pipeline runs it. Set false in a repository whose analysis exercises nothing under .github/ (a Go service with no composite actions or scripts of its own), so a pipeline-only pull request runs PR metadata and skips the rest. When false, those paths are classified by ignore_globs like any other: the default .github/* covers them, but an ignore_globs override must keep .github/* (or list the paths) for the skip to happen.'
+        type: boolean
+        default: true
+
+      # ----------------- PR metadata (pr-validation.yml) -----------------
+      pr_title_types:
+        description: 'Allowed commit types (pipe-separated)'
+        type: string
+        default: |
+          feat
+          fix
+          docs
+          style
+          refactor
+          perf
+          test
+          chore
+          ci
+          build
+          revert
+      pr_title_scopes:
+        description: 'Allowed scopes (pipe-separated, empty = any scope allowed)'
+        type: string
+        default: ''
+      require_scope:
+        description: 'Require scope in PR title'
+        type: boolean
+        default: false
+      enable_auto_labeler:
+        description: 'Enable automatic labeling based on changed files'
+        type: boolean
+        default: true
+      enable_slack_notification:
+        description: 'Send the PR validation verdict to Slack. Set to false in repositories without SLACK_WEBHOOK_URL to skip the job entirely instead of running it just to skip internally.'
+        type: boolean
+        default: true
+      labeler_config_path:
+        description: 'Path to labeler configuration file'
+        type: string
+        default: '.github/labeler.yml'
+      enforce_source_branches:
+        description: 'Enforce that PRs to protected branches come from specific source branches.'
+        type: boolean
+        default: true
+      allowed_source_branches:
+        description: 'Allowed source branches (pipe-separated, supports * prefix matching)'
+        type: string
+        default: 'hotfix/*|release-candidate'
+      target_branches_for_source_check:
+        description: 'Target branches that require source branch validation (pipe-separated)'
+        type: string
+        default: 'main'
+      source_branch_rules:
+        description: >-
+          Per-target source rules as JSON, for repositories where each protected
+          branch accepts a different set of sources — e.g.
+          {"main": "develop|hotfix/*", "release-candidate": "develop-*|hotfix/*"}.
+          A target listed here uses its own patterns; every other target still
+          follows allowed_source_branches/target_branches_for_source_check.
+        type: string
+        default: ''
+      automation_only_source_patterns:
+        description: >-
+          Source patterns (pipe-separated) accepted only on pull requests opened by
+          automation — e.g. "backmerge/*". Restricts rather than grants: the pattern
+          must still be allowed by allowed_source_branches or source_branch_rules,
+          and this adds the condition that the author be a bot.
+        type: string
+        default: ''
+      automation_source_actors:
+        description: >-
+          Comma-separated logins that count as automation for
+          automation_only_source_patterns. A list is authoritative — those logins
+          are accepted whatever their account type, which matters because
+          lerian-studio is a User, not a Bot. Set to empty to accept any author of
+          type Bot instead.
+        type: string
+        default: 'lerian-studio-midaz-push-bot[bot],lerian-studio'
+      require_verified_commits:
+        description: 'Block the PR when any of its commits is unsigned or has an unverified signature'
+        type: boolean
+        default: true
+      enable_breaking_change_approval:
+        description: >-
+          Hold a pull request carrying breaking-change commits at the
+          `breaking-approval` Environment until a reviewer approves it. Requires the
+          Environment to exist with required reviewers — see
+          docs/breaking-change-approval.md. Set to false until it is created.
+        type: boolean
+        default: true
+      breaking_change_scope_rules:
+        description: 'JSON object mapping an exact base branch to the pipe-separated head globs gated for breaking changes.'
+        type: string
+        default: '{"develop": "*", "main": "hotfix/*"}'
+      breaking_change_additional_scope_rules:
+        description: 'JSON object merged over `breaking_change_scope_rules`, key by key, for repository-specific promotion paths.'
+        type: string
+        default: ''
+      breaking_change_force_labels:
+        description: 'Comma-separated labels that put an out-of-scope pull request into the breaking-change gate.'
+        type: string
+        default: breaking-change-review
+      breaking_change_skip_labels:
+        description: 'Comma-separated labels that take a pull request out of the breaking-change gate. Empty keeps it closed.'
+        type: string
+        default: ''
+      breaking_change_close_on_rejection:
+        description: 'Close the pull request when a reviewer rejects the breaking change.'
+        type: boolean
+        default: true
+      breaking_change_status_context:
+        description: >-
+          Publish the gate's verdict as a commit status under this name, so one
+          organisation-wide required check can cover every repository. Defaults
+          to the `BREAKING_APPROVAL_STATUS_CONTEXT` organisation variable.
+        required: false
+        type: string
+        default: ''
+      breaking_change_fallback_reviewers:
+        description: >-
+          Who answers the breaking-change gate in a repository whose CODEOWNERS
+          has no catch-all `*` rule. Defaults to the
+          `BREAKING_APPROVAL_FALLBACK_REVIEWERS` organisation variable — see
+          docs/breaking-change-approval.md.
+        required: false
+        type: string
+        default: ''
+      breaking_change_approval_reviewers:
+        description: 'Who may answer the breaking-change gate, as comma-separated `team:<slug>` or `user:<login>`. Empty takes the repository own CODEOWNERS. Used only to create the `breaking-approval` Environment when it does not exist.'
+        type: string
+        default: ''
+      breaking_change_create_environment:
+        description: 'Create `breaking-approval` when missing. Needs a MANAGE_TOKEN with repository administration rights.'
+        type: boolean
+        default: true
+      breaking_change_require_protected_environment:
+        description: 'Refuse to gate when `breaking-approval` has no required reviewers, instead of silently passing. Leave on.'
+        type: boolean
+        default: true
+      pr_checks_summary_runner_type:
+        description: 'Optional runner override for the PR Checks Summary job only. Empty = vars.GENERAL_RUNNERS, then runner_type.'
+        type: string
+        default: ''
+
+      # ----------------- Go analysis (go-pr-analysis.yml) -----------------
+      go_version:
+        description: 'Go version to use'
+        type: string
+        default: '1.23'
+      lint_runner_type:
+        description: 'Optional runner override for the Go analysis Lint jobs only. Empty = vars.GENERAL_RUNNERS, then runner_type.'
+        type: string
+        default: ''
+      test_runner_type:
+        description: 'Optional runner override for the Go analysis Tests jobs only. Empty = vars.GENERAL_RUNNERS, then runner_type.'
+        type: string
+        default: ''
+      integration_test_runner_type:
+        description: 'Optional runner override for the Go analysis Integration Tests jobs only. Empty = vars.GENERAL_RUNNERS, then runner_type.'
+        type: string
+        default: ''
+      coverage_runner_type:
+        description: 'Optional runner override for the Go analysis Coverage jobs only. Empty = vars.GENERAL_RUNNERS, then runner_type.'
+        type: string
+        default: ''
+      build_runner_type:
+        description: 'Optional runner override for the Go analysis Build jobs only. Empty = vars.GENERAL_RUNNERS, then runner_type.'
+        type: string
+        default: ''
+      golangci_lint_version:
+        description: 'GolangCI-Lint version'
+        type: string
+        default: 'v1.62.2'
+      govulncheck_version:
+        description: >-
+          govulncheck version to install, as a Go module query. Pinned rather than `@latest` so that
+          an upstream release cannot change what this workflow runs without anyone here choosing it:
+          golang.org/x/vuln v1.8.0 raised its own `go` directive to 1.26.0 and broke every Go
+          repository on this channel the day it landed, because the install step has no
+          `continue-on-error` to soften it. The install itself runs under GOTOOLCHAIN=auto, so this
+          default works at any go_version — it does NOT have to track it.
+        type: string
+        default: 'v1.7.0'
+      golangci_lint_args:
+        description: 'Extra arguments passed to golangci-lint (e.g. --timeout=5m)'
+        type: string
+        default: '--timeout=5m'
+      fail_on_govulncheck:
+        description: >-
+          Fail the Security job when govulncheck reports findings. Default false preserves the
+          advisory behaviour this step has always had: the Go vulnerability database changes
+          independently of the pull request, so a newly published CVE in a common dependency would
+          otherwise turn every repository on this channel red at once, on pull requests that touch
+          nothing related. Findings are reported either way — as a warning annotation when false, as
+          an error when true — so the scan is never silent. Turn it on per repository once its
+          dependency graph is clean.
+        type: boolean
+        default: false
+      app_name_prefix:
+        description: 'Prefix used to namespace coverage/build artifacts'
+        type: string
+        default: ''
+      app_name_overrides:
+        description: >-
+          Newline-separated "path:name" mappings that name a Go analysis leg explicitly instead of by its
+          second path segment. path is the leg working_dir (the filter_paths entry while
+          normalize_to_filter is true); app_name_prefix still applies; "path:" gives the prefix alone.
+          Use when several filter_paths entries share a second segment and would collide on one name
+          and one coverage artifact.
+        type: string
+        default: ''
+      filter_paths:
+        description: 'Newline-separated component path prefixes for monorepo per-component analysis and security scanning. Empty = single-app root run. When set for the security scan, leave dockerfile_path empty so each component Dockerfile is discovered.'
+        type: string
+        default: ''
+      security_filter_paths:
+        description: 'Optional security-only component path prefixes. Empty reuses filter_paths. Use this when Go analysis runs once at the repository root but Docker images must be scanned per component.'
+        type: string
+        default: ''
+      path_level:
+        description: 'Directory depth level to extract the component name from filter_paths'
+        type: number
+        default: 2
+      normalize_to_filter:
+        description: 'Collapse every changed file under a filter_paths entry into that one component (working_dir = the filter itself) instead of the path_level-trimmed directory. Forwarded to go-pr-analysis; see that workflow for why the default is true.'
+        type: boolean
+        default: true
+      coverage_threshold:
+        description: 'Minimum coverage percentage required (0-100)'
+        type: number
+        default: 80
+      fail_on_coverage_threshold:
+        description: 'Fail the workflow if coverage is below threshold'
+        type: boolean
+        default: true
+      go_private_modules:
+        description: 'GOPRIVATE pattern for private Go modules (e.g., github.com/LerianStudio/*)'
+        type: string
+        default: ''
+      enable_integration_tests:
+        description: 'Enable integration tests (requires make test-integration target)'
+        type: boolean
+        default: false
+      integration_test_command:
+        description: 'Command to run integration tests. Empty = go-pr-analysis default (`make test-integration`).'
+        type: string
+        default: ''
+      integration_tests_config:
+        description: >-
+          JSON configuring the integration lane beyond the command: `service` (a backing
+          container started on the runner), `test_env` (variables exported to the test
+          step) and `guard` (packages that must report a pass, so a suite that skipped
+          itself fails instead of reporting green). See docs/go-pr-analysis.md.
+          Empty keeps today's serviceless, unguarded job.
+        type: string
+        default: ''
+      enable_test_determinism:
+        description: 'Enable the test determinism check (runs tests multiple times with shuffle)'
+        type: boolean
+        default: false
+      test_determinism_runs:
+        description: 'Number of times to run tests for the determinism check'
+        type: number
+        default: 3
+      enable_custom_checks:
+        description: 'Enable arbitrary caller-owned checks beyond the named gates (runs each target in custom_checks)'
+        type: boolean
+        default: false
+      custom_checks:
+        description: 'Newline-separated Makefile targets to run as additional checks. Each runs via `make <target>`; a non-zero exit on any of them fails the job. Use for repo-specific guards the named jobs do not cover.'
+        type: string
+        default: ''
+      system_packages:
+        description: 'Space-separated apt packages to install before Go commands (CGO repos)'
+        type: string
+        default: ''
+
+      # ----------------- Security (pr-security-scan.yml) -----------------
+      ignore_file:
+        description: 'Path to Trivy ignore file (e.g., .trivyignore.yaml)'
+        type: string
+        default: ''
+      security_scan_runner_type:
+        description: 'Optional runner override for the security_scan jobs only. Empty = vars.GENERAL_RUNNERS, then runner_type.'
+        type: string
+        default: ''
+      enable_docker_scan:
+        description: 'Build and scan a Docker image with Trivy. Set to false for repos without a root Dockerfile (e.g. monorepos with Dockerfiles under components/ or cmd/).'
+        type: boolean
+        default: true
+      dockerfile_path:
+        description: 'Explicit path to a single Dockerfile to build and scan (e.g. components/ledger/Dockerfile). Lets monorepos without a root Dockerfile keep enable_docker_scan: true.'
+        type: string
+        default: ''
+      build_context_from_working_dir:
+        description: >-
+          Build each component image with its own working_dir as the Docker build context instead of the
+          repository root. Required for type1 monorepos whose components are independent modules: a component
+          Dockerfile starting with `COPY go.mod go.sum ./` cannot build from the repository root.
+        type: boolean
+        default: false
+      enable_codeql:
+        description: 'Enable CodeQL static analysis. Requires codeql_languages to be set.'
+        type: boolean
+        default: false
+      codeql_languages:
+        description: 'Languages to analyze with CodeQL (comma-separated, e.g., "go")'
+        type: string
+        default: ''
+      monorepo_type:
+        description: 'Monorepo layout for the security scan. "type1" = components in separate folders (default). "type2" = backend at repo root + one independent component in a sub-folder.'
+        type: string
+        default: 'type1'
+      frontend_folder:
+        description: 'Sub-folder treated as an independent scan component in type2 repos (e.g. "tools/mock-sta-server"). Ignored when monorepo_type is "type1".'
+        type: string
+        default: 'frontend'
+      trivy_skip_dirs:
+        description: 'Comma-separated directories to skip in every Trivy filesystem scan (appended to the built-in skip list). Useful for excluding sub-modules from the root scan (e.g. "tools/mock-sta-server").'
+        type: string
+        default: ''
+
+      # ----------------- Lerian lib version (lerian-lib-version-check.yml) -----------------
+      lib_version_go_mod_path:
+        description: 'Path to go.mod relative to the repo root'
+        type: string
+        default: 'go.mod'
+      lib_version_check_indirect:
+        description: 'Also check transitive (// indirect) Lerian deps'
+        type: boolean
+        default: false
+      lib_version_comment_on_pr:
+        description: 'Post/update a sticky PR comment with the Lerian lib version table'
+        type: boolean
+        default: true
+      lib_version_require_lerian_libs:
+        description: >-
+          Fail when go.mod declares no github.com/LerianStudio/* dependency at all. True is the
+          company-standards rule for a service; set it to false in a repository that legitimately
+          has none (a standard-library-only library, a template, a generator), so the rest of the
+          check keeps running instead of turning run_lib_version_check off entirely.
+        type: boolean
+        default: true
+      lib_version_non_blocking_for_hotfix_to_main:
+        description: >-
+          Make an outdated Lerian library advisory instead of blocking on a `hotfix/*` -> `main`
+          pull request, where bumping a library would push the change past its corrective scope.
+          On by default: a hotfix is the one flow where the bump cannot wait for the library and
+          the library cannot wait for the hotfix. The check still runs and still posts its
+          report/comment; only the "behind latest stable" verdict stops failing, so the stable
+          `Lib Version` status check goes green and branch protection needs no conditional. Every
+          other source/target combination keeps the blocking behavior. Set to false to make even a
+          hotfix block on an outdated library. Deliberately does NOT soften anything else: a
+          missing go.mod, a go.mod with no Lerian libraries, a change-detection failure or any
+          other infrastructure failure still fails the gate.
+        type: boolean
+        default: true
+
+      # ----------------- Shared -----------------
+      shared_paths:
+        description: 'Newline-separated path patterns that trigger analysis/security for all components.'
+        type: string
+        default: ''
+      security_shared_paths:
+        description: 'Optional security-only shared path patterns. Empty reuses shared_paths.'
+        type: string
+        default: ''
+
+      # ----------------- CodeRabbit Review Gate -----------------
+      enable_coderabbit_gate:
+        description: 'Ask CodeRabbit for a review once this validation passes, so no review is spent on a failing or out-of-scope pull request. On by default. The consuming repository only needs `reviews.auto_review.enabled: false` in its .coderabbit.yml — the gate posts `@coderabbitai review` itself. The `review-ready` label is applied as a visual marker when declared, and skipped silently when not. See docs/coderabbit-gate.md.'
+        type: boolean
+        default: true
+      coderabbit_review_base_branches:
+        description: 'Comma-separated exact base branch names whose pull requests get a review. Empty removes this dimension.'
+        type: string
+        default: develop
+      coderabbit_review_head_patterns:
+        description: 'Comma-separated globs matched against the head branch. A match is reviewed regardless of base — for code that reached no other review on its way in.'
+        type: string
+        default: hotfix/*
+      coderabbit_gate_label:
+        description: 'Label used as the review trigger. Must match `reviews.auto_review.labels` in .coderabbit.yml.'
+        type: string
+        default: review-ready
+    secrets:
+      MANAGE_TOKEN:
+        required: false
+      SLACK_WEBHOOK_URL:
+        required: false
+      LERIAN_LIB_READ_TOKEN:
+        required: false
+      DOCKER_USERNAME:
+        description: Docker Hub user for authenticated image pulls in the security scan, which raises the anonymous rate limit.
+        required: false
+      DOCKERHUB_IMAGE_PULL_TOKEN:
+        description: Docker Hub token paired with DOCKER_USERNAME.
+        required: false
+      NPMRC_TOKEN:
+        description: Token written into .npmrc so the security scan's image build can reach the GitHub npm registry.
+        required: false
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+  issues: write
+  pull-requests: write
+  security-events: write
+
+jobs:
+  # ----------------- PR Metadata Validation -----------------
+  metadata:
+    name: PR Metadata
+    if: inputs.run_metadata
+    uses: ./.github/workflows/pr-validation.yml
+    with:
+      runner_type: ${{ inputs.runner_type }}
+      pr_checks_summary_runner_type: ${{ inputs.pr_checks_summary_runner_type }}
+      dry_run: ${{ inputs.dry_run }}
+      pr_title_types: ${{ inputs.pr_title_types }}
+      pr_title_scopes: ${{ inputs.pr_title_scopes }}
+      require_scope: ${{ inputs.require_scope }}
+      enable_auto_labeler: ${{ inputs.enable_auto_labeler }}
+      enable_slack_notification: ${{ inputs.enable_slack_notification }}
+      labeler_config_path: ${{ inputs.labeler_config_path }}
+      enforce_source_branches: ${{ inputs.enforce_source_branches }}
+      allowed_source_branches: ${{ inputs.allowed_source_branches }}
+      target_branches_for_source_check: ${{ inputs.target_branches_for_source_check }}
+      source_branch_rules: ${{ inputs.source_branch_rules }}
+      automation_only_source_patterns: ${{ inputs.automation_only_source_patterns }}
+      automation_source_actors: ${{ inputs.automation_source_actors }}
+      require_verified_commits: ${{ inputs.require_verified_commits }}
+      enable_breaking_change_approval: ${{ inputs.enable_breaking_change_approval }}
+      breaking_change_scope_rules: ${{ inputs.breaking_change_scope_rules }}
+      breaking_change_additional_scope_rules: ${{ inputs.breaking_change_additional_scope_rules }}
+      breaking_change_force_labels: ${{ inputs.breaking_change_force_labels }}
+      breaking_change_skip_labels: ${{ inputs.breaking_change_skip_labels }}
+      breaking_change_close_on_rejection: ${{ inputs.breaking_change_close_on_rejection }}
+      breaking_change_approval_reviewers: ${{ inputs.breaking_change_approval_reviewers }}
+      breaking_change_fallback_reviewers: ${{ inputs.breaking_change_fallback_reviewers }}
+      breaking_change_status_context: ${{ inputs.breaking_change_status_context }}
+      breaking_change_create_environment: ${{ inputs.breaking_change_create_environment }}
+      breaking_change_require_protected_environment: ${{ inputs.breaking_change_require_protected_environment }}
+    secrets:
+      MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # ----------------- Change Detection (gate) -----------------
+  # `edited` must stay in this list. When this job is skipped, the *-gate
+  # aggregators still run (if: always()) and receive result == 'skipped', which
+  # result-gate treats as a pass — so a run that evaluated nothing reports the
+  # required checks green. Matches js-pr-validation.yml, which already includes it.
+  changes:
+    name: Detect non-doc changes
+    if: contains(fromJSON('["opened","edited","synchronize","reopened","ready_for_review"]'), github.event.action)
+    runs-on: ${{ inputs.gate_runner_type || vars.GENERAL_RUNNERS || inputs.runner_type }}
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.gate.outputs.code }}
+    steps:
+      - name: Non-doc change gate
+        id: gate
+        uses: LerianStudio/shared-workflows-public/src/config/non-doc-changes@v1
+        with:
+          github-token: ${{ github.token }}
+          ignore-globs: ${{ inputs.ignore_globs }}
+          workflow-paths-are-code: ${{ inputs.analyze_on_workflow_changes && 'true' || 'false' }}
+
+  # ----------------- Go Analysis -----------------
+  go-analysis:
+    name: Go Analysis (pipeline)
+    needs: changes
+    if: inputs.run_go_analysis && needs.changes.outputs.code == 'true'
+    uses: ./.github/workflows/go-pr-analysis.yml
+    with:
+      enable_slack_notification: ${{ inputs.enable_slack_notification }}
+      runner_type: ${{ inputs.runner_type }}
+      lint_runner_type: ${{ inputs.lint_runner_type }}
+      test_runner_type: ${{ inputs.test_runner_type }}
+      integration_test_runner_type: ${{ inputs.integration_test_runner_type }}
+      coverage_runner_type: ${{ inputs.coverage_runner_type }}
+      build_runner_type: ${{ inputs.build_runner_type }}
+      go_version: ${{ inputs.go_version }}
+      golangci_lint_version: ${{ inputs.golangci_lint_version }}
+      govulncheck_version: ${{ inputs.govulncheck_version }}
+      fail_on_govulncheck: ${{ inputs.fail_on_govulncheck }}
+      golangci_lint_args: ${{ inputs.golangci_lint_args }}
+      app_name_prefix: ${{ inputs.app_name_prefix }}
+      app_name_overrides: ${{ inputs.app_name_overrides }}
+      filter_paths: ${{ inputs.filter_paths }}
+      path_level: ${{ inputs.path_level }}
+      normalize_to_filter: ${{ inputs.normalize_to_filter }}
+      coverage_threshold: ${{ inputs.coverage_threshold }}
+      fail_on_coverage_threshold: ${{ inputs.fail_on_coverage_threshold }}
+      go_private_modules: ${{ inputs.go_private_modules }}
+      enable_integration_tests: ${{ inputs.enable_integration_tests }}
+      # Intentional duplicate of go-pr-analysis's own default — KEEP IN SYNC.
+      # A reusable-workflow default applies only when the input is omitted, and a
+      # `with:` mapping cannot conditionally omit a key: passing the empty string
+      # through would reach go-pr-analysis as '' and produce an empty `run:` in its
+      # integration-tests job, which is a workflow validation error. So the literal
+      # has to be repeated here rather than deferred to.
+      integration_test_command: ${{ inputs.integration_test_command || 'make test-integration' }}
+      # No such duplication needed here: '' is the value that disables the feature,
+      # so passing it straight through is exactly the intended default.
+      integration_tests_config: ${{ inputs.integration_tests_config }}
+      enable_test_determinism: ${{ inputs.enable_test_determinism }}
+      test_determinism_runs: ${{ inputs.test_determinism_runs }}
+      enable_custom_checks: ${{ inputs.enable_custom_checks }}
+      custom_checks: ${{ inputs.custom_checks }}
+      system_packages: ${{ inputs.system_packages }}
+      shared_paths: ${{ inputs.shared_paths }}
+    secrets:
+      MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  go-analysis-gate:
+    name: ${{ inputs.run_go_analysis && 'Go Analysis' || 'Go Analysis (disabled)' }}
+    needs: [changes, go-analysis]
+    if: always()
+    runs-on: ${{ inputs.gate_runner_type || vars.GENERAL_RUNNERS || inputs.runner_type }}
+    steps:
+      - name: Aggregate Go Analysis result
+        uses: LerianStudio/shared-workflows-public/src/validate/result-gate@v1
+        with:
+          result: ${{ needs.changes.result != 'success' && needs.changes.result || needs.go-analysis.result }}
+          label: Go Analysis
+          enabled: ${{ inputs.run_go_analysis }}
+
+  # ----------------- Security Scan -----------------
+  security:
+    name: Security (pipeline)
+    needs: changes
+    if: inputs.run_security && needs.changes.outputs.code == 'true'
+    uses: ./.github/workflows/pr-security-scan.yml
+    with:
+      enable_slack_notification: ${{ inputs.enable_slack_notification }}
+      # The `changes` job above already classified this pull request; the scan
+      # must not spend a second job and a second API call on the same verdict.
+      enable_doc_gate: false
+      runner_type: ${{ inputs.runner_type }}
+      security_scan_runner_type: ${{ inputs.security_scan_runner_type }}
+      ignore_file: ${{ inputs.ignore_file }}
+      enable_docker_scan: ${{ inputs.enable_docker_scan }}
+      dockerfile_path: ${{ inputs.dockerfile_path }}
+      build_context_from_working_dir: ${{ inputs.build_context_from_working_dir }}
+      enable_codeql: ${{ inputs.enable_codeql }}
+      codeql_languages: ${{ inputs.codeql_languages }}
+      filter_paths: ${{ inputs.security_filter_paths || inputs.filter_paths }}
+      path_level: ${{ format('{0}', inputs.path_level) }}
+      shared_paths: ${{ inputs.security_shared_paths || inputs.shared_paths }}
+      monorepo_type: ${{ inputs.monorepo_type }}
+      frontend_folder: ${{ inputs.frontend_folder }}
+      trivy_skip_dirs: ${{ inputs.trivy_skip_dirs }}
+    secrets:
+      MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKERHUB_IMAGE_PULL_TOKEN: ${{ secrets.DOCKERHUB_IMAGE_PULL_TOKEN }}
+      NPMRC_TOKEN: ${{ secrets.NPMRC_TOKEN }}
+
+  security-gate:
+    name: ${{ inputs.run_security && 'Security' || 'Security (disabled)' }}
+    needs: [changes, security]
+    if: always()
+    runs-on: ${{ inputs.gate_runner_type || vars.GENERAL_RUNNERS || inputs.runner_type }}
+    steps:
+      - name: Aggregate security result
+        uses: LerianStudio/shared-workflows-public/src/validate/result-gate@v1
+        with:
+          result: ${{ needs.changes.result != 'success' && needs.changes.result || needs.security.result }}
+          label: Security
+          enabled: ${{ inputs.run_security }}
+
+  # ----------------- Lerian Library Version Check -----------------
+  lib-version:
+    name: Lib Version (check)
+    needs: changes
+    if: inputs.run_lib_version_check && needs.changes.outputs.code == 'true'
+    uses: ./.github/workflows/lerian-lib-version-check.yml
+    with:
+      runner_type: ${{ inputs.runner_type }}
+      go_mod_path: ${{ inputs.lib_version_go_mod_path }}
+      check_indirect: ${{ inputs.lib_version_check_indirect }}
+      comment_on_pr: ${{ inputs.lib_version_comment_on_pr }}
+      require_lerian_libs: ${{ inputs.lib_version_require_lerian_libs }}
+      # Advisory only on the exact `hotfix/* -> main` path, unless the caller opted out.
+      # `github.head_ref` is empty outside pull_request, so the match is false there.
+      # Softening happens inside the check itself (see lerian-lib-version-check.yml), NOT in the
+      # gate below: mapping a failed result to a pass at the gate would also swallow checkout
+      # errors and change-detection failures, which must stay blocking.
+      outdated_non_blocking: ${{ inputs.lib_version_non_blocking_for_hotfix_to_main && github.base_ref == 'main' && startsWith(github.head_ref, 'hotfix/') }}
+      dry_run: ${{ inputs.dry_run }}
+    secrets:
+      LERIAN_LIB_READ_TOKEN: ${{ secrets.LERIAN_LIB_READ_TOKEN }}
+      MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}
+
+  lib-version-gate:
+    name: ${{ inputs.run_lib_version_check && 'Lib Version' || 'Lib Version (disabled)' }}
+    needs: [changes, lib-version]
+    if: always()
+    runs-on: ${{ inputs.gate_runner_type || vars.GENERAL_RUNNERS || inputs.runner_type }}
+    steps:
+      - name: Aggregate Lib Version result
+        uses: LerianStudio/shared-workflows-public/src/validate/result-gate@v1
+        with:
+          result: ${{ needs.changes.result != 'success' && needs.changes.result || needs.lib-version.result }}
+          label: Lib Version
+          enabled: ${{ inputs.run_lib_version_check }}
+
+  # ----------------- Permission Manifest Nudge (RI) — NON-BLOCKING -----------------
+  # Part of the Access-Manager "Inversão de Responsabilidade" (RI) rollout. Reminds
+  # a lib-auth plugin/service to declare its permissions in a permissions.yaml
+  # manifest by posting a sticky, idempotent PR comment.
+  #
+  # This job is INTENTIONALLY non-blocking:
+  #   * `continue-on-error: true` — a failure here never fails the umbrella run.
+  #   * There is NO `*-gate` aggregator for it, so it is not a stable/required
+  #     status check. Do NOT add it to branch protection.
+  #   * The underlying composite is best-effort and always exits 0.
+  # It is a standalone job (no `needs`) so it never affects the required gates above.
+  permission-manifest-nudge:
+    name: Permission Manifest Nudge
+    if: inputs.run_manifest_nudge && github.event_name == 'pull_request'
+    continue-on-error: true
+    runs-on: ${{ inputs.gate_runner_type || vars.GENERAL_RUNNERS || inputs.runner_type }}
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          fetch-depth: 1
+
+      - name: Nudge when no permissions.yaml manifest exists
+        uses: LerianStudio/shared-workflows-public/src/validate/permission-manifest-nudge@v1
+        with:
+          # Direct job of the umbrella (not a nested reusable), so github.token is
+          # scoped to the caller repo and can post the comment; MANAGE_TOKEN is used
+          # when provided (parity with the coverage/lib-version commenters).
+          github-token: ${{ secrets.MANAGE_TOKEN || github.token }}
+          go-mod-path: ${{ inputs.lib_version_go_mod_path }}
+          # Preview mode: no comment / no PR side effects when the umbrella runs dry.
+          dry-run: ${{ inputs.dry_run }}
+
+  # ----------------- CodeRabbit Review Gate -----------------
+  # Holds CodeRabbit until this umbrella passes, so no review is spent on a pull
+  # request that is failing or out of the configured scope. Opt-in: it needs
+  # `reviews.auto_review.enabled: false` plus `labels: ["review-ready"]` in the
+  # consuming repository's .coderabbit.yml, and the label to exist there.
+  #
+  # See docs/coderabbit-gate.md for the contract and the setup checklist.
+  # The verdict is computed in its own job so that adding a required job to the
+  # gate is one line in the `needs:` list below — not a line there plus a clause
+  # in an expression. needs-verdict reads `toJSON(needs)` and believes a job's own
+  # `checks_passed` output over its result, because a reusable workflow's result
+  # also folds in jobs that report on the run rather than on the code: Notify, for
+  # one, whose failure to reach Slack is no reason to withhold a review. Jobs that
+  # publish no such output are judged by their result, and `skipped` passes
+  # throughout — every job here is conditional on the diff and on the toggles.
+  coderabbit-verdict:
+    name: CodeRabbit Verdict
+    needs:
+      - metadata
+      - changes
+      - go-analysis
+      - security
+      - lib-version-gate
+    # `always()` so a skipped component does not skip the verdict along with it.
+    # Draft pull requests are excluded; CodeRabbit ignores them anyway.
+    if: >-
+      always()
+      && inputs.enable_coderabbit_gate
+      && github.event_name == 'pull_request'
+      && github.event.pull_request.draft != true
+    runs-on: ${{ inputs.gate_runner_type || vars.GENERAL_RUNNERS || inputs.runner_type }}
+    permissions:
+      contents: read
+    outputs:
+      passed: ${{ steps.verdict.outputs.passed }}
+    steps:
+      - name: Compute verdict
+        id: verdict
+        uses: LerianStudio/shared-workflows-public/src/validate/needs-verdict@v1
+        with:
+          needs: ${{ toJSON(needs) }}
+          label: CodeRabbit gate
+
+  coderabbit-review:
+    name: CodeRabbit Review
+    # `always()` is load-bearing, and the reason is not obvious. The verdict job
+    # already carries every condition, so this one looks like it needs none — but
+    # a failure anywhere upstream propagates through the graph and skips a job
+    # left on the implicit `success()`, even when its own dependency succeeded.
+    # `always()` on the verdict does not neutralise that for what comes after it.
+    # Without this line the gate goes quiet on exactly the pull requests the
+    # verdict was built to approve: the ones where something failed that the
+    # verdict deliberately excluded, such as a red end-to-end suite under
+    # `core_passed`. Measured on product-console#1067, where the verdict logged
+    # `CodeRabbit gate: passed` and this job was skipped anyway.
+    if: always() && needs.coderabbit-verdict.result == 'success'
+    needs: coderabbit-verdict
+    permissions:
+      contents: read
+      pull-requests: write
+    uses: ./.github/workflows/coderabbit-gate.yml
+    with:
+      pr_number: ${{ github.event.pull_request.number }}
+      checks_passed: ${{ needs.coderabbit-verdict.outputs.passed == 'true' }}
+      # Binds the verdict to the commit it was computed for, so a run superseded
+      # by a newer push cannot authorise a head it never validated.
+      head_sha: ${{ github.event.pull_request.head.sha }}
+      review_base_branches: ${{ inputs.coderabbit_review_base_branches }}
+      review_head_patterns: ${{ inputs.coderabbit_review_head_patterns }}
+      label: ${{ inputs.coderabbit_gate_label }}
+      dry_run: ${{ inputs.dry_run }}
+    secrets:
+      MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}

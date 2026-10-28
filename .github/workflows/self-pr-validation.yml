@@ -259,6 +259,36 @@ jobs:
       - name: Run non-doc-changes classification tests
         run: python3 src/config/non-doc-changes/test.py
 
+  # ----------------- Lerian Lib Version Advisory Tests -----------------
+  lerian-lib-version-tests:
+    name: Lerian Lib Version Advisory Tests
+    runs-on: ${{ vars.GENERAL_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          persist-credentials: false
+
+      - name: Run lerian-lib-version advisory behavioural tests
+        run: python3 src/validate/lerian-lib-version/test.py
+
+  # ----------------- Pre-release Check Tests -----------------
+  prerelease-check-tests:
+    name: Pre-release Check Tests
+    runs-on: ${{ vars.GENERAL_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          persist-credentials: false
+
+      - name: Run prerelease-check allow-file behavioural tests
+        run: python3 src/security/prerelease-check/test.py
+
   # ----------------- Workflow Secrets Contract Tests -----------------
   workflow-secrets-contract-tests:
     name: Workflow Secrets Contract Tests
@@ -563,6 +593,8 @@ jobs:
       - coderabbit-collapse-tests
       - coderabbit-gate-tests
       - non-doc-changes-tests
+      - lerian-lib-version-tests
+      - prerelease-check-tests
       - yamllint
       - actionlint
       - pinned-actions

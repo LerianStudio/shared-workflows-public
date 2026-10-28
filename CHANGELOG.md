@@ -1,5 +1,14 @@
 # Shared-workflows-public Changelog
 
+## [1.1.1](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.1.1)
+
+Improvements:
+- Documented tier approval gates and the process to pin by tier channel. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.1.0...v1.1.1)
+
+---
+
 ## [1.1.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.1.0)
 
 Features:
