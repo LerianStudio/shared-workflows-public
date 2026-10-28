@@ -59,7 +59,7 @@ jobs:
     secrets: inherit
 ```
 
-`go-pr-validation.yml` and `js-pr-validation.yml` already wire this composite behind `enable_coderabbit_gate`; a caller does not call it directly. The frontend umbrella passes `overrides: frontend-analysis=core_passed`, which keeps the end-to-end suite out of the review verdict without removing it from the merge gate.
+`go-pr-validation.yml` already wires this composite behind `enable_coderabbit_gate`; a caller does not call it directly.
 
 ## Required permissions
 
