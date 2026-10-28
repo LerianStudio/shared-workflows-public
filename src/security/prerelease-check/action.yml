@@ -1,0 +1,302 @@
+name: Pre-release Version Check
+description: Scans dependency files for unstable version pins. Only stable semver (x.y.z) and Go pseudo-versions (SHA-based) are allowed.
+
+inputs:
+  scan-ref:
+    description: 'Directory to scan for pre-release versions'
+    required: false
+    default: '.'
+  app-name:
+    description: 'Application name for reporting context'
+    required: false
+    default: ''
+  target-branch:
+    description: 'PR target branch (e.g. github.base_ref). Selects the annotation level: pre-release pins annotate as error on blocking branches, warning elsewhere. Empty = warning.'
+    required: false
+    default: ''
+  block-branches:
+    description: 'Comma-separated branches where pre-release pins are blocking (annotated as error). Must match the downstream gate. Default: release-candidate,main.'
+    required: false
+    default: 'release-candidate,main'
+  allow-file:
+    description: 'Path (relative to each scanned base) to a file listing accepted pre-release pins as "module version" lines (# comments allowed). Matching findings are exempted and reported as notices — the same discipline .trivyignore applies to CVEs that cannot be remediated by upgrade (e.g. a direct dependency with no stable upstream release). Auto-discovered at the default path when present; absent file = no exemptions.'
+    required: false
+    default: '.prerelease-allow'
+  prerelease-pattern:
+    description: 'Override the semver pre-release regex used for go.mod, package.json and Dockerfile scanning. Wire from an org/repo Actions variable named PRERELEASE_PATTERN to tune the policy without a release. Empty (the default) uses the built-in allowlist: [0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc|dev|preview|canary|snapshot|nightly).'
+    required: false
+    default: ''
+
+outputs:
+  has-findings:
+    description: 'true if pre-release versions were detected'
+    value: ${{ steps.scan.outputs.has_findings }}
+  findings-count:
+    description: 'Number of pre-release version findings'
+    value: ${{ steps.scan.outputs.findings_count }}
+  artifact-file:
+    description: 'Path to the JSON findings file for consumption by pr-security-reporter'
+    value: ${{ steps.scan.outputs.artifact_file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Scan for pre-release versions
+      id: scan
+      shell: bash
+      env:
+        SCAN_DIR: ${{ inputs.scan-ref }}
+        APP_NAME: ${{ inputs.app-name }}
+        TARGET_BRANCH: ${{ inputs.target-branch }}
+        BLOCK_BRANCHES: ${{ inputs.block-branches }}
+        ALLOW_FILE: ${{ inputs.allow-file }}
+        PRERELEASE_PATTERN: ${{ inputs.prerelease-pattern }}
+      run: |
+        # Matches x.y.z-<keyword> — only known pre-release suffixes (alpha, beta,
+        # rc, dev, preview, canary, snapshot, nightly). An allowlist avoids false
+        # positives on stable vendor-suffixed releases (e.g. the -vault-N suffix,
+        # such as v1.0.1-vault-7). Go pseudo-versions (v0.0.0-YYYYMMDDHHMMSS-commitsha)
+        # and SHA pins are also allowed because their suffix is not a known keyword.
+        # A token boundary after each keyword keeps prefix-matches like -devtools-7,
+        # -rca or -dev_build from being flagged as -dev/-rc (underscore counts as
+        # part of the token, not a delimiter), while still accepting numeric and
+        # dot/plus-separated forms such as -beta1, -beta.1 and -rc.2.
+        # The pattern is overridable via the prerelease-pattern input (wired from an
+        # org/repo variable); an empty value falls back to the built-in allowlist.
+        # The same pattern drives go.mod, package.json and Dockerfile scanning so
+        # stable image variants like -slim, -alpine, -bookworm never match either.
+        DEFAULT_PRERELEASE_PATTERN='[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc|dev|preview|canary|snapshot|nightly)([[:digit:]]+|[.][[:alnum:]-]+|[+][[:alnum:].-]+)?([^[:alnum:]_-]|$)'
+        PRERELEASE_PATTERN="${PRERELEASE_PATTERN:-$DEFAULT_PRERELEASE_PATTERN}"
+
+        # Guard against a malformed override: an invalid ERE would make every
+        # "grep -E ... || true" below look like zero findings and silently disable
+        # the gate. Probe the resolved pattern (grep exits >=2 on a bad regex) and
+        # fall back to the built-in allowlist with a warning if it is unusable.
+        PROBE_RC=0
+        printf '' | grep -Eq "$PRERELEASE_PATTERN" 2>/dev/null || PROBE_RC=$?
+        if [ "$PROBE_RC" -ge 2 ]; then
+          echo "::warning::Invalid prerelease-pattern override; falling back to the built-in allowlist."
+          PRERELEASE_PATTERN="$DEFAULT_PRERELEASE_PATTERN"
+        fi
+        DOCKER_PRERELEASE="$PRERELEASE_PATTERN"
+        FINDINGS=()
+
+        # Scan the component scan-ref AND the repo root. In Go monorepos a single
+        # root go.mod is shared across components; without scanning root we'd miss
+        # dependency pins for components whose scan-ref is a subdirectory.
+        SEEN_FILES=()
+        SCAN_PATHS=("$SCAN_DIR")
+        if [ "$SCAN_DIR" != "." ] && [ "$SCAN_DIR" != "./" ]; then
+          SCAN_PATHS+=(".")
+        fi
+
+        already_seen() {
+          local target="$1"
+          for s in "${SEEN_FILES[@]}"; do
+            [ "$s" = "$target" ] && return 0
+          done
+          return 1
+        }
+
+        for base in "${SCAN_PATHS[@]}"; do
+          # ----------------- go.mod -----------------
+          if [ -f "$base/go.mod" ]; then
+            real=$(realpath "$base/go.mod")
+            if ! already_seen "$real"; then
+              SEEN_FILES+=("$real")
+              while IFS= read -r match; do
+                FINDINGS+=("${base}/go.mod|$match")
+              done < <(grep -nE "v${PRERELEASE_PATTERN}" "$base/go.mod" || true)
+            fi
+          fi
+
+          # ----------------- package.json -----------------
+          if [ -f "$base/package.json" ]; then
+            real=$(realpath "$base/package.json")
+            if ! already_seen "$real"; then
+              SEEN_FILES+=("$real")
+              # The package's own top-level "version" is not a dependency pin:
+              # a repo shipping a beta of itself ("version": "2.0.0-beta.1") is
+              # not consuming an unstable dependency, and flagging it hard-fails
+              # the gate on blocking branches for the whole beta cycle. Resolve
+              # it with jq and drop the line that declares it. An unparsable
+              # package.json leaves SELF_VERSION empty, which keeps the previous
+              # behaviour (fail towards reporting, never towards silence).
+              SELF_VERSION=$(jq -r '.version // empty' "$base/package.json" 2>/dev/null || true)
+              # `version` is also a real npm package name. A nested
+              # "version": "<self version>" — a dependency block, but also
+              # `resolutions` or a recursive `overrides` entry — is byte-identical
+              # to the package's own line, so the exemption is dropped entirely
+              # rather than risk silencing a genuine pin; the scan then reports
+              # both lines, as it did before this exemption existed. The probe
+              # walks every path instead of enumerating sections, so a block the
+              # line scan reaches cannot be missed here.
+              if [ -n "$SELF_VERSION" ] && [ "$(jq -r --arg v "$SELF_VERSION" 'any(paths(scalars) as $p | select(($p | .[-1]) == "version" and ($p | length) > 1) | getpath($p); . == $v)' "$base/package.json" 2>/dev/null || echo true)" = "true" ]; then
+                SELF_VERSION=""
+              fi
+              while IFS= read -r match; do
+                if [ -n "$SELF_VERSION" ]; then
+                  LINE_CONTENT=$(printf '%s' "${match#*:}" | sed 's/^[[:space:]]*//')
+                  case "$LINE_CONTENT" in
+                    '"version"'*:*"\"$SELF_VERSION\""*) continue ;;
+                  esac
+                fi
+                FINDINGS+=("${base}/package.json|$match")
+              done < <(grep -nE "\"[~^<>=]*${PRERELEASE_PATTERN}" "$base/package.json" || true)
+            fi
+          fi
+
+          # ----------------- Dockerfile -----------------
+          for df in "$base/Dockerfile" "$base/"*.dockerfile "$base/Dockerfile."*; do
+            [ -f "$df" ] || continue
+            real=$(realpath "$df")
+            already_seen "$real" && continue
+            SEEN_FILES+=("$real")
+            relpath="${df#./}"
+            while IFS= read -r match; do
+              FINDINGS+=("${relpath}|$match")
+            done < <(grep -nE ":${DOCKER_PRERELEASE}" "$df" || true)
+          done
+        done
+
+        # ----------------- allowlist (accepted pre-release pins) -----------------
+        # Exempt pins explicitly accepted in an allow-file: one entry per line,
+        # keyed as "module version" — a leading `require` keyword (go.mod
+        # single-line form `require <module> <version>`) is stripped so it keys
+        # the same as the indented block form; '#' comments and blank lines
+        # ignored. Same discipline .trivyignore applies to CVEs that cannot be
+        # remediated by upgrade — a direct dependency whose upstream ships no
+        # stable release (only beta/rc) stays visible as a notice but does not
+        # block promotion. Absent file (the default) = zero exemptions = unchanged.
+        norm_key() {
+          echo "$1" | sed 's/^[[:space:]]*//; s/^require[[:space:]]\{1,\}//' | awk '{print $1, $2}'
+        }
+        ALLOW_ENTRIES=()
+        if [ -n "$ALLOW_FILE" ]; then
+          for base in "${SCAN_PATHS[@]}"; do
+            af="$base/$ALLOW_FILE"
+            [ -f "$af" ] || continue
+            real=$(realpath "$af")
+            already_seen "$real" && continue
+            SEEN_FILES+=("$real")
+            while IFS= read -r line || [ -n "$line" ]; do
+              line="${line%%#*}"
+              # Whitespace-trim only. An earlier version used `xargs`, which also
+              # performs shell quote removal: a package.json entry written as
+              # documented ("pkg": "2.0.0-beta.6",) was reduced to
+              # pkg: 2.0.0-beta.6, and could never equal the key computed from
+              # the quoted scanned line, so every quoted exemption was silently
+              # inert. Entries must reach norm_key byte-for-byte as written.
+              # A backslash before a quote is dropped as well, so allow-files
+              # written escaped against that old behaviour keep matching.
+              line=$(printf '%s' "$line" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/\\"/"/g')
+              if [ -z "$line" ]; then continue; fi
+              ALLOW_ENTRIES+=("$(norm_key "$line")")
+            done < "$af"
+          done
+        fi
+
+        if [ ${#ALLOW_ENTRIES[@]} -gt 0 ] && [ ${#FINDINGS[@]} -gt 0 ]; then
+          KEPT=()
+          for f in "${FINDINGS[@]}"; do
+            REST="${f#*|}"
+            CONTENT="${REST#*:}"
+            KEY=$(norm_key "$CONTENT")
+            allowed=false
+            for a in "${ALLOW_ENTRIES[@]}"; do
+              if [ "$KEY" = "$a" ]; then allowed=true; break; fi
+            done
+            if [ "$allowed" = "true" ]; then
+              echo "::notice::Accepted pre-release pin (allow-file): $KEY"
+            else
+              KEPT+=("$f")
+            fi
+          done
+          FINDINGS=("${KEPT[@]}")
+        fi
+
+        COUNT=${#FINDINGS[@]}
+        echo "findings_count=$COUNT" >> "$GITHUB_OUTPUT"
+
+        # Persist findings as JSON so the next step can post a PR comment.
+        ARTIFACT_NAME="${APP_NAME:-default}"
+        ARTIFACT_FILE="prerelease-findings-${ARTIFACT_NAME}.json"
+        echo "artifact_file=$ARTIFACT_FILE" >> "$GITHUB_OUTPUT"
+
+        if [ "$COUNT" -gt 0 ]; then
+          echo "has_findings=true" >> "$GITHUB_OUTPUT"
+
+          LABEL=""
+          [ -n "$APP_NAME" ] && LABEL=" ($APP_NAME)"
+
+          # Annotation level mirrors the downstream branch-aware gate: error on
+          # blocking branches (where the pin hard-fails the job), warning
+          # elsewhere (advisory). An empty/unknown target branch is non-blocking.
+          IS_BLOCKING=false
+          IFS=',' read -ra BLOCK_LIST <<< "$BLOCK_BRANCHES"
+          for branch in "${BLOCK_LIST[@]}"; do
+            branch=$(echo "$branch" | xargs)
+            if [ -n "$TARGET_BRANCH" ] && [ "$TARGET_BRANCH" = "$branch" ]; then
+              IS_BLOCKING=true
+              break
+            fi
+          done
+
+          MSG="Found $COUNT unstable version pin(s)${LABEL}. Only stable versions (x.y.z) and SHA-based pins are allowed."
+          if [ "$IS_BLOCKING" = "true" ]; then
+            echo "::error::$MSG"
+          else
+            echo "::warning::$MSG"
+          fi
+
+          # Build JSON array of findings for the reporter step.
+          {
+            echo "["
+            FIRST=true
+            for f in "${FINDINGS[@]}"; do
+              FILE="${f%%|*}"
+              REST="${f#*|}"
+              LINE="${REST%%:*}"
+              CONTENT="${REST#*:}"
+              CONTENT_TRIMMED=$(echo "$CONTENT" | sed 's/^[[:space:]]*//')
+              CONTENT_ESCAPED=$(echo "$CONTENT_TRIMMED" | jq -Rs .)
+              if [ "$FIRST" = "true" ]; then
+                FIRST=false
+              else
+                echo ","
+              fi
+              printf '  {"file":"%s","line":%s,"content":%s}' "$FILE" "$LINE" "$CONTENT_ESCAPED"
+            done
+            echo ""
+            echo "]"
+          } > "$ARTIFACT_FILE"
+
+          {
+            echo "### :warning: Pre-release Version Pins${LABEL}"
+            echo ""
+            echo "| File | Line | Content |"
+            echo "|------|------|---------|"
+            for f in "${FINDINGS[@]}"; do
+              FILE="${f%%|*}"
+              REST="${f#*|}"
+              LINE="${REST%%:*}"
+              CONTENT="${REST#*:}"
+              CONTENT=$(echo "$CONTENT" | sed 's/^[[:space:]]*//' | sed 's/|/\\|/g')
+              echo "| \`${FILE}\` | ${LINE} | \`${CONTENT}\` |"
+            done
+            echo ""
+            echo "> Only stable versions (\`x.y.z\`) and SHA-based pins are allowed. Replace pre-release suffixes (\`-alpha\`, \`-beta\`, \`-rc\`, \`-dev\`, etc.) with stable releases."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for f in "${FINDINGS[@]}"; do
+            FILE="${f%%|*}"
+            REST="${f#*|}"
+            LINE="${REST%%:*}"
+            CONTENT="${REST#*:}"
+            echo "::warning file=${FILE},line=${LINE}::Unstable version pin: $(echo "$CONTENT" | sed 's/^[[:space:]]*//')"
+          done
+        else
+          echo "has_findings=false" >> "$GITHUB_OUTPUT"
+          echo "[]" > "$ARTIFACT_FILE"
+          echo "No pre-release version pins found."
+        fi
