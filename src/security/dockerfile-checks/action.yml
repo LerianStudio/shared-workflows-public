@@ -31,7 +31,7 @@ runs:
       env:
         DOCKERFILE_PATH: ${{ inputs.dockerfile-path }}
       run: |
-        LAST_USER=$(grep -Ei '^\s*USER\s+\S+' "$DOCKERFILE_PATH" | tail -1 | awk '{print $2}' || echo "")
+        LAST_USER=$(grep -Ei -- '^\s*USER\s+\S+' "$DOCKERFILE_PATH" | tail -1 | awk '{print $2}' || echo "")
         if [ -n "$LAST_USER" ] && [ "$LAST_USER" != "root" ] && [ "$LAST_USER" != "0" ]; then
           echo "has_non_root_user=true" >> "$GITHUB_OUTPUT"
         else
