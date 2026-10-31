@@ -433,6 +433,7 @@ jobs:
         env:
           CHART: ${{ steps.payload.outputs.chart }}
           CHARTS_PATH: ${{ inputs.charts_path }}
+          IS_LEGACY: ${{ steps.base.outputs.is_legacy }}
         run: |
           VALUES_FILE="${CHARTS_PATH}/${CHART}/values.yaml"
           CHART_FILE="${CHARTS_PATH}/${CHART}/Chart.yaml"
@@ -463,6 +464,23 @@ jobs:
             local str="$1"
             # Escape: \ & / and newlines
             printf '%s' "$str" | sed -e 's/[\/&\\]/\\&/g' | tr -d '\n'
+          }
+
+          # True when semver $1 < $2; a prerelease sorts below its release.
+          semver_lt() {
+            local a="${1#v}" b="${2#v}" pa="" pb=""
+            a="${a%%+*}"; b="${b%%+*}"
+            [[ "$a" == *-* ]] && pa="${a#*-}"
+            [[ "$b" == *-* ]] && pb="${b#*-}"
+            a="${a%%-*}"; b="${b%%-*}"
+            if [ "$a" != "$b" ]; then
+              [ "$(printf '%s\n%s\n' "$a" "$b" | sort -V | head -n1)" = "$a" ]
+              return
+            fi
+            [ "$pa" = "$pb" ] && return 1
+            [ -z "$pa" ] && return 1
+            [ -z "$pb" ] && return 0
+            [ "$(printf '%s\n%s\n' "$pa" "$pb" | sort -V | head -n1)" = "$pa" ]
           }
 
           # Track highest version for appVersion
@@ -597,6 +615,15 @@ jobs:
               UPDATED_COMPONENTS="${COMP_NAME}@${COMP_VERSION}"
             fi
           done < <(echo "$COMPONENTS" | jq -c '.[]')
+
+          # A mainline payload must never roll the chart back (e.g. a maintenance tag
+          # dispatched without is_legacy_patch). Legacy patches target their own line.
+          CURRENT_APP_VERSION=$(yq -r '.appVersion // ""' "${CHART_FILE}")
+          if [ "${IS_LEGACY}" != "true" ] && [ -n "$HIGHEST_VERSION" ] && [ -n "$CURRENT_APP_VERSION" ] \
+             && semver_lt "$HIGHEST_VERSION" "$CURRENT_APP_VERSION"; then
+            echo "::error::Payload version ${HIGHEST_VERSION} is below ${CHART}'s current appVersion ${CURRENT_APP_VERSION} and is not a legacy patch; refusing to roll the mainline chart back"
+            exit 1
+          fi
 
           # Update appVersion with highest version among all components
           if [ -n "$HIGHEST_VERSION" ]; then
