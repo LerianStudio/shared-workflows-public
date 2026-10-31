@@ -466,21 +466,11 @@ jobs:
             printf '%s' "$str" | sed -e 's/[\/&\\]/\\&/g' | tr -d '\n'
           }
 
-          # True when semver $1 < $2; a prerelease sorts below its release.
+          # True when semver $1 < $2. sort -V orders "~" below everything, so a prerelease sorts below its release.
           semver_lt() {
-            local a="${1#v}" b="${2#v}" pa="" pb=""
-            a="${a%%+*}"; b="${b%%+*}"
-            [[ "$a" == *-* ]] && pa="${a#*-}"
-            [[ "$b" == *-* ]] && pb="${b#*-}"
-            a="${a%%-*}"; b="${b%%-*}"
-            if [ "$a" != "$b" ]; then
-              [ "$(printf '%s\n%s\n' "$a" "$b" | sort -V | head -n1)" = "$a" ]
-              return
-            fi
-            [ "$pa" = "$pb" ] && return 1
-            [ -z "$pa" ] && return 1
-            [ -z "$pb" ] && return 0
-            [ "$(printf '%s\n%s\n' "$pa" "$pb" | sort -V | head -n1)" = "$pa" ]
+            local a="${1#v}" b="${2#v}"
+            a="${a//-/\~}"; b="${b//-/\~}"
+            [ "$a" != "$b" ] && [ "$(printf '%s\n%s\n' "$a" "$b" | sort -V | head -n1)" = "$a" ]
           }
 
           # Track highest version for appVersion
