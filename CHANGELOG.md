@@ -1,5 +1,18 @@
 # Shared-workflows-public Changelog
 
+## [1.3.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.3.0)
+
+Fixes:
+- Reject mainline payloads that are below the chart `appVersion` in Helm. (@fredcamaral)
+- Reject non-legacy payloads that are below the chart `appVersion` in the Helm update chart. (@fredcamaral)
+
+Improvements:
+- Compare versions using a single `sort -V` call in Helm. (@fredcamaral)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.2.0...v1.3.0)
+
+---
+
 ## [1.2.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.2.0)
 
 Features:
