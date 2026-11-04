@@ -110,6 +110,7 @@ apps:
     - plugin-br-bank-transfer
     - plugin-br-payments
     - plugin-bc-correios
+    - plugin-br-sisbajud          # benedita dev-st/stg-st only; SISBAJUD executor (br-sisbajud is the rail)
     - underwriter
     - lender                      # credit journey engine (Underwriter family); UI console pin (lenderConsole.image.tag) is bumped manually, not by this workflow
     - br-sta
@@ -354,6 +355,7 @@ clusters:
       - plugin-br-bank-transfer
       - plugin-br-payments
       - plugin-bc-correios
+      - plugin-br-sisbajud
       - underwriter
       - lender
       - br-sta
