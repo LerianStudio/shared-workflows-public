@@ -244,6 +244,34 @@ jobs:
       - name: Run coderabbit-gate author veto tests
         run: bash tests/coderabbit-gate/test-workflow.sh
 
+  # ----------------- Trivy Installer Tests -----------------
+  trivy-install-tests:
+    name: Trivy Installer Tests
+    runs-on: ${{ vars.GENERAL_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          persist-credentials: false
+
+      - name: Test and lint installer
+        run: |
+          bash tests/trivy-install/test-install.sh
+          shellcheck src/security/install-trivy.sh tests/trivy-install/test-install.sh
+
+      - name: Prepare benign fixture
+        run: |
+          mkdir -p "${RUNNER_TEMP}/trivy-fixture"
+          echo 'benign fixture' > "${RUNNER_TEMP}/trivy-fixture/readme.txt"
+
+      - name: Scan fixture with local composite
+        uses: ./src/security/trivy-fs-scan
+        with:
+          scan-ref: ${{ runner.temp }}/trivy-fixture
+          app-name: self-test
+
   # ----------------- Non-Doc Changes Gate Tests -----------------
   non-doc-changes-tests:
     name: Non-Doc Changes Gate Tests
@@ -592,6 +620,7 @@ jobs:
       - pr-commit-signatures-tests
       - coderabbit-collapse-tests
       - coderabbit-gate-tests
+      - trivy-install-tests
       - non-doc-changes-tests
       - lerian-lib-version-tests
       - prerelease-check-tests
