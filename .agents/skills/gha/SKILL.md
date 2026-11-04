@@ -334,7 +334,7 @@ enable_docker_scout_      → enable-recommendations: → ${{ inputs.enable-
 
 | Mode | Goal | Log style |
 |---|---|---|
-| `dry_run: true` | Validate before applying | Verbose — print everything |
+| `dry_run: true` | Validate before applying | Verbose — print what will change, never secret values |
 | `dry_run: false` | Apply cleanly | Silent — only errors and summaries |
 
 ```yaml
@@ -349,7 +349,10 @@ enable_docker_scout_      → enable-recommendations: → ${{ inputs.enable-
 
 - name: Preview (dry run)
   if: ${{ inputs.dry_run }}
-  run: helm upgrade --install --dry-run --debug ...
+  shell: bash   # -eo pipefail: a failing helm fails the step
+  run: |
+    helm upgrade --install --dry-run --hide-secret --hide-notes ... |
+      awk '/^kind:/ {k=$2} /^  name:/ && k {print k"/"$2; k=""}'
 
 # dry_run: false — clean, no extra echo, output only on failure
 - name: Apply
@@ -357,7 +360,7 @@ enable_docker_scout_      → enable-recommendations: → ${{ inputs.enable-
   run: helm upgrade --install ...
 ```
 
-**Dry run (`true`):** use `::notice::` annotations, print all resolved values, enable tool-native flags (`--dry-run --debug`, `--check`, `--plan`, `--diff`), never skip silently.
+**Dry run (`true`):** use `::notice::` annotations, print an allowlisted summary of what will change (non-secret inputs, resource kinds and names, plan counts), enable the tool's preview mode (`helm --dry-run --hide-secret --hide-notes`, `terraform plan`, `--check`, `--diff`), never skip silently. Never print raw rendered output and never `helm --debug`: `--hide-secret` hides Secret objects only, credentials rendered elsewhere still print, and base64 Secret data escapes GitHub's masking.
 
 **Real run (`false`):** no extra `echo`, no debug flags, let failures surface via exit codes, one `::notice::` summary on success at most.
 

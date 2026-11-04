@@ -97,7 +97,7 @@ jobs:
 ### dry_run
 
 Every reusable workflow must include a `dry_run` input (`boolean`, `default: false`).
-`dry_run: true` must be verbose (print all resolved values, use tool debug flags). `dry_run: false` must be silent (no extra echo, no debug flags).
+`dry_run: true` must be verbose about what will change (print resolved non-secret values, use the tool's preview mode) and must never print secrets: no `helm --debug`, no raw rendered manifests — use `helm --dry-run --hide-secret --hide-notes` and print resource kinds and names. `dry_run: false` must be silent (no extra echo, no debug flags).
 
 ### Branches and commits
 
