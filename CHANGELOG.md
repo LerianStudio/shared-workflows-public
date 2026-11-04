@@ -1,5 +1,17 @@
 # Shared-workflows-public Changelog
 
+## [1.3.2](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.3.2)
+
+Fixes:
+
+- Reuse the chart README install command in upgrade guides to ensure consistency in the documentation. (@fredcamaral)
+- Keep stored release values in generated upgrade commands to maintain accurate upgrade procedures. (@fredcamaral)
+- Rename the sed loop label in the upgrade-doc script to improve script clarity. (@fredcamaral)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.3.1...v1.3.2)
+
+---
+
 ## [1.3.1](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.3.1)
 
 Fixes:
