@@ -69,6 +69,18 @@ fi
 UPGRADE_CMD="helm upgrade ${CHART_NAME} oci://registry-1.docker.io/lerianstudio/${PACKAGE_NAME} --version ${NEW_VERSION} -n ${CHART_NAME}"
 DIFF_CMD="helm diff upgrade ${CHART_NAME} oci://registry-1.docker.io/lerianstudio/${PACKAGE_NAME} --version ${NEW_VERSION} -n ${CHART_NAME}"
 
+# The chart README's own install command is the source of truth for registry, package and
+# namespace: reuse it as upgrade/diff, swapping only the verb and the version. Continuation
+# lines are joined; trailing comments, install-only flags (--create-namespace, --wait,
+# --timeout) and any --version (placeholders may hold spaces) are dropped.
+README_ARGS=$(sed -e ':a' -e '/\\$/{N;s/\\\n[[:space:]]*/ /;ba' -e '}' "${CHART_PATH}/README.md" 2>/dev/null \
+  | grep -m1 -E '^[[:space:]]*(\$[[:space:]]*)?helm (upgrade --install|install) .*oci://' \
+  | sed -E 's/^[[:space:]]*(\$[[:space:]]*)?helm (upgrade --install|install) //; s/[[:space:]]+#.*$//; s/[[:space:]]+--create-namespace//; s/[[:space:]]+--wait([[:space:]]|$)/\1/; s/[[:space:]]+--timeout[[:space:]]+[^[:space:]]+//; s/[[:space:]]+--version[[:space:]]+(<[^>]*>|[^[:space:]]+)//; s/[[:space:]]+/ /g' || true)
+if [ -n "$README_ARGS" ]; then
+  UPGRADE_CMD="helm upgrade ${README_ARGS} --version ${NEW_VERSION}"
+  DIFF_CMD="helm diff upgrade ${README_ARGS} --version ${NEW_VERSION}"
+fi
+
 # Build the full prompt via jq to handle special characters safely
 PROMPT=$(jq -rn \
   --arg cn    "$CHART_NAME" \
