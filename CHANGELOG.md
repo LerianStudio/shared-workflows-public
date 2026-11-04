@@ -1,5 +1,17 @@
 # Shared-workflows-public Changelog
 
+## [1.3.1](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.3.1)
+
+Fixes:
+- Repair the Trivy installation process to ensure proper functionality. (@fredcamaral)
+
+Improvements:
+- Remove `cs-platform` from the deployment matrix to streamline the workflow. (@fredcamaral)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.3.0...v1.3.1)
+
+---
+
 ## [1.3.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.3.0)
 
 Fixes:
