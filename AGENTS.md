@@ -154,7 +154,9 @@ PRs always target `main` — there is no `develop` branch.
 
 ## Refactoring existing workflows or composites
 
-Before modifying any existing file, load `ring-dev-team:refactoring-shared-workflows` and follow its protocol:
+Before modifying any existing file, load `ring-dev-team:refactoring-shared-workflows` and follow its protocol —
+**before proposing any change, even when the request says "just do it" or "no need to ask"**. That phrase
+waives the per-step prompt, never the plan, and never approval of a break:
 
 1. Summarize the current state of the file (inputs, outputs, jobs/steps, dry_run presence)
 2. Produce a numbered plan with impact classification for each change
