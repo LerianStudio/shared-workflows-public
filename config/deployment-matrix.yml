@@ -192,6 +192,8 @@ charts:
     ignored: managed manually
   otel-collector-lerian:
     ignored: cluster-wide addon, lives under helmfile/addons, not applications
+  alloy-lerian:
+    ignored: cluster-wide addon, deployed as an ArgoCD Application on a chart tag that Renovate updates
   lerian-common:
     ignored: library chart, consumed as a dependency and never deployed alone
   lerian-consul:
