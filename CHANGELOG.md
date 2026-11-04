@@ -1,5 +1,22 @@
 # Shared-workflows-public Changelog
 
+## [1.3.3](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.3.3)
+
+Features:
+
+- Load the refactoring skill before proposing any change. (@bedatty)
+- Point agents at the ring actions skills. (@bedatty)
+
+Fixes:
+
+- Correct pinned action version comments. (@bedatty)
+- Map `plugin-br-sisbajud` in the deployment matrix. (@fredcamaral)
+- Stop `dry_run` guidance from printing rendered secrets. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.3.2...v1.3.3)
+
+---
+
 ## [1.3.2](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.3.2)
 
 Fixes:
