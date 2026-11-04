@@ -72,10 +72,11 @@ DIFF_CMD="helm diff upgrade ${CHART_NAME} oci://registry-1.docker.io/lerianstudi
 # The chart README's own install command is the source of truth for registry, package and
 # namespace: reuse it as upgrade/diff, swapping only the verb and the version. Continuation
 # lines are joined; trailing comments, install-only flags (--create-namespace, --wait,
-# --timeout) and any --version (placeholders may hold spaces) are dropped.
+# --timeout), values flags (-f, --values, --set*: an upgrade without them keeps the stored
+# release values) and any --version (placeholders may hold spaces) are dropped.
 README_ARGS=$(sed -e ':loop' -e '/\\$/{N;s/\\\n[[:space:]]*/ /;b loop' -e '}' "${CHART_PATH}/README.md" 2>/dev/null \
   | grep -m1 -E '^[[:space:]]*(\$[[:space:]]*)?helm (upgrade --install|install) .*oci://' \
-  | sed -E 's/^[[:space:]]*(\$[[:space:]]*)?helm (upgrade --install|install) //; s/[[:space:]]+#.*$//; s/[[:space:]]+--create-namespace//; s/[[:space:]]+--wait([[:space:]]|$)/\1/; s/[[:space:]]+--timeout[[:space:]]+[^[:space:]]+//; s/[[:space:]]+--version[[:space:]]+(<[^>]*>|[^[:space:]]+)//; s/[[:space:]]+/ /g' || true)
+  | sed -E 's/^[[:space:]]*(\$[[:space:]]*)?helm (upgrade --install|install) //; s/[[:space:]]+#.*$//; s/[[:space:]]+--create-namespace//; s/[[:space:]]+--wait([[:space:]]|$)/\1/; s/[[:space:]]+--timeout[[:space:]]+[^[:space:]]+//; s/[[:space:]]+(-f|--values|--set|--set-string|--set-file|--set-json|--set-literal)([[:space:]]+|=)[^[:space:]]+//g; s/[[:space:]]+--version[[:space:]]+(<[^>]*>|[^[:space:]]+)//; s/[[:space:]]+/ /g' || true)
 if [ -n "$README_ARGS" ]; then
   UPGRADE_CMD="helm upgrade ${README_ARGS} --version ${NEW_VERSION}"
   DIFF_CMD="helm diff upgrade ${README_ARGS} --version ${NEW_VERSION}"
