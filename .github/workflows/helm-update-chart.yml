@@ -446,6 +446,8 @@ jobs:
 
           COMPONENTS=$(cat /tmp/components.json)
           UPDATED_COMPONENTS=""
+          # "<component>=<values key>" for every component whose key is missing from values.yaml
+          MISSING_KEYS=()
 
           # Function to check if a variable is sensitive (should go to secrets)
           is_sensitive_var() {
@@ -537,6 +539,23 @@ jobs:
             else
               IMAGE_PATH=".${VALUES_KEY}.image.tag"
             fi
+
+            # A chart bump only updates keys the chart already has. yq creates a missing
+            # path on write, so an unmapped component (VALUES_KEY fell back to the image
+            # name) became a new top-level "<image-name>: {image: {tag: ...}}" block no
+            # template reads, while the chart's real keys kept the old version and the PR
+            # still looked like a full patch (LerianStudio/helm#3093, #3095). Skip the
+            # component here, env vars included, and fail after the loop so every missing
+            # key is named in one run. The existence check uses the same unquoted path as
+            # the write, so hyphenated keys and dotted values_key paths resolve alike.
+            # The root .image.tag branch above is not checked: it only runs when that key
+            # already exists.
+            if [ "${IMAGE_PATH}" != ".image.tag" ] && ! yq -e ".${VALUES_KEY} != null" "${VALUES_FILE}" >/dev/null 2>&1; then
+              echo "  Skipping ${COMP_NAME}: .${VALUES_KEY} does not exist in ${VALUES_FILE}"
+              MISSING_KEYS+=("${COMP_NAME}=${VALUES_KEY}")
+              continue
+            fi
+
             echo "  Updating ${IMAGE_PATH} to ${COMP_VERSION}"
             yq -i "${IMAGE_PATH} = \"${COMP_VERSION}\"" "${VALUES_FILE}"
 
@@ -605,6 +624,16 @@ jobs:
               UPDATED_COMPONENTS="${COMP_NAME}@${COMP_VERSION}"
             fi
           done < <(echo "$COMPONENTS" | jq -c '.[]')
+
+          if [ "${#MISSING_KEYS[@]}" -gt 0 ]; then
+            for entry in "${MISSING_KEYS[@]}"; do
+              echo "::error::Component ${entry%%=*} maps to .${entry#*=}, which does not exist in ${VALUES_FILE}"
+            done
+            SUMMARY="${#MISSING_KEYS[@]} component(s) have no values key in ${CHART}; a chart bump only updates existing keys."
+            SUMMARY+=" Map each one in the caller's helm_values_key_mappings to its key in values.yaml, or map it to null if it is not part of this chart"
+            echo "::error::${SUMMARY}"
+            exit 1
+          fi
 
           # A mainline payload must never roll the chart back (e.g. a maintenance tag
           # dispatched without is_legacy_patch). Legacy patches target their own line.
