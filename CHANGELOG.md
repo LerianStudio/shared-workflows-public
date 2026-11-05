@@ -1,5 +1,16 @@
 # Shared-workflows-public Changelog
 
+## [1.3.4](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.3.4)
+
+Fixes:
+
+- Skip an app whose changelog already has its tag section to prevent redundant entries. (@fredcamaral)
+- Record `alloy-lerian` as ignored in the deployment matrix to streamline the GitOps process. (@fredcamaral)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.3.3...v1.3.4)
+
+---
+
 ## [1.3.3](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.3.3)
 
 Features:
