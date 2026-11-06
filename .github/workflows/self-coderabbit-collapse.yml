@@ -52,7 +52,10 @@ jobs:
     # something this workflow controls, and a read-only token could not fold anything
     # anyway. Skip outright instead of depending on it and logging warnings that only
     # ever mean "this was never going to work".
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    #
+    # Disabled: this repository no longer runs CodeRabbit automation. The `false &&`
+    # below switches the job off without removing it; drop it to turn it back on.
+    if: false && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ vars.GENERAL_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
     permissions:
       contents: read
