@@ -7,6 +7,10 @@
 
 Composite action that runs Trivy vulnerability and license scans on a Docker image. Produces human-readable table output and machine-readable artifacts (SARIF and JSON) for downstream consumption by [`pr-security-reporter`](../pr-security-reporter/).
 
+## Installation
+
+Trivy is downloaded from its official GitHub release assets and verified against the release SHA256 checksum before use. The runner needs Bash, curl, tar (or unzip on Windows), and either `sha256sum` or `shasum`. The Trivy database cache remains enabled; the upstream setup action's binary cache is not used.
+
 ## Inputs
 
 | Input | Description | Required | Default |
