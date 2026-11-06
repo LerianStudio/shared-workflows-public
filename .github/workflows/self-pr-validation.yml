@@ -519,21 +519,6 @@ jobs:
         with:
           files: ${{ needs.changed-files.outputs.composite_files }}
 
-  # ----------------- Deployment Matrix Lint -----------------
-  deployment-matrix:
-    name: Deployment Matrix Lint
-    runs-on: ${{ vars.GENERAL_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
-    needs: changed-files
-    if: contains(needs.changed-files.outputs.all_files, 'config/deployment-matrix.yml')
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Deployment Matrix Lint
-        uses: ./src/lint/deployment-matrix
-        with:
-          manifest-file: config/deployment-matrix.yml
-
   # ----------------- CodeQL Analysis -----------------
   codeql:
     name: CodeQL Analysis
@@ -586,7 +571,7 @@ jobs:
       pull-requests: write
       issues: write
       checks: read
-    needs: [changed-files, yamllint, actionlint, pinned-actions, markdown-link-check, typos, shellcheck, readme-check, composite-schema, deployment-matrix]
+    needs: [changed-files, yamllint, actionlint, pinned-actions, markdown-link-check, typos, shellcheck, readme-check, composite-schema]
     if: always() && github.event_name == 'pull_request' && needs.changed-files.result == 'success'
     steps:
       - name: Checkout
@@ -612,8 +597,6 @@ jobs:
           readme-files: ${{ needs.changed-files.outputs.action_files }}
           composite-schema-result: ${{ needs.composite-schema.result }}
           composite-schema-files: ${{ needs.changed-files.outputs.composite_files }}
-          deployment-matrix-result: ${{ needs.deployment-matrix.result }}
-          deployment-matrix-files: ${{ contains(needs.changed-files.outputs.all_files, 'config/deployment-matrix.yml') && 'config/deployment-matrix.yml' || '' }}
 
 
   # ----------------- CodeRabbit Gate -----------------
@@ -666,14 +649,18 @@ jobs:
       - shellcheck
       - readme-check
       - composite-schema
-      - deployment-matrix
       - codeql
     # `always()` so skipped lints (no matching files changed) do not block the
     # gate; the `checks_passed` input below carries the real verdict. Draft PRs
     # are excluded — `drafts: false` in .coderabbit.yml makes the label inert
     # there anyway.
+    #
+    # Disabled: this repository no longer runs CodeRabbit automation, so the
+    # review-ready label is never granted. The leading `false &&` switches the job
+    # off without removing it; drop it to turn it back on.
     if: >-
-      always()
+      false
+      && always()
       && github.event_name == 'pull_request'
       && github.event.pull_request.draft != true
     permissions:

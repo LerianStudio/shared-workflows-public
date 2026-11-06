@@ -28,8 +28,10 @@ Posts a formatted lint analysis summary as a PR comment, aggregating results fro
 | `readme-files` | Comma-separated list of files checked for README presence | No | `` |
 | `composite-schema-result` | Result of the composite-schema job | No | `skipped` |
 | `composite-schema-files` | Comma-separated list of action files validated by composite-schema | No | `` |
-| `deployment-matrix-result` | Result of the deployment-matrix job | No | `skipped` |
-| `deployment-matrix-files` | Comma-separated list of deployment matrix manifest files validated | No | `` |
+| `deployment-matrix-result` | **Deprecated.** Result of a deployment-matrix job; the row is reported only when this is not `skipped` or files are given | No | `skipped` |
+| `deployment-matrix-files` | **Deprecated.** Comma-separated list of deployment matrix manifest files validated | No | `` |
+
+The deployment matrix moved to the private `LerianStudio/github-actions-shared-workflows` repository, so this repository's validation no longer passes the `deployment-matrix-*` inputs. They stay accepted for callers that still pass them.
 
 ## Usage as composite step
 
@@ -37,7 +39,7 @@ Posts a formatted lint analysis summary as a PR comment, aggregating results fro
 jobs:
   lint-report:
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    needs: [changed-files, yamllint, actionlint, pinned-actions, markdown-link-check, typos, shellcheck, readme-check, composite-schema, deployment-matrix]
+    needs: [changed-files, yamllint, actionlint, pinned-actions, markdown-link-check, typos, shellcheck, readme-check, composite-schema]
     if: always() && github.event_name == 'pull_request' && needs.changed-files.result == 'success'
     steps:
       - name: Checkout
@@ -63,8 +65,6 @@ jobs:
           readme-files: ${{ needs.changed-files.outputs.action_files }}
           composite-schema-result: ${{ needs.composite-schema.result }}
           composite-schema-files: ${{ needs.changed-files.outputs.composite_files }}
-          deployment-matrix-result: ${{ needs.deployment-matrix.result }}
-          deployment-matrix-files: ${{ contains(needs.changed-files.outputs.all_files, 'config/deployment-matrix.yml') && 'config/deployment-matrix.yml' || '' }}
 ```
 
 ## Required permissions

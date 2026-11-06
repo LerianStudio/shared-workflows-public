@@ -3,7 +3,9 @@ name: "GitOps Chart Update"
 # The chart-version counterpart of gitops-update.yml. That one owns the image
 # tag in values.yaml; this one owns the release `version` in helmfile.yaml. Both
 # read the same config/deployment-matrix.yml, so cluster topology keeps a single
-# source of truth.
+# source of truth. The matrix lives in the private
+# LerianStudio/github-actions-shared-workflows repository and is read with
+# MANAGE_TOKEN.
 #
 # Called by the chart repository release, once per published chart.
 
@@ -27,7 +29,7 @@ on:
         type: string
         default: ''
       deployment_matrix_ref:
-        description: "Ref of this repository to read the deployment matrix from."
+        description: "Ref of the private LerianStudio/github-actions-shared-workflows repository to read the deployment matrix from."
         type: string
         default: 'main'
       envs:
