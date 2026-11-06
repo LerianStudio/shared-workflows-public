@@ -1,5 +1,17 @@
 # Shared-workflows-public Changelog
 
+## [1.4.1](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.1)
+
+Fixes:
+- Report both directories when a file moves between them in the changed-paths workflow. (@bedatty)
+
+Improvements:
+- Add test coverage for updating `app_version` from the dispatch payload in the helm-update-chart workflow. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.4.0...v1.4.1)
+
+---
+
 ## [1.4.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.0)
 
 Features:
