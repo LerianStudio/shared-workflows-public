@@ -272,6 +272,9 @@ jobs:
       - name: Run missing values key tests
         run: bash tests/helm-update-chart/test-missing-values-key.sh
 
+      - name: Run update_app_version tests
+        run: bash tests/helm-update-chart/test-update-app-version.sh
+
   # ----------------- Trivy Installer Tests -----------------
   trivy-install-tests:
     name: Trivy Installer Tests
