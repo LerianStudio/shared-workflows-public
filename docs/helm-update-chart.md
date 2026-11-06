@@ -7,6 +7,10 @@
 
 Reusable workflow that consumes the dispatch payload produced by [dispatch-helm](dispatch-helm.md) and opens a PR on the Helm chart repository with the new component versions.
 
+It sets `Chart.yaml` `appVersion` to the highest component version, unless the payload carries `update_app_version: false`: then a release of a secondary component bumps image tags only, and the check that refuses to roll the mainline `appVersion` back is skipped for it.
+
+The Slack notification is two messages: the update card, and a Severino mention that becomes a review ticket. The mention goes to `slack_channel` / `SLACK_CHANNEL_DEVOPS`. The card, and the failure card of a run that opened no PR, go to `slack_notification_channel` / `SLACK_CHANNEL_DEVOPS_NOTIFICATIONS` when one is set, and to the same channel as the mention otherwise.
+
 For every component it updates the image tag in `values.yaml` — `<values_key>.image.tag` for the usual nested layout, or the root `image.tag` for a chart annotated `lerian.studio/chart-type: single-service` that keeps its image at the values root (a stray top-level `<values_key>:` block from older runs is removed) — sets `Chart.yaml` `appVersion` to the highest component version, appends newly detected environment variables to the component `configmap.yaml` or `secret.yaml`, and optionally refreshes the README compatibility matrix. It does not push chart updates directly to the base branch — the result is always a PR. The one write outside a PR is seeding a new legacy chart line branch (see below).
 
 When the payload is flagged as a legacy patch, the PR is routed to a **chart line branch** instead of the mainline branch.
@@ -27,7 +31,8 @@ When the payload is flagged as a legacy patch, the PR is routed to a **chart lin
 | `runner_type` | GitHub runner type | no | `blacksmith-4vcpu-ubuntu-2404` |
 | `gpg_sign_commits` | Sign commits with GPG | no | `true` |
 | `slack_notification` | Send a Slack notification: when the PR is opened, and when the run fails | no | `false` |
-| `slack_channel` | Slack channel ID | no | — |
+| `slack_channel` | Slack channel ID for the Severino mention, and for the update and failure cards when no notification channel is set | no | — |
+| `slack_notification_channel` | Slack channel ID for the update and failure cards. Falls back to `SLACK_CHANNEL_DEVOPS_NOTIFICATIONS`, then to the Severino channel. | no | — |
 | `slack_mention_group` | Slack user group to mention. Falls back to `SLACK_GROUP_DEVOPS_SRE`. | no | — |
 | `slack_bot_mention` | Slack bot user ID for ticket creation. Falls back to `SLACK_BOT_SEVERINO`. | no | — |
 
@@ -43,6 +48,7 @@ When the payload is flagged as a legacy patch, the PR is routed to a **chart lin
 | `GPG_KEY_PASSWORD` | GPG key passphrase | no |
 | `SLACK_BOT_TOKEN_HELM` | Slack bot token | no |
 | `SLACK_CHANNEL_DEVOPS` | Fallback Slack channel | no |
+| `SLACK_CHANNEL_DEVOPS_NOTIFICATIONS` | Fallback channel for the update and failure cards | no |
 | `SLACK_GROUP_DEVOPS_SRE` | Fallback mention group | no |
 | `SLACK_BOT_SEVERINO` | Fallback bot mention | no |
 
