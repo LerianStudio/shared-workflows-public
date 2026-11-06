@@ -81,6 +81,12 @@ if [[ ${got} == "pix,inbound,outbound,reconciliation,schedule" ]]; then
 else
   flunk "no orphan top-level block written (top-level keys: ${got})"
 fi
+app_version=$(yq -r '.appVersion' "${WORK}/charts/plugin-br-pix-indirect-btg/Chart.yaml")
+if [[ ${app_version} == "1.11.0" ]]; then
+  pass "appVersion left unchanged when the step fails"
+else
+  flunk "appVersion left unchanged when the step fails (got ${app_version})"
+fi
 
 # 1b. An unmapped worker with a secret env var: the env-var handling must be skipped
 #     with the image write, or it creates templates/<image-name>/secret.yaml for a
@@ -89,6 +95,11 @@ fi
 pix_chart
 run_step plugin-br-pix-indirect-btg \
   '[{"name":"plugin-br-pix-indirect-btg-worker-inbound","version":"1.11.1","env_vars":{"WORKER_TOKEN":"x"}}]'
+if [[ ${RC} -ne 0 ]] && grep -qF "::error::Component plugin-br-pix-indirect-btg-worker-inbound maps to" <<< "${OUT}"; then
+  pass "skipped component with env vars fails on the missing key"
+else
+  flunk "skipped component with env vars fails on the missing key (exit ${RC})"
+fi
 if [[ ! -e "${WORK}/charts/plugin-br-pix-indirect-btg/templates/plugin-br-pix-indirect-btg-worker-inbound" ]]; then
   pass "no templates created for a skipped component"
 else
