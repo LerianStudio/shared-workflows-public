@@ -90,7 +90,7 @@ Before this check, yq created the missing path: an unmapped component became a n
 
 To fix the failure, map the component in the caller's `helm_values_key_mappings` to its key in `values.yaml`, or map it to `null` if it is not part of the chart (a component mapped to `null` is dropped by dispatch-helm and never reaches this workflow). A single-service chart that keeps its image at the root `.image.tag` is not affected.
 
-With `slack_notification: true`, a failed run posts a failure message (chart, source, target branch, run link) to the same channel and mention group as the success message. dispatch-helm does not follow the run it starts, and a failure opens no PR, so without it this check would turn a wrong PR into a red run nobody sees.
+With `slack_notification: true`, a failed run posts a failure message (chart, source, target branch, run link) to the same channel and mention group as the success message. dispatch-helm does not follow the run it starts, and a failure opens no PR, so without it this check would turn a wrong PR into a red run nobody sees. A legacy patch (`is_legacy_patch: true`) is not announced here: Severino replies in the Slack thread of the maintenance line it opened.
 
 ## Usage
 

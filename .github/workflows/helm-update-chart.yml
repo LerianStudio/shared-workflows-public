@@ -1036,8 +1036,11 @@ jobs:
       # follow the run it starts: the red run is seen by nobody. The missing values key guard turns a
       # wrong PR into exactly such a failure (LerianStudio/helm#3093, #3095), so it has to reach a person.
       # No Severino mention: that message files a PR review ticket, and there is no PR.
+      # A legacy patch is left out: its maintenance line belongs to a Severino request, and Severino
+      # reports the failed run in that request's Slack thread instead (it matches the run by the
+      # caller's run-name). A payload whose legacy flag could not be read still lands here.
       - name: Send Slack failure notification
-        if: ${{ failure() && inputs.slack_notification }}
+        if: ${{ failure() && inputs.slack_notification && steps.payload.outputs.is_legacy_patch != 'true' }}
         env:
           CHART: ${{ steps.payload.outputs.chart }}
           SOURCE_REF: ${{ steps.payload.outputs.source_ref }}
