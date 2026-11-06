@@ -69,12 +69,16 @@ inputs:
     description: Comma-separated list of action files validated by composite-schema
     required: false
     default: ""
+  # Deprecated: this repository no longer holds a deployment matrix, so its own
+  # validation stopped passing these. Kept so a caller that still passes them
+  # does not get an "Unexpected input" warning; the row is reported only when
+  # one of them is set.
   deployment-matrix-result:
-    description: Result of the deployment-matrix job (success/failure/skipped/cancelled)
+    description: "Deprecated: result of a deployment-matrix job (success/failure/skipped/cancelled). The row is reported only when this is not `skipped` or files are given"
     required: false
     default: "skipped"
   deployment-matrix-files:
-    description: Comma-separated list of deployment matrix manifest files validated
+    description: "Deprecated: comma-separated list of deployment matrix manifest files validated"
     required: false
     default: ""
 
@@ -147,12 +151,13 @@ runs:
               files:   compositeSchemaFiles.trim().split(',').filter(Boolean),
             },
             {
-              jobName: 'Deployment Matrix Lint',
-              label:   'Deployment Matrix',
-              result:  '${{ inputs.deployment-matrix-result }}',
-              files:   deploymentMatrixFiles.trim().split(',').filter(Boolean),
+              jobName:  'Deployment Matrix Lint',
+              label:    'Deployment Matrix',
+              result:   '${{ inputs.deployment-matrix-result }}',
+              files:    deploymentMatrixFiles.trim().split(',').filter(Boolean),
+              optional: true,
             },
-          ];
+          ].filter(c => !c.optional || c.result !== 'skipped' || c.files.length > 0);
 
           const icon = (r) => ({ success: '✅', failure: '❌', skipped: '⏭️' }[r] ?? '⚠️');
 
