@@ -1,5 +1,17 @@
 # Shared-workflows-public Changelog
 
+## [1.4.2](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.2)
+
+Fixes:
+- Adjusted the GitOps chart update process to read the deployment matrix from the private repository. (@bedatty)
+
+Improvements:
+- Disabled CodeRabbit automation for this repository. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.4.1...v1.4.2)
+
+---
+
 ## [1.4.1](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.1)
 
 Fixes:

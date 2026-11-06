@@ -111,6 +111,14 @@ class NonDocChangesTests(unittest.TestCase):
     def test_renamed_code_file_is_a_code_change(self):
         self.assertEqual(self.detect(pr_files(("pkg/util/clock.go", "renamed"))), "true")
 
+    def test_code_renamed_to_a_doc_path_is_a_code_change(self):
+        payload = [{"filename": "docs/x.md", "previous_filename": "pkg/x.go", "status": "renamed"}]
+        self.assertEqual(self.detect(payload), "true")
+
+    def test_push_code_renamed_to_a_doc_path_is_a_code_change(self):
+        payload = {"files": [{"filename": "docs/x.md", "previous_filename": "pkg/x.go", "status": "renamed"}]}
+        self.assertEqual(self.detect(payload, event="push", before="a" * 40), "true")
+
     def test_empty_diff_is_not_a_code_change(self):
         self.assertEqual(self.detect([]), "false")
 

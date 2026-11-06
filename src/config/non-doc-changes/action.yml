@@ -51,6 +51,7 @@ runs:
 
         # ----------------- Collect changed files -----------------
         if [ "$EVENT_NAME" = "pull_request" ] || [ "$EVENT_NAME" = "pull_request_target" ]; then
+          # Renames count both paths: code moved to a doc path is still a code change.
           # Deletions count. A removed file is classified by its path like any
           # other: a deleted `docs/x.md` is still documentation, a deleted `.go`
           # file is a code change (its callers may no longer build, its tests no
@@ -58,7 +59,7 @@ runs:
           # request produce an empty list, and an empty list gates the pipeline
           # off while the required check still reports green.
           if ! files=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate \
-              --jq '.[].filename'); then
+              --jq '.[] | .filename, (.previous_filename // empty)'); then
             echo "::error::Failed to list changed files for PR #${PR_NUMBER}"
             exit 1
           fi
@@ -83,7 +84,7 @@ runs:
             echo "code=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          files=$(printf '%s' "$compare" | jq -r '.files[].filename')
+          files=$(printf '%s' "$compare" | jq -r '.files[] | .filename, (.previous_filename // empty)')
         fi
 
         # ----------------- Match against ignore globs -----------------

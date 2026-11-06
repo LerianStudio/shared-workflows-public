@@ -12,6 +12,8 @@ It auto-detects the event:
 - `pull_request` / `pull_request_target` — lists changed files via `gh api repos/{repo}/pulls/{n}/files`. Deleted files are included and classified by their path, so a deletion-only pull request is gated on what it deleted rather than treated as an empty diff.
 - `push` — diffs `before...after` via `gh api repos/{repo}/compare`. A first push (empty/zero base ref) returns `code=true`.
 
+On every event, a renamed file counts under both its old and new path, so code moved to a doc path is still a code change.
+
 A changed file "counts" unless it matches one of the `ignore-globs` patterns. If every changed file matches an ignore pattern, `code=false`.
 
 Files under `.github/workflows/`, `.github/actions/` and `.github/scripts/` are classified before the globs are applied, and `workflow-paths-are-code` decides how:
