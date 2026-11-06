@@ -360,6 +360,19 @@ runs:
             VERSION=$(echo "$LAST_TAG" | sed 's/^v//')
           fi
 
+          if [ "$WORKING_DIR" != "." ]; then
+            CHANGELOG_PATH="${WORKING_DIR}/CHANGELOG.md"
+          else
+            CHANGELOG_PATH="CHANGELOG.md"
+          fi
+
+          # Every run walks every app with a stable tag, so an app whose latest tag already
+          # has its section is skipped: regenerating it would prepend a duplicate section.
+          if [ -f "$CHANGELOG_PATH" ] && grep -qxF "## [${VERSION}](${REPO_URL}/releases/tag/${LAST_TAG})" "$CHANGELOG_PATH"; then
+            echo "⏭️ $CHANGELOG_PATH already has the $LAST_TAG section - skipping"
+            continue
+          fi
+
           # Collect SHA, short-hash, and subject in one git log pass (unit-separator delimited)
           # to avoid a redundant git log -1 subprocess per commit.
           if [ "$WORKING_DIR" != "." ]; then
@@ -517,12 +530,6 @@ runs:
           fi
 
           CONTENT=$(echo "$CONTENT" | sed '/^```/d')
-
-          if [ "$WORKING_DIR" != "." ]; then
-            CHANGELOG_PATH="${WORKING_DIR}/CHANGELOG.md"
-          else
-            CHANGELOG_PATH="CHANGELOG.md"
-          fi
 
           if [ -n "$PREV_TAG" ]; then
             COMPARE_LINK="[Compare changes](${REPO_URL}/compare/${PREV_TAG}...${LAST_TAG})"

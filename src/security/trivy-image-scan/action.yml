@@ -48,23 +48,34 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Install Trivy
+      id: install-trivy
+      if: always()
+      shell: bash
+      env:
+        TRIVY_VERSION: ${{ inputs.trivy-version }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "$ACTION_PATH/../install-trivy.sh" "$TRIVY_VERSION" "$(mktemp -d "${RUNNER_TEMP}/trivy.XXXXXX")"
+
     # ----------------- Vulnerability Scanning -----------------
     - name: Trivy Vulnerability Scan (Table Output)
       uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+      if: steps.install-trivy.outcome == 'success'
       with:
+        skip-setup-trivy: 'true'
         image-ref: ${{ inputs.image-ref }}
         format: table
         ignore-unfixed: ${{ inputs.ignore-unfixed }}
         vuln-type: ${{ inputs.vuln-type }}
         severity: ${{ inputs.severity-table }}
         exit-code: '0'
-        version: ${{ inputs.trivy-version }}
         trivyignores: ${{ inputs.ignore-file }}
 
     - name: Trivy Vulnerability Scan (SARIF Output)
       uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
-      if: always()
+      if: always() && steps.install-trivy.outcome == 'success'
       with:
+        skip-setup-trivy: 'true'
         image-ref: ${{ inputs.image-ref }}
         format: sarif
         output: 'trivy-vulnerability-scan-docker-${{ inputs.app-name }}.sarif'
@@ -72,20 +83,19 @@ runs:
         vuln-type: ${{ inputs.vuln-type }}
         severity: ${{ inputs.severity-sarif }}
         exit-code: '0'
-        version: ${{ inputs.trivy-version }}
         trivyignores: ${{ inputs.ignore-file }}
 
     # ----------------- License Scanning -----------------
     - name: Trivy License Scan (JSON Output)
       uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
-      if: always() && inputs.enable-license-scan == 'true'
+      if: always() && steps.install-trivy.outcome == 'success' && inputs.enable-license-scan == 'true'
       with:
+        skip-setup-trivy: 'true'
         image-ref: ${{ inputs.image-ref }}
         scanners: 'license'
         format: json
         output: 'trivy-license-scan-docker-${{ inputs.app-name }}.json'
         exit-code: '0'
-        version: ${{ inputs.trivy-version }}
         trivyignores: ${{ inputs.ignore-file }}
 
     # ----------------- Outputs -----------------
