@@ -84,6 +84,20 @@ The README compatibility matrix is skipped by default on legacy patches because 
 
 > The chart line branch only becomes a chart release if the chart repository releases from it. Its own release workflow must trigger on the branch and configure a matching semantic-release maintenance range.
 
+## Keeping appVersion (`update_app_version`)
+
+dispatch-helm sends `update_app_version` in the payload, from its own `update_app_version` input. It decides whether this run rewrites `Chart.yaml` `appVersion`:
+
+| Payload field | `appVersion` | Image tags | Rollback check | README matrix and update card |
+|---|---|---|---|---|
+| `true` | set to the highest component version | updated | applies | the new `appVersion` |
+| absent or `null` (an older sender) | set to the highest component version | updated | applies | the new `appVersion` |
+| `false` | kept; the run logs `Keeping appVersion at <version>` | updated | skipped | the chart's current `appVersion` |
+
+`false` is for a chart whose `appVersion` follows a different application than the one releasing: a secondary component bumps its image tag without overwriting the version the chart reports. The rollback check is skipped because it compares the payload version with `appVersion`, and a payload that does not write `appVersion` cannot roll it back; a secondary component on its own, lower version line would otherwise be refused.
+
+Only an absent or `null` field defaults to `true`. jq's `//` operator treats `false` as missing, so the workflow tests for `null` explicitly; `tests/helm-update-chart/test-update-app-version.sh` covers all four cases.
+
 ## Missing values keys
 
 A chart bump only updates keys the chart already has. Each component is written to `.<values_key>.image.tag`, where `values_key` comes from the caller's `helm_values_key_mappings` and falls back to the component (image) name. If `.<values_key>` does not exist in the chart's `values.yaml`, the component is not written — its environment variables are skipped too — and after every component has been processed the step fails with one error per missing component:

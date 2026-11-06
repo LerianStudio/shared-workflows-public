@@ -214,6 +214,8 @@ Changed file `components/app/cmd/main.go` with `filter-paths: '["components/app"
 | `push` | `before` SHA vs `sha` |
 | Tag / first commit | `HEAD^` vs HEAD (fallback: `ls-tree`) |
 
+Every diff runs with `--no-renames`. A file moved from one directory to another counts as a deletion in the source and an addition in the destination, so **both** directories are reported. With rename detection, only the destination appears: a file moved from `charts/a` to `charts/b` would leave `charts/a` out of the matrix, so it would not be validated and its release would not be republished.
+
 ## Required permissions
 
 ```yaml
