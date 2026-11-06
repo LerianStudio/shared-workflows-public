@@ -109,7 +109,7 @@ jobs:
       has_lerian_libs: ${{ steps.check.outputs.has_lerian_libs }}
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           fetch-depth: 1
 

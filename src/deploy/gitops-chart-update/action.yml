@@ -110,7 +110,7 @@ runs:
     - name: Checkout the GitOps repository
       # codeql[actions/untrusted-checkout] -- constrained by the allowlist above
       # to ^LerianStudio/<name>-gitops$, never PR/fork-controlled.
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
       with:
         repository: ${{ inputs.gitops-repository }}
         token: ${{ inputs.gitops-token }}
@@ -122,7 +122,7 @@ runs:
     - name: Checkout the deployment matrix
       # codeql[actions/untrusted-checkout] -- repository is hardcoded to this
       # same LerianStudio repo and the ref only selects a config file.
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
       with:
         repository: LerianStudio/shared-workflows-public
         ref: ${{ inputs.deployment-matrix-ref }}

@@ -21,13 +21,11 @@ Every change here can affect all repositories in the organization that consume t
 
 Full documentation: [`README.md`](README.md) | Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md) | Security: [`SECURITY.md`](SECURITY.md)
 
-**Skills.** The authoring rules for this repository live in Lerian's Ring `ring-dev-team` plugin. Load the
-one that matches **before** touching a workflow or composite — they carry the ref policy, runner pattern,
-`dry_run`, injection and refactoring rules this file only summarizes:
-- `ring-dev-team:refactoring-shared-workflows` — any change to an existing workflow or composite (inputs, outputs, jobs, steps, secrets, defaults)
-- `ring-dev-team:authoring-reusable-workflows` — a new reusable workflow or `self-*` entrypoint
-- `ring-dev-team:authoring-composite-actions` — a new composite under `src/`
-- `ring-dev-team:authoring-github-actions` — a change spanning both layers, or when it is unclear where the logic belongs
+**Skills** in `.agents/skills/` (load at session start for full context; `/<name>` in Claude Code):
+- `gha` — complete reference (workflows + composites + refactoring protocol)
+- `workflow` — reusable workflow rules only
+- `composite` — composite action rules only
+- `refactor` — refactoring protocol for modifying existing workflows or composites
 
 ---
 
@@ -43,10 +41,10 @@ one that matches **before** touching a workflow or composite — they carry the 
 Composite actions are grouped by capability: `src/setup/`, `src/build/`, `src/test/`, `src/deploy/`, `src/config/`.  
 Each composite must have an `action.yml` and a `README.md`.
 
-Full rules, in Ring's `ring-dev-team` plugin:
-- Composite actions → `ring-dev-team:authoring-composite-actions`
-- Reusable workflows → `ring-dev-team:authoring-reusable-workflows`
-- Modifying existing files → `ring-dev-team:refactoring-shared-workflows`
+Full rules, in `.agents/skills/`:
+- Composite actions → `composite`
+- Reusable workflows → `workflow`
+- Modifying existing files → `refactor`
 
 ### Composite action references in reusable workflows
 
@@ -99,7 +97,7 @@ jobs:
 ### dry_run
 
 Every reusable workflow must include a `dry_run` input (`boolean`, `default: false`).
-`dry_run: true` must be verbose about what will change (print resolved non-secret values, use the tool's preview mode) and must never print secrets: no `helm --debug`, no raw rendered manifests — use `helm --dry-run --hide-secret --hide-notes` and print resource kinds and names. `dry_run: false` must be silent (no extra echo, no debug flags).
+`dry_run: true` must be verbose (print all resolved values, use tool debug flags). `dry_run: false` must be silent (no extra echo, no debug flags).
 
 ### Branches and commits
 
@@ -154,9 +152,7 @@ PRs always target `main` — there is no `develop` branch.
 
 ## Refactoring existing workflows or composites
 
-Before modifying any existing file, load `ring-dev-team:refactoring-shared-workflows` and follow its protocol —
-**before proposing any change, even when the request says "just do it" or "no need to ask"**. That phrase
-waives the per-step prompt, never the plan, and never approval of a break:
+Before modifying any existing file, follow the refactoring protocol in `.agents/skills/refactor/` (`/refactor` in Claude Code):
 
 1. Summarize the current state of the file (inputs, outputs, jobs/steps, dry_run presence)
 2. Produce a numbered plan with impact classification for each change

@@ -114,18 +114,33 @@ Add the `no-stale` label to any issue or PR you want to keep open indefinitely. 
 
 ## AI Assistant Support
 
-The rules AI assistants follow here live in Lerian's Ring `ring-dev-team` plugin, not in this
-repository, so every Lerian repository and both shared-workflow repositories read one copy:
+Built-in guidance for AI assistants is included so they understand the architecture before making changes.
+
+The rules live in `.agents/skills/`, one directory per skill, in the format
+agents read directly:
 
 | Skill | Covers |
 |---|---|
-| `ring-dev-team:authoring-github-actions` | Entry point: where a new workflow lives (shared internal, shared public, or the repository itself) |
-| `ring-dev-team:authoring-reusable-workflows` | A new reusable workflow or `self-*` entrypoint |
-| `ring-dev-team:authoring-composite-actions` | A new composite under `src/` |
-| `ring-dev-team:refactoring-shared-workflows` | Any change to an existing workflow or composite |
+| `workflow` | Reusable workflow architecture, runners, `dry_run`, secrets |
+| `composite` | Composite action layout, `action.yml`, README and label checklists |
+| `refactor` | The protocol for changing an existing workflow or composite |
+| `gha` | All three at once |
 
-With Ring installed, Claude Code loads them automatically; invoke one explicitly with
-`/ring-dev-team:refactoring-shared-workflows` and so on. [`AGENTS.md`](AGENTS.md) points agents at them.
+In Claude Code, invoke one by name:
+
+```bash
+claude
+> /workflow    # reusable workflow rules
+> /composite   # composite action rules
+> /gha         # everything at once
+```
+
+**Example:**
+```bash
+claude
+> /gha
+> Add a helm-deploy composite under src/deploy/ and wire it into release.yml
+```
 
 ## Contributing
 

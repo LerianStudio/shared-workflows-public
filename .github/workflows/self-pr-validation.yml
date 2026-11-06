@@ -59,7 +59,7 @@ jobs:
       all_files: ${{ steps.detect.outputs.all-files }}
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Detect changed files
         id: detect
@@ -139,7 +139,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           persist-credentials: false
 
@@ -180,7 +180,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           persist-credentials: false
 
@@ -203,7 +203,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           persist-credentials: false
 
@@ -218,7 +218,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           persist-credentials: false
 
@@ -233,7 +233,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           persist-credentials: false
 
@@ -244,62 +244,6 @@ jobs:
       - name: Run coderabbit-gate author veto tests
         run: bash tests/coderabbit-gate/test-workflow.sh
 
-  # ----------------- Helm Update Chart Tests -----------------
-  helm-update-chart-tests:
-    name: Helm Update Chart Tests
-    runs-on: ${{ vars.GENERAL_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      # No yq setup step: the tests use the runner image's preinstalled yq, the same
-      # binary helm-update-chart's own step ends up calling (its mikefarah/yq "Setup
-      # yq" step is a docker action that runs a command, it installs nothing).
-      - name: Show yq version
-        run: yq --version
-
-      # The shellcheck job lints `run:` blocks inside YAML, not standalone scripts.
-      - name: Lint helm-update-chart test scripts
-        run: shellcheck tests/helm-update-chart/*.sh
-
-      - name: Run semver ordering tests
-        run: bash tests/helm-update-chart/test-semver-lt.sh
-
-      - name: Run missing values key tests
-        run: bash tests/helm-update-chart/test-missing-values-key.sh
-
-  # ----------------- Trivy Installer Tests -----------------
-  trivy-install-tests:
-    name: Trivy Installer Tests
-    runs-on: ${{ vars.GENERAL_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Test and lint installer
-        run: |
-          bash tests/trivy-install/test-install.sh
-          shellcheck src/security/install-trivy.sh tests/trivy-install/test-install.sh
-
-      - name: Prepare benign fixture
-        run: |
-          mkdir -p "${RUNNER_TEMP}/trivy-fixture"
-          echo 'benign fixture' > "${RUNNER_TEMP}/trivy-fixture/readme.txt"
-
-      - name: Scan fixture with local composite
-        uses: ./src/security/trivy-fs-scan
-        with:
-          scan-ref: ${{ runner.temp }}/trivy-fixture
-          app-name: self-test
-
   # ----------------- Non-Doc Changes Gate Tests -----------------
   non-doc-changes-tests:
     name: Non-Doc Changes Gate Tests
@@ -308,7 +252,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           persist-credentials: false
 
@@ -323,7 +267,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           persist-credentials: false
 
@@ -338,7 +282,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           persist-credentials: false
 
@@ -353,7 +297,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           persist-credentials: false
 
@@ -378,7 +322,7 @@ jobs:
     if: needs.changed-files.outputs.yaml_files != ''
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: YAML Lint
         uses: ./src/lint/yamllint
@@ -393,7 +337,7 @@ jobs:
     if: needs.changed-files.outputs.workflow_files != ''
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Action Lint
         uses: ./src/lint/actionlint
@@ -408,7 +352,7 @@ jobs:
     if: needs.changed-files.outputs.action_files != ''
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Pinned Actions Check
         uses: ./src/lint/pinned-actions
@@ -421,7 +365,7 @@ jobs:
     runs-on: ${{ vars.GENERAL_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: CodeQL Action Version Check
         uses: ./src/lint/codeql-action-version-check
@@ -436,7 +380,7 @@ jobs:
     runs-on: ${{ vars.GENERAL_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Workflow Secrets Contract Lint
         uses: ./src/lint/workflow-secrets-contract
@@ -449,7 +393,7 @@ jobs:
     if: needs.changed-files.outputs.markdown_files != ''
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Markdown Link Check
         uses: ./src/lint/markdown-link-check
@@ -464,7 +408,7 @@ jobs:
     runs-on: ${{ vars.GENERAL_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Spelling Check
         uses: ./src/lint/typos
@@ -479,7 +423,7 @@ jobs:
     if: needs.changed-files.outputs.action_files != ''
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Shell Check
         uses: ./src/lint/shellcheck
@@ -494,7 +438,7 @@ jobs:
     if: needs.changed-files.outputs.action_files != ''
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: README Check
         uses: ./src/lint/readme-check
@@ -509,7 +453,7 @@ jobs:
     if: needs.changed-files.outputs.composite_files != ''
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Composite Schema Lint
         uses: ./src/lint/composite-schema
@@ -524,7 +468,7 @@ jobs:
     if: contains(needs.changed-files.outputs.all_files, 'config/deployment-matrix.yml')
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Deployment Matrix Lint
         uses: ./src/lint/deployment-matrix
@@ -544,7 +488,7 @@ jobs:
       actions: read
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Generate CodeQL config for changed files
         id: codeql-config
@@ -587,7 +531,7 @@ jobs:
     if: always() && github.event_name == 'pull_request' && needs.changed-files.result == 'success'
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Post Lint Report
         uses: ./src/notify/pr-lint-reporter
@@ -648,7 +592,6 @@ jobs:
       - pr-commit-signatures-tests
       - coderabbit-collapse-tests
       - coderabbit-gate-tests
-      - trivy-install-tests
       - non-doc-changes-tests
       - lerian-lib-version-tests
       - prerelease-check-tests

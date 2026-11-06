@@ -265,7 +265,7 @@ jobs:
       # filesystem scan - the one that reads go.mod/package-lock.json, and the
       # scan that matters for a dependency bump - still runs and reports.
       - name: Checkout Repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           # No step in this job runs git, and the image build below takes `.` as
           # its context on most callers - a persisted token would ride into the
@@ -396,7 +396,7 @@ jobs:
     steps:
       # ----------------- Setup -----------------
       - name: Checkout Repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Extract changed paths from matrix
         id: extract-paths

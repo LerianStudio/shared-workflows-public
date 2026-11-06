@@ -110,7 +110,6 @@ apps:
     - plugin-br-bank-transfer
     - plugin-br-payments
     - plugin-bc-correios
-    - plugin-br-sisbajud          # benedita dev-st/stg-st only; SISBAJUD executor (br-sisbajud is the rail)
     - underwriter
     - lender                      # credit journey engine (Underwriter family); UI console pin (lenderConsole.image.tag) is bumped manually, not by this workflow
     - br-sta
@@ -128,6 +127,7 @@ apps:
 
     # Lerian internal platform suite (Benedita cross/)
     - backoffice-console
+    - cs-platform
     - forge
     - severino
     - lerian-map
@@ -192,8 +192,6 @@ charts:
     ignored: managed manually
   otel-collector-lerian:
     ignored: cluster-wide addon, lives under helmfile/addons, not applications
-  alloy-lerian:
-    ignored: cluster-wide addon, deployed as an ArgoCD Application on a chart tag that Renovate updates
   lerian-common:
     ignored: library chart, consumed as a dependency and never deployed alone
   lerian-consul:
@@ -330,6 +328,7 @@ clusters:
     # {server}-{app}-{env} pattern (e.g. benedita-rosiehr-cross, benedita-forge-cross).
     app_helmfile_env:
       backoffice-console: cross
+      cs-platform: cross
       forge: cross
       severino: cross
       lerian-map: cross
@@ -357,7 +356,6 @@ clusters:
       - plugin-br-bank-transfer
       - plugin-br-payments
       - plugin-bc-correios
-      - plugin-br-sisbajud
       - underwriter
       - lender
       - br-sta
@@ -370,6 +368,7 @@ clusters:
       - mock-btg-server
       - br-spi-mock-bacen
       - backoffice-console
+      - cs-platform
       - forge
       - severino
       - lerian-map

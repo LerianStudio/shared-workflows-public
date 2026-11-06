@@ -63,14 +63,14 @@ jobs:
       # `helm dependency build` fetches whatever their Chart.yaml points at. The ref
       # stays open so a branch can be tested, which is the whole point of the harness.
       - name: Checkout chart repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           repository: LerianStudio/helm
           ref: ${{ inputs.chart_ref }}
           persist-credentials: false
 
       - name: Checkout this repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           path: .shared-workflows
           persist-credentials: false

@@ -239,7 +239,7 @@ Unlike traditional matrix-based approaches where each app generates its own chan
 
 1. **Resolve the release line** and check the tag is a stable release on it
 2. **Build the app list** — single-app mode, or one entry per `filter_paths` directory that has a stable tag on that line
-3. **Single job iterates** through every app, writing its `CHANGELOG.md` and updating its GitHub Release notes. An app whose `CHANGELOG.md` already has the section for its latest stable tag is skipped, so a release of one app leaves the other apps' changelogs and release notes as they are
+3. **Single job iterates** through every app, writing its `CHANGELOG.md` and updating its GitHub Release notes
 4. **Commits and pushes** the CHANGELOGs directly to the release line (GPG-signed, with rebase-retry on a push race)
 
 **Result:** a per-app `CHANGELOG.md` in each app's folder, committed straight to the branch the release was cut from.

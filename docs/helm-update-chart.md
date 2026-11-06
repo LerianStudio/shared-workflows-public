@@ -26,7 +26,7 @@ When the payload is flagged as a legacy patch, the PR is routed to a **chart lin
 | `legacy_update_readme` | Update the README matrix on legacy patches | no | `false` |
 | `runner_type` | GitHub runner type | no | `blacksmith-4vcpu-ubuntu-2404` |
 | `gpg_sign_commits` | Sign commits with GPG | no | `true` |
-| `slack_notification` | Send a Slack notification: when the PR is opened, and when the run fails | no | `false` |
+| `slack_notification` | Send a Slack notification | no | `false` |
 | `slack_channel` | Slack channel ID | no | — |
 | `slack_mention_group` | Slack user group to mention. Falls back to `SLACK_GROUP_DEVOPS_SRE`. | no | — |
 | `slack_bot_mention` | Slack bot user ID for ticket creation. Falls back to `SLACK_BOT_SEVERINO`. | no | — |
@@ -77,20 +77,6 @@ app tag v3.5.5 on maintenance/v3.5.x
 The README compatibility matrix is skipped by default on legacy patches because the root README tracks the mainline. Set `legacy_update_readme: true` to opt in.
 
 > The chart line branch only becomes a chart release if the chart repository releases from it. Its own release workflow must trigger on the branch and configure a matching semantic-release maintenance range.
-
-## Missing values keys
-
-A chart bump only updates keys the chart already has. Each component is written to `.<values_key>.image.tag`, where `values_key` comes from the caller's `helm_values_key_mappings` and falls back to the component (image) name. If `.<values_key>` does not exist in the chart's `values.yaml`, the component is not written — its environment variables are skipped too — and after every component has been processed the step fails with one error per missing component:
-
-```text
-::error::Component plugin-br-pix-indirect-btg-worker-inbound maps to .plugin-br-pix-indirect-btg-worker-inbound, which does not exist in charts/plugin-br-pix-indirect-btg/values.yaml
-```
-
-Before this check, yq created the missing path: an unmapped component became a new top-level `<image-name>: {image: {tag: ...}}` block that no template reads, while the chart's real key kept the old version and the PR still looked like a full patch (LerianStudio/helm#3093, #3095).
-
-To fix the failure, map the component in the caller's `helm_values_key_mappings` to its key in `values.yaml`, or map it to `null` if it is not part of the chart (a component mapped to `null` is dropped by dispatch-helm and never reaches this workflow). A single-service chart that keeps its image at the root `.image.tag` is not affected.
-
-With `slack_notification: true`, a failed run posts a failure message (chart, source, target branch, run link) to the same channel and mention group as the success message. dispatch-helm does not follow the run it starts, and a failure opens no PR, so without it this check would turn a wrong PR into a red run nobody sees. A legacy patch (`is_legacy_patch: true`) is not announced here: Severino replies in the Slack thread of the maintenance line it opened.
 
 ## Usage
 
