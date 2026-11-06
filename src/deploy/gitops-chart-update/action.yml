@@ -15,7 +15,7 @@ inputs:
     description: Target GitOps repository in `owner/name` form. Validated against the LerianStudio GitOps allowlist
     required: true
   gitops-token:
-    description: Token with write access to the GitOps repository
+    description: Token with write access to the GitOps repository and read access to `LerianStudio/github-actions-shared-workflows`, where the deployment matrix lives
     required: true
   gpg-private-key:
     description: CI GPG private key. The GitOps repository ruleset requires signed commits
@@ -30,7 +30,9 @@ inputs:
     description: Committer email matching the CI GPG identity
     required: true
   deployment-matrix-ref:
-    description: Ref of this repository to read `config/deployment-matrix.yml` from
+    description: >-
+      Ref of the private `LerianStudio/github-actions-shared-workflows` repository to read
+      `config/deployment-matrix.yml` from. Read with `gitops-token`, which needs read access to it
     required: false
     default: 'main'
   target-envs:
@@ -119,18 +121,47 @@ runs:
         persist-credentials: false
 
     # Data only: parsed as YAML, never executed.
+    #
+    # The matrix names clusters and which internal applications run on each, so
+    # it lives only in the private repository, not in this public one.
     - name: Checkout the deployment matrix
-      # codeql[actions/untrusted-checkout] -- repository is hardcoded to this
-      # same LerianStudio repo and the ref only selects a config file.
+      id: matrix
+      # codeql[actions/untrusted-checkout] -- repository is hardcoded to the
+      # private LerianStudio shared-workflows repo and the ref only selects a
+      # config file.
+      # The caller's GITHUB_TOKEN cannot clone this repository once it is not
+      # public, so the read goes through gitops-token.
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # A token without read access surfaces from checkout as "repository not
+      # found", which reads like a typo in the repository name. The next step
+      # turns that into an error that names the cause, then fails the run.
+      continue-on-error: true
       with:
-        repository: LerianStudio/shared-workflows-public
+        repository: LerianStudio/github-actions-shared-workflows
+        token: ${{ inputs.gitops-token }}
         ref: ${{ inputs.deployment-matrix-ref }}
         path: matrix
         sparse-checkout: |
           config/deployment-matrix.yml
         sparse-checkout-cone-mode: false
         persist-credentials: false
+
+    # Also covers a checkout that succeeded on a ref without the file: a sparse
+    # checkout of a missing path is not an error, and chart_bump.py would then
+    # fail on a path the caller never chose.
+    - name: Require the deployment matrix
+      shell: bash
+      env:
+        CHECKOUT_OUTCOME: ${{ steps.matrix.outcome }}
+        MATRIX_REF: ${{ inputs.deployment-matrix-ref }}
+      run: |
+        set -euo pipefail
+        if [ "$CHECKOUT_OUTCOME" != "success" ] || [ ! -f matrix/config/deployment-matrix.yml ]; then
+          repo="LerianStudio/github-actions-shared-workflows"
+          cause="The matrix is private: gitops-token needs read access to ${repo}, and deployment-matrix-ref must be a ref of it that holds the file."
+          echo "::error::Could not read config/deployment-matrix.yml from ${repo} at ref '${MATRIX_REF}'. ${cause}"
+          exit 1
+        fi
 
     # ----------------- Tooling -----------------
     # Persistent runners can already contain two plugins named diff. Skipping
