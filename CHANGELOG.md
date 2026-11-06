@@ -1,5 +1,18 @@
 # Shared-workflows-public Changelog
 
+## [1.4.3](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.3)
+
+Fixes:
+- Count renamed paths in the classifier and report cancelled runs accurately. (@fredcamaral)
+- Report cancelled runs as cancelled in Slack notifications. (@fredcamaral)
+
+Improvements:
+- Update documentation to specify using merge commits and never squash. (@fredcamaral)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.4.2...v1.4.3)
+
+---
+
 ## [1.4.2](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.2)
 
 Fixes:
