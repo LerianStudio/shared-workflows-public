@@ -1,5 +1,21 @@
 # Shared-workflows-public Changelog
 
+## [1.3.5](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.3.5)
+
+Fixes:
+
+- Refuse a component whose `values` key is missing. (@bedatty)
+- Leave legacy patch failures to Severino's thread. (@bedatty)
+- Announce a failed run on Slack. (@bedatty)
+
+Tests:
+
+- Assert exit and `appVersion` when keys are missing. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.3.4...v1.3.5)
+
+---
+
 ## [1.3.4](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.3.4)
 
 Fixes:
