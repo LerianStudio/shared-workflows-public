@@ -672,8 +672,13 @@ jobs:
     # gate; the `checks_passed` input below carries the real verdict. Draft PRs
     # are excluded — `drafts: false` in .coderabbit.yml makes the label inert
     # there anyway.
+    #
+    # Disabled: this repository no longer runs CodeRabbit automation, so the
+    # review-ready label is never granted. The leading `false &&` switches the job
+    # off without removing it; drop it to turn it back on.
     if: >-
-      always()
+      false
+      && always()
       && github.event_name == 'pull_request'
       && github.event.pull_request.draft != true
     permissions:
