@@ -528,7 +528,7 @@ jobs:
         with:
           webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
           # yamllint disable-line rule:line-length
-          status: ${{ (needs.security_scan.result == 'failure' || needs.codeql_scan.result == 'failure') && 'failure' || needs.security_scan.result }}
+          status: ${{ (needs.security_scan.result == 'failure' || needs.codeql_scan.result == 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || needs.security_scan.result }}
           workflow-name: "PR Security Scan"
           # yamllint disable-line rule:line-length
           failed-jobs: >-

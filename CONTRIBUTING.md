@@ -43,7 +43,7 @@ This repository is trunk-based: `main` is the only long-lived branch, and every 
 
 ## Merge Strategy
 
-Every pull request into `main` is merged with **Squash and merge**: one clean Conventional Commit per PR is what drives semantic-release. Do not use rebase.
+Every pull request into `main` is merged with a **merge commit**: semantic-release reads every commit, so each one must be a Conventional Commit. Do not squash.
 
 ---
 
@@ -318,7 +318,7 @@ Pinning an exact `@vX.Y.Z` still resolves and still works, but it opts the repos
 
 - **Never** commit directly to `main`
 - **Always** target `main` in your PRs
-- **Always** squash and merge
+- **Always** merge with a merge commit, never squash
 - **Always** use Conventional Commits — the message type controls the version bump
 - **Always** use `.yml` extension — never `.yaml` for any YAML file in this repository
 - **Never** hardcode org-specific values (tokens, org names, URLs) — use `inputs` or `secrets`
