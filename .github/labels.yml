@@ -120,10 +120,6 @@
   color: "0e8a16"
   description: Changes to deployment composites and workflows (src/deploy/, spa-deploy.yml, s3-upload.yml)
 
-- name: deployment-matrix
-  color: "5319e7"
-  description: Changes to the canonical deployment matrix (config/deployment-matrix.yml)
-
 - name: routine
   color: "1f6feb"
   description: Changes to periodic maintenance routines (self-routine.yml and related reusables)

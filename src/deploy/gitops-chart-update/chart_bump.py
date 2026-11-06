@@ -2,8 +2,10 @@
 """Resolve where a chart is deployed and update its pin in the helmfiles.
 
 The chart-version counterpart of gitops-update.yml, which owns image tags. Both
-read the same config/deployment-matrix.yml, so the topology — which clusters,
-which contexts, which env suffixes — has a single source of truth.
+read the same config/deployment-matrix.yml (kept in the private
+LerianStudio/github-actions-shared-workflows repository), so the topology —
+which clusters, which contexts, which env suffixes — has a single source of
+truth.
 
 The key difference from the image path: this edits `version` in helmfile.yaml,
 and only on the release whose `chart` matches --chart-ref EXACTLY. That is what

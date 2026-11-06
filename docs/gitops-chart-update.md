@@ -35,7 +35,7 @@ Full behaviour — routing table, gates, inputs and outputs — is documented in
 | `chart_version` | The version just published | yes | — |
 | `chart_ref` | Full OCI reference | yes | — |
 | `gitops_repository` | Target repo; empty uses the `GITOPS_REPOSITORY` org variable | no | `''` |
-| `deployment_matrix_ref` | Ref to read the deployment matrix from | no | `main` |
+| `deployment_matrix_ref` | Ref of the private `LerianStudio/github-actions-shared-workflows` repository to read the deployment matrix from | no | `main` |
 | `envs` | Narrow the environment list; empty means every environment | no | `''` |
 | `fail_on_orphan` | Fail, rather than only report, on a key the chart does not declare | no | `false` |
 | `dry_run` | Resolve and gate without delivering | no | `false` |
@@ -53,7 +53,7 @@ Full behaviour — routing table, gates, inputs and outputs — is documented in
 
 | Secret | Purpose |
 |---|---|
-| `MANAGE_TOKEN` | Write access to the GitOps repository. The same secret `gitops-update.yml` uses for the image-tag path, so a caller already wired for one path is wired for both |
+| `MANAGE_TOKEN` | Write access to the GitOps repository, and read access to `LerianStudio/github-actions-shared-workflows`, where the deployment matrix lives. The same secret `gitops-update.yml` uses for the image-tag path, so a caller already wired for one path is wired for both |
 | `LERIAN_CI_CD_USER_GPG_KEY` / `_PASSWORD` | Commit signing; the target ruleset requires signed commits |
 | `LERIAN_CI_CD_USER_NAME` / `_EMAIL` | Committer identity matching the GPG key |
 | `ARGOCD_TOKEN` | Only read when `enable_argocd_sync` is true; the server comes from the `ARGOCD_URL` variable |
