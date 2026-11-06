@@ -1,5 +1,14 @@
 # Shared-workflows-public Changelog
 
+## [1.4.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.0)
+
+Features:
+- Send the update card to its own Slack channel for the `helm-update-chart` workflow. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.3.5...v1.4.0)
+
+---
+
 ## [1.3.5](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.3.5)
 
 Fixes:
