@@ -1537,7 +1537,7 @@ jobs:
     if: always() && inputs.enable_slack_notification && needs.detect-changes.outputs.has_changes == 'true'
     uses: ./.github/workflows/slack-notify.yml
     with:
-      status: ${{ (needs.lint.result == 'failure' || needs.security.result == 'failure' || needs.tests.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' || needs.custom-checks.result == 'failure' || needs.test-determinism.result == 'failure') && 'failure' || 'success' }}
+      status: ${{ (needs.lint.result == 'failure' || needs.security.result == 'failure' || needs.tests.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' || needs.custom-checks.result == 'failure' || needs.test-determinism.result == 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || 'success' }}
       workflow_name: "Go PR Analysis"
       failed_jobs: ${{ needs.lint.result == 'failure' && 'Lint, ' || '' }}${{ needs.security.result == 'failure' && 'Security, ' || '' }}${{ needs.tests.result == 'failure' && 'Tests, ' || '' }}${{ needs.build.result == 'failure' && 'Build, ' || '' }}${{ needs.integration-tests.result == 'failure' && 'Integration Tests, ' || '' }}${{ needs.custom-checks.result == 'failure' && 'Custom Checks, ' || '' }}${{ needs.test-determinism.result == 'failure' && 'Test Determinism' || '' }}
     secrets:
