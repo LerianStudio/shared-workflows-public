@@ -177,8 +177,9 @@ jobs:
   # config: a URL lands in argv and .git/config, and a global insteadOf outlives
   # the step, so code that runs later can read it. Authenticate git with
   # an env-scoped credential helper or src/setup/go-private-modules instead.
-  # Lines setting GIT_CONFIG_KEY_* are exempt: that config lives only in the
-  # environment of the one command that needs it.
+  # Exempt: lines setting GIT_CONFIG_KEY_*, whose config lives only in the
+  # environment of the one command that needs it, and go-private-modules, whose
+  # insteadOf goes to a RUNNER_TEMP file deleted when its step ends.
   credential-hygiene:
     name: Credential Hygiene
     runs-on: ${{ vars.GENERAL_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
@@ -197,8 +198,10 @@ jobs:
           hits=$(grep -rnE \
             -e 'x-access-token:[$]' \
             -e 'https://[^ "]*:[$][{]?[A-Z_]*(TOKEN|PAT)' \
+            -e 'https://[$][{]?[A-Z_]*(TOKEN|PAT)[}]?@' \
             -e 'config --global url[.].*insteadOf' \
-            .github src | grep -v 'GIT_CONFIG_KEY_' || true)
+            .github src \
+            | grep -v -e 'GIT_CONFIG_KEY_' -e '^src/setup/go-private-modules/action[.]yml:' || true)
           if [[ -z "$hits" ]]; then
             echo "No credential in a git URL or in global git config."
             exit 0
