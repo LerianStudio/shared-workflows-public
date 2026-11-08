@@ -1,5 +1,25 @@
 # Shared-workflows-public Changelog
 
+## [1.4.6](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.6)
+
+Improvements:
+- Bump `docker/login-action` from `4.6.0` to `4.7.0` in the docker group. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.4.5...v1.4.6)
+
+---
+
+## [1.4.5](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.5)
+
+Fixes:
+
+- Ensure CI credentials are not included in git URLs and global git configuration to enhance security. (@bedatty)
+- Implement a check to catch bare token URLs in the credential guard for improved security. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.4.4...v1.4.5)
+
+---
+
 ## [1.4.4](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.4)
 
 Fixes:
