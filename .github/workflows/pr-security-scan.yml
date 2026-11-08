@@ -427,13 +427,20 @@ jobs:
           queries: security-extended
           config-file: ${{ steps.codeql-config.outputs.config-file }}
 
-      - name: Configure private Go modules access
-        if: steps.codeql-config.outputs.skip != 'true'
-        env:
-          TOKEN: ${{ secrets.MANAGE_TOKEN || secrets.GITHUB_TOKEN }}
-        run: |
-          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
-          echo "GOPRIVATE=github.com/LerianStudio/*" >> "$GITHUB_ENV"
+      # Autobuild runs the pull request's own build, so the credential must be
+      # gone before it starts: the composite fetches the private modules into the
+      # module cache and deletes its git config when the step ends. A global
+      # insteadOf here would leave the token readable by the PR code.
+      - name: Fetch private Go modules
+        if: steps.codeql-config.outputs.skip != 'true' && contains(inputs.codeql_languages, 'go')
+        uses: LerianStudio/shared-workflows-public/src/setup/go-private-modules@v1
+        with:
+          go-private-modules: github.com/LerianStudio/*
+          manage-token: ${{ secrets.MANAGE_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Configure private Go modules
+        if: steps.codeql-config.outputs.skip != 'true' && contains(inputs.codeql_languages, 'go')
+        run: echo "GOPRIVATE=github.com/LerianStudio/*" >> "$GITHUB_ENV"
 
       - name: Autobuild
         if: steps.codeql-config.outputs.skip != 'true'
