@@ -1,5 +1,14 @@
 # Shared-workflows-public Changelog
 
+## [1.4.7](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.7)
+
+Improvements:
+- Bumped the `github-security` group with four updates. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.4.6...v1.4.7)
+
+---
+
 ## [1.4.6](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.6)
 
 Improvements:
