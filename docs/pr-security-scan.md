@@ -370,7 +370,7 @@ on:
 
 ### 2. Let Org Variables Pick the Runner
 
-The scan jobs run on `vars.SECURITY_SCAN_RUNNERS`, then `vars.GENERAL_RUNNERS`, then `vars.FALLBACK_RUNNERS`. Do not pass `runner_type` or `security_scan_runner_type`: they are deprecated and ignored. See [Runner variables](../README.md#runner-variables).
+The `security_scan` matrix runs on `vars.SECURITY_SCAN_RUNNERS`, then `vars.GENERAL_RUNNERS`, then `vars.FALLBACK_RUNNERS`. The CodeQL job follows `vars.GENERAL_RUNNERS`, then `vars.FALLBACK_RUNNERS`. Do not pass `runner_type` or `security_scan_runner_type`: they are deprecated and ignored. See [Runner variables](../README.md#runner-variables).
 
 ### 3. Use secrets: inherit for Simplicity
 
