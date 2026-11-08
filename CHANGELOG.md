@@ -1,5 +1,14 @@
 # Shared-workflows-public Changelog
 
+## [1.4.9](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.9)
+
+Improvements:
+- Bump `cycjimmy/semantic-release-action` from `8.1.3` to `8.1.4` in the release group across one directory. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.4.8...v1.4.9)
+
+---
+
 ## [1.4.8](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.8)
 
 Improvements:
