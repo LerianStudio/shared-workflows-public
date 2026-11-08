@@ -1,5 +1,14 @@
 # Shared-workflows-public Changelog
 
+## [1.4.6](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.6)
+
+Improvements:
+- Bump `docker/login-action` from `4.6.0` to `4.7.0` in the docker group. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.4.5...v1.4.6)
+
+---
+
 ## [1.4.5](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.5)
 
 Fixes:
