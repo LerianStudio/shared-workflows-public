@@ -1,5 +1,14 @@
 # Shared-workflows-public Changelog
 
+## [1.4.8](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.8)
+
+Improvements:
+- Bumped `securego/gosec` from `2.29.0` to `2.30.0` in the security-scanners group. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.4.7...v1.4.8)
+
+---
+
 ## [1.4.7](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.7)
 
 Improvements:
