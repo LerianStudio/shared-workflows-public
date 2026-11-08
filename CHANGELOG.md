@@ -1,5 +1,15 @@
 # Shared-workflows-public Changelog
 
+## [1.4.4](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.4)
+
+Fixes:
+
+- Skip the sync process in the GitOps chart update workflow when the application is already live. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.4.3...v1.4.4)
+
+---
+
 ## [1.4.3](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.3)
 
 Fixes:
