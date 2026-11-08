@@ -93,7 +93,7 @@ From the repository root:
 grep -rnE 'blacksmith-|inputs\.([a-z0-9_]+_)?runner_type' .github/workflows $(git ls-files '*action.yml')
 ```
 
-It prints nothing once every job resolves through org variables.
+It prints nothing once every job resolves through org variables. To keep it that way, pass `runner_labels_check: true` to the repository's `pr-validation.yml` caller, which runs [`src/lint/runner-labels`](../src/lint/runner-labels/).
 
 ## Switching runners
 
@@ -104,3 +104,4 @@ Set the variables that hold a Blacksmith label to the target label: the four siz
 ## Reference
 
 - [Runner variables](../README.md#runner-variables) — precedence and the job variables
+- [`src/lint/runner-labels`](../src/lint/runner-labels/) — the check

@@ -1,0 +1,26 @@
+name: Runner Labels Check
+description: Fail on a runner that org variables alone cannot move — a literal label, an inputs.* read or a chain without vars.FALLBACK_RUNNERS in runs-on, or a deprecated *_runner_type input passed to a shared workflow.
+
+inputs:
+  files:
+    description: Comma-separated list of workflow/composite files to check (empty = every .github/workflows/*.yml and action.yml in the repository)
+    required: false
+    default: ""
+  self-hosted-pattern:
+    description: Extended regex for self-hosted runner labels, which may stay literal
+    required: false
+    default: "^(eveo-|self-hosted)"
+  label-pattern:
+    description: Deprecated, ignored. Every literal label other than a self-hosted one fails now.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Check runners resolve through org variables
+      shell: bash
+      env:
+        FILES: ${{ inputs.files }}
+        SELF_HOSTED_PATTERN: ${{ inputs.self-hosted-pattern }}
+      run: bash "$GITHUB_ACTION_PATH/check.sh"

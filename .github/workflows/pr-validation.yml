@@ -129,6 +129,12 @@ on:
         description: 'Block the PR when any of its commits is unsigned or has an unverified signature'
         type: boolean
         default: true
+      runner_labels_check:
+        description: >-
+          Fail when a runs-on or *_runner_type line in this repository does not resolve
+          through org variables (src/lint/runner-labels). Off by default.
+        type: boolean
+        default: false
       enable_breaking_change_approval:
         description: >-
           Hold a pull request that carries breaking-change commits at the
@@ -513,6 +519,21 @@ jobs:
             echo "size=${{ steps.size.outcome }}"
             echo "label=${{ steps.labels.outcome || 'skipped' }}"
           } >> "$GITHUB_OUTPUT"
+
+  # ----------------- Runner Labels (opt-in) -----------------
+  # Not on merge_group: the queue commit carries the same files the pull request did.
+  runner-labels:
+    name: Runner Labels Check
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    if: inputs.runner_labels_check && github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Runner Labels Check
+        uses: LerianStudio/shared-workflows-public/src/lint/runner-labels@v1
 
   # ----------------- PR Checks Summary -----------------
   pr-checks-summary:

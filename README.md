@@ -60,6 +60,8 @@ runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
 runs-on: ${{ vars.LARGE_RUNNERS || vars.FALLBACK_RUNNERS }}
 ```
 
+[`src/lint/runner-labels`](src/lint/runner-labels/) fails on a literal label, an `inputs.*` read or a chain without `vars.FALLBACK_RUNNERS` in `runs-on`, and on a `*_runner_type` value passed under `with:`. Callers of `pr-validation.yml` turn it on with `runner_labels_check: true`.
+
 ## Versioning
 
 Releases follow [Semantic Versioning](https://semver.org/) via [semantic-release](https://github.com/semantic-release/semantic-release):

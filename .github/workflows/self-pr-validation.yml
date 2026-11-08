@@ -468,6 +468,34 @@ jobs:
       - name: CodeQL Action Version Check
         uses: ./src/lint/codeql-action-version-check
 
+  # ----------------- Runner Labels -----------------
+  # Global like the CodeQL version check: it scans every workflow and composite,
+  # so a runner that org variables cannot move (a literal label, an inputs.* read,
+  # a chain without vars.FALLBACK_RUNNERS) cannot come back in a file this PR did not touch.
+  runner-labels:
+    name: Runner Labels Check
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Runner Labels Check
+        uses: ./src/lint/runner-labels
+
+  runner-labels-tests:
+    name: Runner Labels Tests
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run runner-labels tests
+        run: bash src/lint/runner-labels/test.sh
+
   # ----------------- Workflow Secrets Contract -----------------
   # Global like the CodeQL version check above, not gated on changed files: a
   # violation can be introduced by editing the *called* workflow — adding a
@@ -681,6 +709,8 @@ jobs:
       - actionlint
       - pinned-actions
       - codeql-action-versions
+      - runner-labels
+      - runner-labels-tests
       - workflow-secrets-contract
       - workflow-secrets-contract-tests
       - markdown-link-check
