@@ -341,8 +341,6 @@ runs:
       working-directory: gitops
       env:
         GH_TOKEN: ${{ inputs.gitops-token }}
-        GITOPS_TOKEN: ${{ inputs.gitops-token }}
-        GITOPS_REPOSITORY: ${{ inputs.gitops-repository }}
         CHART_NAME: ${{ inputs.chart-name }}
         CHART_VERSION: ${{ inputs.chart-version }}
         LEVEL: ${{ steps.bump.outputs.level }}
@@ -353,7 +351,14 @@ runs:
 
         git add -A
         git commit -m "$title" -m "${LEVEL} bump. Upgrade notes ship with the chart, under docs/."
-        git remote set-url origin "https://x-access-token:${GITOPS_TOKEN}@github.com/${GITOPS_REPOSITORY}.git"
+
+        # git authenticates through a helper that lives only in this step's
+        # environment and reads GH_TOKEN when asked. The token never enters a
+        # URL, a command line or .git/config.
+        # shellcheck disable=SC2016 # $GH_TOKEN is expanded by git when it runs the helper, not here
+        export GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0='credential.https://github.com.helper' \
+          GIT_CONFIG_VALUE_0='!f() { if [ "$1" = get ]; then printf "username=x-access-token\npassword=%s\n" "$GH_TOKEN"; fi; }; f'
 
         if git push origin "HEAD:${base}"; then
           {

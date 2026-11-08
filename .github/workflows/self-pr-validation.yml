@@ -172,6 +172,42 @@ jobs:
       - name: Run CODEOWNERS reviewer tests
         run: bash src/validate/codeowners-reviewers/test.sh
 
+  # ----------------- Credential Hygiene -----------------
+  # Fails on a credential placed in a git URL or in the runner's global git
+  # config: a URL lands in argv and .git/config, and a global insteadOf outlives
+  # the step, so code that runs later can read it. Authenticate git with
+  # an env-scoped credential helper or src/setup/go-private-modules instead.
+  # Lines setting GIT_CONFIG_KEY_* are exempt: that config lives only in the
+  # environment of the one command that needs it.
+  credential-hygiene:
+    name: Credential Hygiene
+    runs-on: ${{ vars.GENERAL_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The brackets keep these patterns from matching this step's own text.
+      - name: Reject credentials in git URLs and global git config
+        run: |
+          set -euo pipefail
+          hits=$(grep -rnE \
+            -e 'x-access-token:[$]' \
+            -e 'https://[^ "]*:[$][{]?[A-Z_]*(TOKEN|PAT)' \
+            -e 'config --global url[.].*insteadOf' \
+            .github src | grep -v 'GIT_CONFIG_KEY_' || true)
+          if [[ -z "$hits" ]]; then
+            echo "No credential in a git URL or in global git config."
+            exit 0
+          fi
+          while IFS=: read -r file line _; do
+            echo "::error file=${file},line=${line}::Credential in a git URL or global git config. Use an env-scoped credential helper or src/setup/go-private-modules."
+          done <<< "$hits"
+          exit 1
+
   # ----------------- GitOps Chart Tooling Tests -----------------
   gitops-chart-tooling-tests:
     name: GitOps Chart Tooling Tests
