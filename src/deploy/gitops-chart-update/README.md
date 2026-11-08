@@ -9,6 +9,8 @@ Pins a newly released Helm chart version into the GitOps repository.
 
 The chart-version counterpart of the image-tag path owned by `gitops-update.yml`. Both read the same `config/deployment-matrix.yml`, so cluster topology — clusters, `env_contexts`, `env_suffixes`, `app_helmfile_env` — keeps a single source of truth.
 
+That matrix lives in the private `LerianStudio/github-actions-shared-workflows` repository, not in this public one: it names clusters and which internal applications run on each. The composite reads it with `gitops-token`, so that token needs **read access to `LerianStudio/github-actions-shared-workflows`** besides write access to the GitOps repository. Without it the run stops at `Require the deployment matrix` with an error naming the repository.
+
 Only releases whose `chart:` matches `chart-ref` **exactly** are touched. That is what stops an environment pinned to `oci://.../alpha/<chart>` from being overwritten with a stable-line version, which lives in a different OCI repository.
 
 ## Inputs
@@ -19,12 +21,12 @@ Only releases whose `chart:` matches `chart-ref` **exactly** are touched. That i
 | `chart-version` | The version just published | yes | — |
 | `chart-ref` | Full OCI reference; only this exact chart is touched | yes | — |
 | `gitops-repository` | Target repo, validated against `^LerianStudio/<name>-gitops$` | yes | — |
-| `gitops-token` | Token with write access to the GitOps repository | yes | — |
+| `gitops-token` | Token with write access to the GitOps repository and read access to `LerianStudio/github-actions-shared-workflows` (the deployment matrix) | yes | — |
 | `gpg-private-key` | CI GPG private key; the target ruleset requires signed commits | yes | — |
 | `gpg-passphrase` | Passphrase for the CI GPG private key | yes | — |
 | `git-user-name` | Committer name matching the CI GPG identity | yes | — |
 | `git-user-email` | Committer email matching the CI GPG identity | yes | — |
-| `deployment-matrix-ref` | Ref to read `config/deployment-matrix.yml` from | no | `main` |
+| `deployment-matrix-ref` | Ref of the private `LerianStudio/github-actions-shared-workflows` repository to read `config/deployment-matrix.yml` from | no | `main` |
 | `target-envs` | Space-separated env list; empty means every environment | no | `''` |
 | `fail-on-orphan` | Fail, rather than only report, when an environment sets a key the chart does not declare | no | `false` |
 | `dry-run` | Resolve and run both gates, then stop | no | `false` |
@@ -61,6 +63,8 @@ The case worth having it for is the one that looks like success and is not. **A 
 Writing to git is not the same as the change being live. The composite syncs each affected ArgoCD application and waits for it to report healthy; a run that cannot reach that state fails instead of reporting success over a half-updated cluster.
 
 ArgoCD refuses a sync while another operation runs on the application (usually its automated sync of the same commit) and does not queue it. The composite then waits for that operation, up to `argocd-sync-timeout`, and submits the sync again; an operation still running after that fails the run.
+
+Before every sync attempt the composite reads the application with `argocd app get --refresh`, which returns once ArgoCD has compared the latest revision. The application counts as live only when all of these hold: it is `Synced`, no operation is queued, and its last operation `Succeeded` on that same revision (all revisions for a multi-source application), as a full sync rather than a dry run, a selective sync or an apply-strategy sync, none of which runs hooks. Then the change was already applied, usually through the application's own automated sync, so the composite skips to the health wait instead of syncing again, which would run every sync hook (migrations, bootstrap jobs) a second time. The revision match matters because ArgoCD leaves hooks out of the sync status: a commit that changes only a hook still reads `Synced`. This also covers a sync that ArgoCD accepted even though the CLI got an API error back. The read is bounded to 120 seconds, because the CLI waits on a refresh indefinitely by default. A failed or timed-out read falls through to the sync.
 
 An ArgoCD API error, such as a 504 from a proxy in front of the server, is retried: the sync up to five attempts, the health wait up to three. A sync whose operation failed, or a wait that runs out its timeout, fails the run at once.
 
@@ -172,7 +176,7 @@ jobs:
 
 | Action | Why |
 |---|---|
-| `actions/checkout` | The canonical checkout. Used twice with different trust settings: the GitOps repository with a write token and `persist-credentials: false`, and the deployment matrix as a sparse, read-only checkout |
+| `actions/checkout` | The canonical checkout. Used twice with different trust settings: the GitOps repository with a write token and `persist-credentials: false`, and the deployment matrix from the private `LerianStudio/github-actions-shared-workflows` as a sparse, read-only checkout with the same token |
 | `helmfile/helmfile-action` | The maintained installer from the helmfile project. Chosen over downloading the release archive because piping `curl` into `sudo tar` installs an unverified binary that then executes as part of the render gate. Called with `helm-plugins: ""` to avoid downloading and installing the unused default helm-diff plugin: this composite only runs `--version`, `lint` and `template`, not `helmfile diff`, `apply` or `sync`. The pinned installer already treats "plugin already exists" as a successful case |
 | `crazy-max/ghaction-import-gpg` | Already the org standard for signing commits in `gitops-update.yml` and the chart release pipeline. The target repository ruleset requires signed commits, and this handles the passphrase-protected CI key |
 
@@ -185,4 +189,4 @@ permissions:
   contents: read
 ```
 
-Write access to the GitOps repository comes from `gitops-token`, not from the job's `GITHUB_TOKEN`. The token is never persisted in the checkout: `helmfile` can execute release hooks against it, so credentials are supplied to git only at push time.
+Write access to the GitOps repository, and read access to the deployment matrix in `LerianStudio/github-actions-shared-workflows`, come from `gitops-token`, not from the job's `GITHUB_TOKEN`. A token scoped to the GitOps repository alone (a GitHub App installation token limited to it, for instance) fails at the matrix checkout. The token is never persisted in the checkout: `helmfile` can execute release hooks against it, so credentials are supplied to git only at push time.

@@ -69,6 +69,10 @@ on:
         description: 'Slack channel ID to send notifications (e.g., C1234567890)'
         type: string
         required: false
+      slack_notification_channel:
+        description: 'Slack channel ID for the update card. Falls back to SLACK_CHANNEL_DEVOPS_NOTIFICATIONS, then to the Severino channel (slack_channel / SLACK_CHANNEL_DEVOPS), so both messages share one channel when neither is set.'
+        type: string
+        required: false
       slack_mention_group:
         description: 'Slack user group ID to mention (e.g., S0614TZR7 for @devops-sre). Falls back to SLACK_GROUP_DEVOPS_SRE org variable.'
         type: string
@@ -101,6 +105,9 @@ on:
         required: false
       SLACK_CHANNEL_DEVOPS:
         description: 'Slack channel ID for DevOps notifications'
+        required: false
+      SLACK_CHANNEL_DEVOPS_NOTIFICATIONS:
+        description: 'Slack channel ID for the update card, when it should not land in the Severino channel'
         required: false
       SLACK_GROUP_DEVOPS_SRE:
         description: 'Slack group ID for @devops-sre mentions'
@@ -212,6 +219,9 @@ jobs:
           SOURCE_BRANCH=$(jq -r '.source_branch // ""' /tmp/payload.json)
           IS_LEGACY_PATCH=$(jq -r '.is_legacy_patch // false' /tmp/payload.json)
           VERSION_LINE=$(jq -r '.version_line // ""' /tmp/payload.json)
+          # jq's // treats false as missing, so test for null explicitly: only an
+          # absent field (a payload from an older sender) means "update".
+          UPDATE_APP_VERSION=$(jq -r 'if .update_app_version == null then true else .update_app_version end' /tmp/payload.json)
 
           # Generate branch name
           TIMESTAMP=$(date +%Y%m%d%H%M%S)
@@ -227,6 +237,7 @@ jobs:
             echo "source_branch=${SOURCE_BRANCH}"
             echo "is_legacy_patch=${IS_LEGACY_PATCH}"
             echo "version_line=${VERSION_LINE}"
+            echo "update_app_version=${UPDATE_APP_VERSION}"
             echo "branch_name=${BRANCH_NAME}"
           } >> "$GITHUB_OUTPUT"
 
@@ -234,7 +245,7 @@ jobs:
           jq -c '.components' /tmp/payload.json > /tmp/components.json
 
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
@@ -403,7 +414,7 @@ jobs:
 
       - name: Setup Go
         if: steps.base.outputs.update_readme == 'true'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.21'
           cache-dependency-path: ${{ inputs.scripts_path }}/go.mod
@@ -434,6 +445,7 @@ jobs:
           CHART: ${{ steps.payload.outputs.chart }}
           CHARTS_PATH: ${{ inputs.charts_path }}
           IS_LEGACY: ${{ steps.base.outputs.is_legacy }}
+          UPDATE_APP_VERSION: ${{ steps.payload.outputs.update_app_version }}
         run: |
           VALUES_FILE="${CHARTS_PATH}/${CHART}/values.yaml"
           CHART_FILE="${CHARTS_PATH}/${CHART}/Chart.yaml"
@@ -446,6 +458,8 @@ jobs:
 
           COMPONENTS=$(cat /tmp/components.json)
           UPDATED_COMPONENTS=""
+          # "<component>=<values key>" for every component whose key is missing from values.yaml
+          MISSING_KEYS=()
 
           # Function to check if a variable is sensitive (should go to secrets)
           is_sensitive_var() {
@@ -537,6 +551,23 @@ jobs:
             else
               IMAGE_PATH=".${VALUES_KEY}.image.tag"
             fi
+
+            # A chart bump only updates keys the chart already has. yq creates a missing
+            # path on write, so an unmapped component (VALUES_KEY fell back to the image
+            # name) became a new top-level "<image-name>: {image: {tag: ...}}" block no
+            # template reads, while the chart's real keys kept the old version and the PR
+            # still looked like a full patch (LerianStudio/helm#3093, #3095). Skip the
+            # component here, env vars included, and fail after the loop so every missing
+            # key is named in one run. The existence check uses the same unquoted path as
+            # the write, so hyphenated keys and dotted values_key paths resolve alike.
+            # The root .image.tag branch above is not checked: it only runs when that key
+            # already exists.
+            if [ "${IMAGE_PATH}" != ".image.tag" ] && ! yq -e ".${VALUES_KEY} != null" "${VALUES_FILE}" >/dev/null 2>&1; then
+              echo "  Skipping ${COMP_NAME}: .${VALUES_KEY} does not exist in ${VALUES_FILE}"
+              MISSING_KEYS+=("${COMP_NAME}=${VALUES_KEY}")
+              continue
+            fi
+
             echo "  Updating ${IMAGE_PATH} to ${COMP_VERSION}"
             yq -i "${IMAGE_PATH} = \"${COMP_VERSION}\"" "${VALUES_FILE}"
 
@@ -606,17 +637,34 @@ jobs:
             fi
           done < <(echo "$COMPONENTS" | jq -c '.[]')
 
+          if [ "${#MISSING_KEYS[@]}" -gt 0 ]; then
+            for entry in "${MISSING_KEYS[@]}"; do
+              echo "::error::Component ${entry%%=*} maps to .${entry#*=}, which does not exist in ${VALUES_FILE}"
+            done
+            SUMMARY="${#MISSING_KEYS[@]} component(s) have no values key in ${CHART}; a chart bump only updates existing keys."
+            SUMMARY+=" Map each one in the caller's helm_values_key_mappings to its key in values.yaml, or map it to null if it is not part of this chart"
+            echo "::error::${SUMMARY}"
+            exit 1
+          fi
+
           # A mainline payload must never roll the chart back (e.g. a maintenance tag
-          # dispatched without is_legacy_patch). Legacy patches target their own line.
+          # dispatched without is_legacy_patch). Legacy patches target their own line, and
+          # a payload that leaves appVersion alone carries a secondary component whose
+          # version is unrelated to it.
           CURRENT_APP_VERSION=$(yq -r '.appVersion // ""' "${CHART_FILE}")
-          if [ "${IS_LEGACY}" != "true" ] && [ -n "$HIGHEST_VERSION" ] && [ -n "$CURRENT_APP_VERSION" ] \
+          if [ "${IS_LEGACY}" != "true" ] && [ "${UPDATE_APP_VERSION}" != "false" ] && [ -n "$HIGHEST_VERSION" ] && [ -n "$CURRENT_APP_VERSION" ] \
              && semver_lt "$HIGHEST_VERSION" "$CURRENT_APP_VERSION"; then
             echo "::error::Payload version ${HIGHEST_VERSION} is below ${CHART}'s current appVersion ${CURRENT_APP_VERSION} and is not a legacy patch; refusing to roll the mainline chart back"
             exit 1
           fi
 
-          # Update appVersion with highest version among all components
-          if [ -n "$HIGHEST_VERSION" ]; then
+          # Update appVersion with highest version among all components, unless the
+          # sender opted out: a chart whose appVersion follows another application
+          # must not be rewritten by a release of a secondary component.
+          if [ "${UPDATE_APP_VERSION}" = "false" ]; then
+            echo ""
+            echo "Keeping appVersion at $(yq '.appVersion' "${CHART_FILE}") (update_app_version=false in the payload)"
+          elif [ -n "$HIGHEST_VERSION" ]; then
             echo ""
             echo "Updating appVersion to ${HIGHEST_VERSION} (highest version)"
             yq -i ".appVersion = \"${HIGHEST_VERSION}\"" "${CHART_FILE}"
@@ -878,15 +926,23 @@ jobs:
           BASE_BRANCH: ${{ steps.base.outputs.resolved_base }}
           MENTION_GROUP: ${{ inputs.slack_mention_group || secrets.SLACK_GROUP_DEVOPS_SRE }}
           SLACK_CHANNEL: ${{ inputs.slack_channel || secrets.SLACK_CHANNEL_DEVOPS }}
+          NOTIFICATION_CHANNEL: ${{ inputs.slack_notification_channel || secrets.SLACK_CHANNEL_DEVOPS_NOTIFICATIONS || inputs.slack_channel || secrets.SLACK_CHANNEL_DEVOPS }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN_HELM }}
           BOT_MENTION: ${{ inputs.slack_bot_mention || secrets.SLACK_BOT_SEVERINO }}
           IS_LEGACY: ${{ steps.base.outputs.is_legacy }}
           VERSION_LINE: ${{ steps.payload.outputs.version_line }}
+          UPDATE_APP_VERSION: ${{ steps.payload.outputs.update_app_version }}
+          CHARTS_PATH: ${{ inputs.charts_path }}
         run: |
           COMPONENTS=$(cat /tmp/components.json)
 
-          # Get appVersion (highest version)
-          APP_VERSION=$(echo "$COMPONENTS" | jq -r '.[].version' | sort -V | tail -n1)
+          # Get appVersion (highest version), or the chart's own when the sender
+          # opted out of changing it
+          if [ "${UPDATE_APP_VERSION}" = "false" ]; then
+            APP_VERSION=$(yq '.appVersion' "${CHARTS_PATH}/${CHART}/Chart.yaml")
+          else
+            APP_VERSION=$(echo "$COMPONENTS" | jq -r '.[].version' | sort -V | tail -n1)
+          fi
 
           # Determine emoji based on env vars
           if [ "${HAS_NEW_ENV_VARS}" = "true" ]; then
@@ -917,11 +973,12 @@ jobs:
             {"type": "mrkdwn", "text": "*Version*"}
           ] + [.[] | {"type": "mrkdwn", "text": ("`" + .name + "`")}, {"type": "mrkdwn", "text": ("`" + .version + "`")}]')
 
-          # Channel is set via env
+          # The card goes to the notification channel; the Severino mention below stays
+          # in SLACK_CHANNEL, so that channel only carries what becomes a ticket.
 
           # Build complete payload using jq
           SLACK_PAYLOAD=$(jq -n \
-            --arg channel "${SLACK_CHANNEL}" \
+            --arg channel "${NOTIFICATION_CHANNEL}" \
             --arg header "${HEADER_TEXT}" \
             --arg chart "${CHART}" \
             --arg version "${APP_VERSION}" \
@@ -1001,4 +1058,77 @@ jobs:
               echo "::warning::Failed to send Severino message"
               echo "$SEVERINO_RESPONSE" | jq .
             fi
+          fi
+
+      # A run that fails opens no PR, so the notification above never fires, and dispatch-helm does not
+      # follow the run it starts: the red run is seen by nobody. The missing values key guard turns a
+      # wrong PR into exactly such a failure (LerianStudio/helm#3093, #3095), so it has to reach a person.
+      # No Severino mention: that message files a PR review ticket, and there is no PR. Like the
+      # update card, it goes to the notification channel when one is set.
+      # A legacy patch is left out: its maintenance line belongs to a Severino request, and Severino
+      # reports the failed run in that request's Slack thread instead (it matches the run by the
+      # caller's run-name). A payload whose legacy flag could not be read still lands here.
+      - name: Send Slack failure notification
+        if: ${{ failure() && inputs.slack_notification && steps.payload.outputs.is_legacy_patch != 'true' }}
+        env:
+          CHART: ${{ steps.payload.outputs.chart }}
+          SOURCE_REF: ${{ steps.payload.outputs.source_ref }}
+          SOURCE_REPO: ${{ steps.payload.outputs.source_repo }}
+          BASE_BRANCH: ${{ steps.base.outputs.resolved_base }}
+          WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WORKFLOW_NUM: ${{ github.run_number }}
+          MENTION_GROUP: ${{ inputs.slack_mention_group || secrets.SLACK_GROUP_DEVOPS_SRE }}
+          SLACK_CHANNEL: ${{ inputs.slack_notification_channel || secrets.SLACK_CHANNEL_DEVOPS_NOTIFICATIONS || inputs.slack_channel || secrets.SLACK_CHANNEL_DEVOPS }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN_HELM }}
+        run: |
+          if [ -z "${SLACK_BOT_TOKEN}" ] || [ -z "${SLACK_CHANNEL}" ]; then
+            echo "::warning::slack_notification is on but SLACK_BOT_TOKEN_HELM or the channel is empty; the failure was not announced"
+            exit 0
+          fi
+
+          MENTION=""
+          if [ -n "$MENTION_GROUP" ]; then
+            MENTION=" | cc: <!subteam^${MENTION_GROUP}>"
+          fi
+
+          SLACK_PAYLOAD=$(jq -n \
+            --arg channel "${SLACK_CHANNEL}" \
+            --arg chart "${CHART:-unknown}" \
+            --arg repo "${SOURCE_REPO:-unknown}" \
+            --arg ref "${SOURCE_REF:-unknown}" \
+            --arg branch "${BASE_BRANCH:-unknown}" \
+            --arg url "${WORKFLOW_URL}" \
+            --arg context ":clock1: $(date -u '+%Y-%m-%d %H:%M:%S UTC') | Workflow: <${WORKFLOW_URL}|#${WORKFLOW_NUM}>${MENTION}" \
+            '{
+              channel: $channel,
+              attachments: [{
+                color: "#D32F2F",
+                blocks: [
+                  {type: "header", text: {type: "plain_text", text: ":x: Helm Chart Update failed", emoji: true}},
+                  {type: "section", fields: [
+                    {type: "mrkdwn", text: ("*Chart:* `" + $chart + "`")},
+                    {type: "mrkdwn", text: ("*Source:* `" + $repo + "`")},
+                    {type: "mrkdwn", text: ("*Source Ref:* `" + $ref + "`")},
+                    {type: "mrkdwn", text: ("*Target Branch:* `" + $branch + "`")}
+                  ]},
+                  {type: "section", text: {type: "mrkdwn", text: "No PR was opened, so this release did not reach the chart. The run log names the cause."}},
+                  {type: "actions", elements: [
+                    {type: "button", text: {type: "plain_text", text: "View run", emoji: true}, url: $url, style: "danger"}
+                  ]},
+                  {type: "context", elements: [{type: "mrkdwn", text: $context}]}
+                ]
+              }]
+            }')
+
+          SLACK_RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+            -H "Content-type: application/json; charset=utf-8" \
+            --data "$SLACK_PAYLOAD" \
+            "https://slack.com/api/chat.postMessage")
+
+          if echo "$SLACK_RESPONSE" | jq -e '.ok == true' > /dev/null; then
+            echo "Slack failure notification sent"
+          else
+            echo "::warning::Failed to send Slack failure notification"
+            echo "$SLACK_RESPONSE" | jq .
           fi

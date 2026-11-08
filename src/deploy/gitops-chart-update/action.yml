@@ -15,7 +15,7 @@ inputs:
     description: Target GitOps repository in `owner/name` form. Validated against the LerianStudio GitOps allowlist
     required: true
   gitops-token:
-    description: Token with write access to the GitOps repository
+    description: Token with write access to the GitOps repository and read access to `LerianStudio/github-actions-shared-workflows`, where the deployment matrix lives
     required: true
   gpg-private-key:
     description: CI GPG private key. The GitOps repository ruleset requires signed commits
@@ -30,7 +30,9 @@ inputs:
     description: Committer email matching the CI GPG identity
     required: true
   deployment-matrix-ref:
-    description: Ref of this repository to read `config/deployment-matrix.yml` from
+    description: >-
+      Ref of the private `LerianStudio/github-actions-shared-workflows` repository to read
+      `config/deployment-matrix.yml` from. Read with `gitops-token`, which needs read access to it
     required: false
     default: 'main'
   target-envs:
@@ -110,7 +112,7 @@ runs:
     - name: Checkout the GitOps repository
       # codeql[actions/untrusted-checkout] -- constrained by the allowlist above
       # to ^LerianStudio/<name>-gitops$, never PR/fork-controlled.
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         repository: ${{ inputs.gitops-repository }}
         token: ${{ inputs.gitops-token }}
@@ -119,18 +121,47 @@ runs:
         persist-credentials: false
 
     # Data only: parsed as YAML, never executed.
+    #
+    # The matrix names clusters and which internal applications run on each, so
+    # it lives only in the private repository, not in this public one.
     - name: Checkout the deployment matrix
-      # codeql[actions/untrusted-checkout] -- repository is hardcoded to this
-      # same LerianStudio repo and the ref only selects a config file.
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      id: matrix
+      # codeql[actions/untrusted-checkout] -- repository is hardcoded to the
+      # private LerianStudio shared-workflows repo and the ref only selects a
+      # config file.
+      # The caller's GITHUB_TOKEN cannot clone this repository once it is not
+      # public, so the read goes through gitops-token.
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # A token without read access surfaces from checkout as "repository not
+      # found", which reads like a typo in the repository name. The next step
+      # turns that into an error that names the cause, then fails the run.
+      continue-on-error: true
       with:
-        repository: LerianStudio/shared-workflows-public
+        repository: LerianStudio/github-actions-shared-workflows
+        token: ${{ inputs.gitops-token }}
         ref: ${{ inputs.deployment-matrix-ref }}
         path: matrix
         sparse-checkout: |
           config/deployment-matrix.yml
         sparse-checkout-cone-mode: false
         persist-credentials: false
+
+    # Also covers a checkout that succeeded on a ref without the file: a sparse
+    # checkout of a missing path is not an error, and chart_bump.py would then
+    # fail on a path the caller never chose.
+    - name: Require the deployment matrix
+      shell: bash
+      env:
+        CHECKOUT_OUTCOME: ${{ steps.matrix.outcome }}
+        MATRIX_REF: ${{ inputs.deployment-matrix-ref }}
+      run: |
+        set -euo pipefail
+        if [ "$CHECKOUT_OUTCOME" != "success" ] || [ ! -f matrix/config/deployment-matrix.yml ]; then
+          repo="LerianStudio/github-actions-shared-workflows"
+          cause="The matrix is private: gitops-token needs read access to ${repo}, and deployment-matrix-ref must be a ref of it that holds the file."
+          echo "::error::Could not read config/deployment-matrix.yml from ${repo} at ref '${MATRIX_REF}'. ${cause}"
+          exit 1
+        fi
 
     # ----------------- Tooling -----------------
     # Persistent runners can already contain two plugins named diff. Skipping
@@ -310,8 +341,6 @@ runs:
       working-directory: gitops
       env:
         GH_TOKEN: ${{ inputs.gitops-token }}
-        GITOPS_TOKEN: ${{ inputs.gitops-token }}
-        GITOPS_REPOSITORY: ${{ inputs.gitops-repository }}
         CHART_NAME: ${{ inputs.chart-name }}
         CHART_VERSION: ${{ inputs.chart-version }}
         LEVEL: ${{ steps.bump.outputs.level }}
@@ -322,7 +351,14 @@ runs:
 
         git add -A
         git commit -m "$title" -m "${LEVEL} bump. Upgrade notes ship with the chart, under docs/."
-        git remote set-url origin "https://x-access-token:${GITOPS_TOKEN}@github.com/${GITOPS_REPOSITORY}.git"
+
+        # git authenticates through a helper that lives only in this step's
+        # environment and reads GH_TOKEN when asked. The token never enters a
+        # URL, a command line or .git/config.
+        # shellcheck disable=SC2016 # $GH_TOKEN is expanded by git when it runs the helper, not here
+        export GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0='credential.https://github.com.helper' \
+          GIT_CONFIG_VALUE_0='!f() { if [ "$1" = get ]; then printf "username=x-access-token\npassword=%s\n" "$GH_TOKEN"; fi; }; f'
 
         if git push origin "HEAD:${base}"; then
           {
@@ -415,10 +451,32 @@ runs:
         # Retried: an API error (a 504 from the edge), read from the CLI's last line. Not retried:
         # its own timeout, announced even when it then dies with 'context canceled', or a sync that ran and failed.
         transient() { tail -n1 /tmp/argocd.log | grep -q 'rpc error' && ! grep -qE 'after .?wait.? timed out' /tmp/argocd.log; }
+        # Live means the last operation Succeeded on the very revision the app now compares Synced against, with
+        # no operation pending: then the change is already applied, usually through the app's own auto-sync, and
+        # another sync would only run every hook again. The revision match matters because hooks are left out of
+        # the sync status, so a commit that changes only a hook still reads Synced. For the same reason a dry run,
+        # a selective sync or an apply-strategy sync does not count: none runs the hooks (controller/sync.go),
+        # though each can end Succeeded on that app.
+        # --refresh returns once the controller has compared the latest revision; it is bounded because the CLI
+        # waits on it forever by default. A failed or timed-out read syncs anyway.
+        is_live() {
+          timeout 120 /tmp/argocd app get "$1" --refresh -o json --server "$ARGOCD_URL" --auth-token "$ARGOCD_TOKEN" --grpc-web 2>/dev/null \
+            | jq -e '.operation == null and .status.sync.status == "Synced" and .status.operationState.phase == "Succeeded"
+              and .status.operationState.operation.sync.dryRun != true
+              and ((.status.operationState.operation.sync.resources // []) | length) == 0
+              and .status.operationState.operation.sync.syncStrategy.apply == null
+              and ((.status.sync.revisions // []) as $want | if ($want | length) > 0
+                then (.status.operationState.syncResult.revisions // []) == $want
+                else (.status.sync.revision // "") != "" and .status.operationState.syncResult.revision == .status.sync.revision end)' >/dev/null
+        }
         # A synchronous sync fails unless its operation ends Succeeded, so the health wait needs no phase check.
         sync_and_wait() {
           local attempt
           for attempt in 1 2 3 4 5; do
+            if is_live "$1"; then
+              echo "$1 is already synced to its latest revision, skipping the sync"
+              break
+            fi
             argo app sync "$1" --timeout "$SYNC_TIMEOUT" && break
             [ "$attempt" != 5 ] || return 1
             # Argo CD refuses a sync while another operation runs and does not queue it: wait that one out, then resubmit.

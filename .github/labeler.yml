@@ -58,11 +58,6 @@ github-config:
       - ".releaserc.yml"
       - ".gitignore"
 
-# Changes to the canonical deployment matrix consumed by gitops-update.yml
-deployment-matrix:
-  - changed-files:
-    - any-glob-to-any-file: "config/deployment-matrix.yml"
-
 # ── Capabilities ──────────────────────────────────────────────────────────────
 
 build:

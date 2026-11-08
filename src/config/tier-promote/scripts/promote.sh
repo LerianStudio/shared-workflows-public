@@ -41,6 +41,14 @@ auto_merge="${AUTO_MERGE:-false}"
 
 export GITHUB_TOKEN="$GH_TOKEN"
 
+# git authenticates through a helper that lives only in this process's
+# environment and reads GH_TOKEN when asked. The token never enters a URL, a
+# command line or the clone's .git/config.
+# shellcheck disable=SC2016 # $GH_TOKEN is expanded by git when it runs the helper, not here
+export GIT_CONFIG_COUNT=1 \
+  GIT_CONFIG_KEY_0='credential.https://github.com.helper' \
+  GIT_CONFIG_VALUE_0='!f() { if [ "$1" = get ]; then printf "username=x-access-token\npassword=%s\n" "$GH_TOKEN"; fi; }; f'
+
 emit() {
   jq -n \
     --arg tier "$TIER" --arg tag "$TAG" --arg action "$1" \
@@ -57,7 +65,7 @@ cleanup() { rm -rf -- "$work"; rm -f -- "$push_err"; }
 trap cleanup EXIT
 
 git clone --quiet --branch "$TIER" \
-  "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "$work"
+  "https://github.com/${REPO}.git" "$work"
 cd "$work"
 
 git fetch --quiet origin "refs/tags/${TAG}:refs/tags/${TAG}"

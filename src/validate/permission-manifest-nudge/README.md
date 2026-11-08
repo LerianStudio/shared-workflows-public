@@ -61,7 +61,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: LerianStudio/shared-workflows-public/src/validate/permission-manifest-nudge@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

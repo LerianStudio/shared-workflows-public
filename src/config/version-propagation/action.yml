@@ -107,6 +107,15 @@ runs:
         set -euo pipefail
         chmod +x "$ACTION_PATH/scripts/apply-bump.sh" "$ACTION_PATH/scripts/push-or-pr.sh"
 
+        # git authenticates through a helper that lives only in this step's
+        # environment and reads GH_TOKEN when asked, for the clone below and for
+        # push-or-pr.sh. The token never enters a URL, a command line or a
+        # clone's .git/config.
+        # shellcheck disable=SC2016 # $GH_TOKEN is expanded by git when it runs the helper, not here
+        export GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0='credential.https://github.com.helper' \
+          GIT_CONFIG_VALUE_0='!f() { if [ "$1" = get ]; then printf "username=x-access-token\npassword=%s\n" "$GH_TOKEN"; fi; }; f'
+
         summary_file="$GITHUB_STEP_SUMMARY"
         printf '## Version propagation: %s\n\n' "$NEW_TAG" >> "$summary_file"
         printf '| Repo | Branch | Action | Result |\n|---|---|---|---|\n' >> "$summary_file"
@@ -141,7 +150,7 @@ runs:
           echo "::group::$repo ($branch)"
           workdir=$(mktemp -d)
           if ! git clone --depth=1 --branch="$branch" \
-              "https://x-access-token:${GH_TOKEN}@github.com/${repo}.git" "$workdir" 2>&1; then
+              "https://github.com/${repo}.git" "$workdir" 2>&1; then
             echo "::warning::clone failed for $repo@$branch"
             printf '| %s | %s | skip | clone-failed |\n' "$repo" "$branch" >> "$summary_file"
             had_failure=1

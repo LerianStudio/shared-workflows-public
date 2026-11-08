@@ -46,7 +46,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout shared-workflows
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
 

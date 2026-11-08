@@ -256,7 +256,7 @@ jobs:
         id: checkout
         if: steps.event-validation.outcome == 'success'
         continue-on-error: true
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -476,7 +476,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -570,7 +570,8 @@ jobs:
     if: always() && inputs.enable_slack_notification && github.event_name == 'pull_request' && github.event.pull_request.draft != true && !inputs.dry_run
     uses: LerianStudio/shared-workflows-public/.github/workflows/slack-notify.yml@v1
     with:
-      status: ${{ (needs.breaking-change-guard.result != 'success' || needs.breaking-change-guard.outputs.result != 'success' || needs.blocking-checks.result != 'success' || needs.blocking-checks.outputs.source-branch-result == 'failure' || needs.blocking-checks.outputs.title-result == 'failure' || needs.blocking-checks.outputs.description-result == 'failure' || needs.blocking-checks.outputs.commit-signatures-result == 'failure') && 'failure' || 'success' }}
+      # A cancelled run was superseded by a newer one, which reports the head's real verdict.
+      status: ${{ contains(needs.*.result, 'cancelled') && 'cancelled' || (needs.breaking-change-guard.result != 'success' || needs.breaking-change-guard.outputs.result != 'success' || needs.blocking-checks.result != 'success' || needs.blocking-checks.outputs.source-branch-result == 'failure' || needs.blocking-checks.outputs.title-result == 'failure' || needs.blocking-checks.outputs.description-result == 'failure' || needs.blocking-checks.outputs.commit-signatures-result == 'failure') && 'failure' || 'success' }}
       workflow_name: "PR Validation"
       failed_jobs: ${{ (needs.breaking-change-guard.result != 'success' || needs.breaking-change-guard.outputs.result != 'success') && 'Breaking Change Guard, ' || '' }}${{ needs.blocking-checks.result != 'success' && 'Blocking Checks, ' || '' }}${{ needs.blocking-checks.outputs.source-branch-result == 'failure' && 'Source Branch, ' || '' }}${{ needs.blocking-checks.outputs.title-result == 'failure' && 'PR Title, ' || '' }}${{ needs.blocking-checks.outputs.description-result == 'failure' && 'PR Description, ' || '' }}${{ needs.blocking-checks.outputs.commit-signatures-result == 'failure' && 'Commit Signatures' || '' }}
     secrets:

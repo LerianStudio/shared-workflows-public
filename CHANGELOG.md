@@ -1,5 +1,149 @@
 # Shared-workflows-public Changelog
 
+## [1.4.6](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.6)
+
+Improvements:
+- Bump `docker/login-action` from `4.6.0` to `4.7.0` in the docker group. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.4.5...v1.4.6)
+
+---
+
+## [1.4.5](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.5)
+
+Fixes:
+
+- Ensure CI credentials are not included in git URLs and global git configuration to enhance security. (@bedatty)
+- Implement a check to catch bare token URLs in the credential guard for improved security. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.4.4...v1.4.5)
+
+---
+
+## [1.4.4](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.4)
+
+Fixes:
+
+- Skip the sync process in the GitOps chart update workflow when the application is already live. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.4.3...v1.4.4)
+
+---
+
+## [1.4.3](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.3)
+
+Fixes:
+- Count renamed paths in the classifier and report cancelled runs accurately. (@fredcamaral)
+- Report cancelled runs as cancelled in Slack notifications. (@fredcamaral)
+
+Improvements:
+- Update documentation to specify using merge commits and never squash. (@fredcamaral)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.4.2...v1.4.3)
+
+---
+
+## [1.4.2](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.2)
+
+Fixes:
+- Adjusted the GitOps chart update process to read the deployment matrix from the private repository. (@bedatty)
+
+Improvements:
+- Disabled CodeRabbit automation for this repository. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.4.1...v1.4.2)
+
+---
+
+## [1.4.1](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.1)
+
+Fixes:
+- Report both directories when a file moves between them in the changed-paths workflow. (@bedatty)
+
+Improvements:
+- Add test coverage for updating `app_version` from the dispatch payload in the helm-update-chart workflow. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.4.0...v1.4.1)
+
+---
+
+## [1.4.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.0)
+
+Features:
+- Send the update card to its own Slack channel for the `helm-update-chart` workflow. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.3.5...v1.4.0)
+
+---
+
+## [1.3.5](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.3.5)
+
+Fixes:
+
+- Refuse a component whose `values` key is missing. (@bedatty)
+- Leave legacy patch failures to Severino's thread. (@bedatty)
+- Announce a failed run on Slack. (@bedatty)
+
+Tests:
+
+- Assert exit and `appVersion` when keys are missing. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.3.4...v1.3.5)
+
+---
+
+## [1.3.4](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.3.4)
+
+Fixes:
+
+- Skip an app whose changelog already has its tag section to prevent redundant entries. (@fredcamaral)
+- Record `alloy-lerian` as ignored in the deployment matrix to streamline the GitOps process. (@fredcamaral)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.3.3...v1.3.4)
+
+---
+
+## [1.3.3](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.3.3)
+
+Features:
+
+- Load the refactoring skill before proposing any change. (@bedatty)
+- Point agents at the ring actions skills. (@bedatty)
+
+Fixes:
+
+- Correct pinned action version comments. (@bedatty)
+- Map `plugin-br-sisbajud` in the deployment matrix. (@fredcamaral)
+- Stop `dry_run` guidance from printing rendered secrets. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.3.2...v1.3.3)
+
+---
+
+## [1.3.2](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.3.2)
+
+Fixes:
+
+- Reuse the chart README install command in upgrade guides to ensure consistency in the documentation. (@fredcamaral)
+- Keep stored release values in generated upgrade commands to maintain accurate upgrade procedures. (@fredcamaral)
+- Rename the sed loop label in the upgrade-doc script to improve script clarity. (@fredcamaral)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.3.1...v1.3.2)
+
+---
+
+## [1.3.1](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.3.1)
+
+Fixes:
+- Repair the Trivy installation process to ensure proper functionality. (@fredcamaral)
+
+Improvements:
+- Remove `cs-platform` from the deployment matrix to streamline the workflow. (@fredcamaral)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.3.0...v1.3.1)
+
+---
+
 ## [1.3.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.3.0)
 
 Fixes:
