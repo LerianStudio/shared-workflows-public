@@ -46,11 +46,11 @@ on:
         type: string
         default: '23.0.8'
       runner_type:
-        description: 'Runner to use for the workflow'
+        description: 'Deprecated, ignored. Runner comes from org variables.'
         type: string
-        default: 'blacksmith-4vcpu-ubuntu-2404'
+        default: ''
       publish_runner_type:
-        description: 'Optional runner override for the Release (publish) jobs only. Empty = vars.GENERAL_RUNNERS, then runner_type.'
+        description: 'Deprecated, ignored. Runner comes from org variables.'
         type: string
         default: ''
       filter_paths:
@@ -170,7 +170,7 @@ permissions:
 
 jobs:
   prepare:
-    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
       has_changes: ${{ steps.set-matrix.outputs.has_changes }}
@@ -261,7 +261,7 @@ jobs:
   publish_release:
     needs: prepare
     if: needs.prepare.outputs.has_changes == 'true' && needs.prepare.outputs.should_skip != 'true'
-    runs-on: ${{ inputs.publish_runner_type || vars.GENERAL_RUNNERS || inputs.runner_type }}
+    runs-on: ${{ vars.PUBLISH_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     environment:
       # `stable` on main, `rc` on release-candidate, `beta` on anything else.
       # The three-way split follows the branch strategy this workflow supports
@@ -689,7 +689,7 @@ jobs:
     name: Aggregate Publish Status
     needs: publish_release
     if: always() && needs.publish_release.result != 'cancelled'
-    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     outputs:
       release_published: ${{ steps.aggregate.outputs.published }}
       release_version: ${{ steps.aggregate.outputs.version }}
@@ -750,7 +750,7 @@ jobs:
       inputs.enable_changelog &&
       needs.publish_release_status.outputs.release_published == 'true' &&
       (needs.update_major_tag.result == 'success' || needs.update_major_tag.result == 'skipped')
-    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     environment:
       # `stable` / `rc` / `beta` by ref — see the note on the first environment
       # block in this file.
@@ -796,7 +796,7 @@ jobs:
       github.ref_name == inputs.backmerge_source &&
       (needs.update_major_tag.result == 'success' || needs.update_major_tag.result == 'skipped') &&
       (needs.generate_changelog.result == 'success' || needs.generate_changelog.result == 'skipped')
-    runs-on: ${{ inputs.runner_type }}
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     environment:
       # `stable` / `rc` / `beta` by ref — see the note on the first environment
       # block in this file.
@@ -846,7 +846,7 @@ jobs:
     name: Update Major Tag
     needs: [publish_release, publish_release_status]
     if: inputs.enable_major_tag && needs.publish_release_status.outputs.release_published == 'true'
-    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     environment:
       # `stable` / `rc` / `beta` by ref — see the note on the first environment
       # block in this file.
@@ -884,7 +884,7 @@ jobs:
     name: Enforce Latest Release
     needs: [publish_release, publish_release_status]
     if: always() && needs.publish_release_status.outputs.release_published == 'true'
-    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: write
     steps:

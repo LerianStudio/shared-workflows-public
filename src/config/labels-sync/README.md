@@ -41,7 +41,7 @@ Create a `.github/labels.yml` in the target repository:
 ```yaml
 jobs:
   sync:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       issues: write
       contents: read

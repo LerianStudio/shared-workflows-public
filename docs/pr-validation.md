@@ -158,8 +158,8 @@ jobs:
 
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
-| `runner_type` | string | `blacksmith-4vcpu-ubuntu-2404` | GitHub runner type |
-| `pr_checks_summary_runner_type` | string | `''` | Optional runner override for the PR Checks Summary job only; empty falls back to `vars.GENERAL_RUNNERS`, then `runner_type` |
+| `runner_type` | string | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |
+| `pr_checks_summary_runner_type` | string | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |
 | `dry_run` | boolean | `false` | Preview validations without posting comments or labels |
 | `pr_title_types` | string | (see below) | Allowed commit types (newline-separated) |
 | `pr_title_scopes` | string | `''` | Allowed scopes (newline-separated, empty = any) |

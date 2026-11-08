@@ -85,7 +85,7 @@ jobs:
 
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
-| `runner_type` | string | `ubuntu-latest` | GitHub Actions runner to use |
+| `runner_type` | string | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |
 | `charts_root` | string | `charts` | Root directory containing all charts |
 | `docs_subdir` | string | `docs` | Subdirectory inside each chart where `UPGRADE-*.md` docs are stored |
 | `openai_model` | string | `anthropic/claude-sonnet-4-5` | OpenRouter model for doc generation (ignored when `ANTHROPIC_API_KEY` is set) |

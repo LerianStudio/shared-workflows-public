@@ -39,6 +39,27 @@ jobs:
     uses: LerianStudio/shared-workflows-public/.github/workflows/gitops-chart-update.yml@tier-1
 ```
 
+## Runner variables
+
+Runners are chosen only by organization variables, so moving CI to another runner type is a variable change, not a PR per repository. No workflow holds a literal label or reads a runner input. Step-by-step guide for a repository: [Runner Variables — Agent Guide](instructions/runner-variables.md).
+
+| Job | Resolves |
+|---|---|
+| With a job variable (`gate`, `test`, `lint`, `coverage`, `integration_test`, `build`, `security_scan`, `publish`, `pr_checks_summary`) | `vars.<JOB>_RUNNERS` → `vars.GENERAL_RUNNERS` → `vars.FALLBACK_RUNNERS` |
+| Every other job | `vars.GENERAL_RUNNERS` → `vars.FALLBACK_RUNNERS` |
+| GitOps (ArgoCD sync) | `vars.GITOPS_RUNNERS` → `vars.FALLBACK_RUNNERS` |
+
+An unset variable falls through to the next one. A repository variable with the same name overrides the organization one, and keeps that repository out of an organization-wide switch.
+
+`runner_type` and every `*_runner_type` input are deprecated and ignored. They stay declared, so a caller that still passes one does not fail; remove them from callers.
+
+In a repository's own workflows:
+
+```yaml
+runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+runs-on: ${{ vars.LARGE_RUNNERS || vars.FALLBACK_RUNNERS }}
+```
+
 ## Versioning
 
 Releases follow [Semantic Versioning](https://semver.org/) via [semantic-release](https://github.com/semantic-release/semantic-release):

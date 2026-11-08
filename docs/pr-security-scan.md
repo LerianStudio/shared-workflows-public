@@ -61,7 +61,6 @@ jobs:
   security-scan:
     uses: LerianStudio/shared-workflows-public/.github/workflows/pr-security-scan.yml@tier-1
     with:
-      runner_type: "blacksmith-4vcpu-ubuntu-2404"
       dockerhub_org: "lerianstudio"
     secrets: inherit
 ```
@@ -78,7 +77,6 @@ jobs:
   security-scan:
     uses: LerianStudio/shared-workflows-public/.github/workflows/pr-security-scan.yml@tier-1
     with:
-      runner_type: "blacksmith-4vcpu-ubuntu-2404"
       filter_paths: |-
         components/onboarding
         components/transaction
@@ -100,7 +98,6 @@ jobs:
   security-scan:
     uses: LerianStudio/shared-workflows-public/.github/workflows/pr-security-scan.yml@tier-1
     with:
-      runner_type: "blacksmith-4vcpu-ubuntu-2404"
       filter_paths: |-
         frontend
         cmd
@@ -129,7 +126,6 @@ jobs:
   security-scan:
     uses: LerianStudio/shared-workflows-public/.github/workflows/pr-security-scan.yml@tier-1
     with:
-      runner_type: "blacksmith-4vcpu-ubuntu-2404"
       enable_docker_scan: false
     secrets: inherit
 ```
@@ -154,7 +150,6 @@ jobs:
   security-scan:
     uses: LerianStudio/shared-workflows-public/.github/workflows/pr-security-scan.yml@tier-1
     with:
-      runner_type: "blacksmith-4vcpu-ubuntu-2404"
       enable_codeql: true
       codeql_languages: 'go'
     secrets: inherit
@@ -187,8 +182,8 @@ The detection regex can be overridden centrally through the optional **organizat
 |-------|------|---------|-------------|
 | `enable_doc_gate` | boolean | `true` | Skip the scan when the PR touches only documentation/meta files. Needs `pull-requests: read` on the calling job to list the PR's files; without it the gate produces no verdict and the scan runs in full. Callers that already gate upstream (`go-pr-validation.yml`, `js-pr-validation.yml`) pass `false` |
 | `ignore_globs` | string | `*.md docs/* .github/* LICENSE* .gitignore .coderabbit.yml .coderabbit.yaml` | Globs treated as docs/meta by the gate. Files under `.github/workflows/`, `.github/actions/` and `.github/scripts/` always count as code |
-| `runner_type` | string | `blacksmith-4vcpu-ubuntu-2404` | GitHub runner type |
-| `security_scan_runner_type` | string | `''` | Optional runner override for the security_scan jobs only; empty falls back to `vars.GENERAL_RUNNERS`, then `runner_type` |
+| `runner_type` | string | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |
+| `security_scan_runner_type` | string | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |
 | `filter_paths` | string | - | Paths to monitor (newline separated). If empty, treats as single app |
 | `path_level` | string | `2` | Directory depth level to extract app name (monorepo only) |
 | `monorepo_type` | string | `type1` | Monorepo type: `type1` or `type2` |
@@ -373,12 +368,9 @@ on:
     branches: [develop, release-candidate, main]
 ```
 
-### 2. Use Blacksmith Runners for Better Performance
+### 2. Let Org Variables Pick the Runner
 
-```yaml
-with:
-  runner_type: "blacksmith-4vcpu-ubuntu-2404"
-```
+The scan jobs run on `vars.SECURITY_SCAN_RUNNERS`, then `vars.GENERAL_RUNNERS`, then `vars.FALLBACK_RUNNERS`. Do not pass `runner_type` or `security_scan_runner_type`: they are deprecated and ignored. See [Runner variables](../README.md#runner-variables).
 
 ### 3. Use secrets: inherit for Simplicity
 
@@ -479,7 +471,6 @@ security-scan:
 security-scan:
   uses: LerianStudio/shared-workflows-public/.github/workflows/pr-security-scan.yml@tier-1
   with:
-    runner_type: "blacksmith-4vcpu-ubuntu-2404"
     filter_paths: |-
       services/auth
       services/payment
@@ -496,7 +487,6 @@ security-scan:
 security-scan:
   uses: LerianStudio/shared-workflows-public/.github/workflows/pr-security-scan.yml@tier-1
   with:
-    runner_type: "blacksmith-4vcpu-ubuntu-2404"
     filter_paths: |-
       web
       api
@@ -541,7 +531,6 @@ jobs:
   security-scan:
     uses: LerianStudio/shared-workflows-public/.github/workflows/pr-security-scan.yml@tier-1
     with:
-      runner_type: "blacksmith-4vcpu-ubuntu-2404"
       filter_paths: |-
         components/onboarding
         components/transaction

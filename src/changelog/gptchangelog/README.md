@@ -41,7 +41,7 @@ A hand-written `## [Unreleased]` section at the top of an existing `CHANGELOG.md
 ```yaml
 jobs:
   changelog:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Create GitHub App Token
         uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1

@@ -38,11 +38,11 @@ on:
               && jobs.breaking-change-approval.outputs.approved == 'true' && 'true' || 'false' }}
     inputs:
       runner_type:
-        description: 'GitHub runner type to use'
+        description: 'Deprecated, ignored. Runner comes from org variables.'
         type: string
-        default: 'blacksmith-4vcpu-ubuntu-2404'
+        default: ''
       pr_checks_summary_runner_type:
-        description: 'Optional runner override for the PR Checks Summary job only. Empty = vars.GENERAL_RUNNERS, then runner_type.'
+        description: 'Deprecated, ignored. Runner comes from org variables.'
         type: string
         default: ''
       dry_run:
@@ -217,7 +217,7 @@ jobs:
   # ----------------- Mandatory Breaking Change Detection (always runs, including drafts) -----------------
   breaking-change-guard:
     name: Breaking Change Guard
-    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
     outputs:
@@ -359,14 +359,13 @@ jobs:
       create_approval_environment: ${{ inputs.breaking_change_create_environment }}
       require_protected_environment: ${{ inputs.breaking_change_require_protected_environment }}
       dry_run: ${{ inputs.dry_run }}
-      runner_type: ${{ inputs.runner_type }}
     secrets:
       MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}
 
   # ----------------- Tier 1: Blocking Checks (no checkout, fail-fast) -----------------
   blocking-checks:
     name: Blocking Checks
-    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: [breaking-change-guard]
     if: always()
     outputs:
@@ -466,7 +465,7 @@ jobs:
   # `needs:` stays for ordering only. The verdict is no longer consulted.
   advisory-checks:
     name: Advisory Checks
-    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: [blocking-checks]
     if: always() && github.event_name == 'pull_request' && github.event.pull_request.draft != true
     outputs:
@@ -518,7 +517,7 @@ jobs:
   # ----------------- PR Checks Summary -----------------
   pr-checks-summary:
     name: PR Checks Summary
-    runs-on: ${{ inputs.pr_checks_summary_runner_type || vars.GENERAL_RUNNERS || inputs.runner_type }}
+    runs-on: ${{ vars.PR_CHECKS_SUMMARY_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: [breaking-change-guard, blocking-checks, advisory-checks]
     if: always()
 
@@ -541,7 +540,7 @@ jobs:
   # ----------------- PR Validation Summary Comment -----------------
   pr-validation-report:
     name: PR Validation Report
-    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: [breaking-change-guard, blocking-checks, advisory-checks]
     if: always() && github.event_name == 'pull_request' && github.event.pull_request.draft != true
 
