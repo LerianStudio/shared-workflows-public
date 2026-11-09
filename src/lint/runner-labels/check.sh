@@ -22,27 +22,35 @@ expr_re='^\$\{\{[[:space:]]*(.*[^[:space:]])[[:space:]]*\}\}$'
 quote="[\"']"
 var_re="^vars(\\.[A-Za-z0-9_]+|\\[[[:space:]]*${quote}[A-Za-z0-9_]+${quote}[[:space:]]*\\])\$"
 fallback_re="^VARS(\\.FALLBACK_RUNNERS|\\[[[:space:]]*${quote}FALLBACK_RUNNERS${quote}[[:space:]]*\\])\$"
-label_re='^[A-Za-z0-9_.-]+$'
 with_re='^([[:space:]]*)with:[[:space:]]*(#.*)?$'
 matrix_re='^matrix\.[A-Za-z0-9_.-]+$'
 
-# An inline array passes only when every member is a plain label and one is exactly
-# `self-hosted`. A member with spaces, braces or escapes (an expression, even an
-# escaped one) is not a plain label.
+# An inline array passes when one top-level member is exactly `self-hosted`: GitHub
+# then picks only a self-hosted runner, whatever the other members are (a
+# `${{ matrix.* }}` label included). Members are split on commas outside quotes,
+# so `self-hosted` inside a quoted expression is not a member.
 array_problem() {
-  local inner=${1#[} member found=""
-  local -a members
+  local inner=${1#[} member="" quote="" char i
+  local -a members=()
   inner=${inner%]}
-  IFS=',' read -r -a members <<< "$inner"
+  for ((i = 0; i < ${#inner}; i++)); do
+    char=${inner:i:1}
+    if [ -n "$quote" ]; then
+      [ "$char" = "$quote" ] && quote=""
+    elif [ "$char" = '"' ] || [ "$char" = "'" ]; then
+      quote=$char
+    elif [ "$char" = "," ]; then
+      members+=("$member"); member=""; continue
+    fi
+    member+=$char
+  done
+  members+=("$member")
   for member in "${members[@]}"; do
     member=${member#"${member%%[![:space:]]*}"}; member=${member%"${member##*[![:space:]]}"}
     if [[ $member =~ ^\"(.*)\"$ || $member =~ ^\'(.*)\'$ ]]; then member=${BASH_REMATCH[1]}; fi
-    if ! [[ $member =~ $label_re ]]; then
-      echo "runner array member that is not a plain label"; return
-    fi
-    [ "$member" = "self-hosted" ] && found=1
+    [ "$member" = "self-hosted" ] && return
   done
-  [ -n "$found" ] || echo "runner array without a self-hosted member"
+  echo "runner array without a self-hosted member"
 }
 
 # Prints why a runs-on value fails, or nothing when it passes.
