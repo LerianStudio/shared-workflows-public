@@ -1,5 +1,21 @@
 # Shared-workflows-public Changelog
 
+## [1.5.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.5.0)
+
+Features:
+- Resolve runners through organization variables only, ensuring a more streamlined and consistent runner resolution process. (@bedatty)
+- Add a check for runner labels to enhance the validation process of runner configurations. (@bedatty)
+
+Fixes:
+- Align the `codeql-action` composites with version `v4.39.1` to ensure compatibility and stability. (@bedatty)
+
+Improvements:
+- Update documentation to state the prerequisite of runner variables and provide information on the CodeQL runner. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.4.10...v1.5.0)
+
+---
+
 ## [1.4.10](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.10)
 
 Improvements:
