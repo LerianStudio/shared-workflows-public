@@ -52,6 +52,8 @@ expect indexed-variable-chain 0 "    runs-on: \${{ vars['GENERAL_RUNNERS'] || va
 expect matrix 0 "    runs-on: \${{ matrix.os }}"
 expect self-hosted-label 0 '    runs-on: eveo-lxc-runners'
 expect self-hosted-array 0 '    runs-on: [self-hosted, linux]'
+expect self-hosted-array-with-matrix 0 "    runs-on: [self-hosted, internal-readonly, \"\${{ matrix.verifier }}\"]"
+expect quoted-self-hosted-inside-expression 1 "    runs-on: [\"\${{ inputs.x || 'a,self-hosted,b' }}\", linux]"
 expect input-declaration 0 "      build_runner_type:
         description: 'Deprecated, ignored.'
         type: string
