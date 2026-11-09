@@ -42,7 +42,7 @@ An unrecognised value fails the step. A typo would not fail here, it would decid
 ```yaml
 jobs:
   changes:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     outputs:
       code: ${{ steps.gate.outputs.code }}
     steps:

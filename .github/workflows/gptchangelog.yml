@@ -18,9 +18,9 @@ on:
   workflow_call:
     inputs:
       runner_type:
-        description: 'Runner to use for the workflow'
+        description: 'Deprecated, ignored. Runner comes from org variables.'
         type: string
-        default: 'blacksmith'
+        default: ''
       filter_paths:
         description: 'Newline-separated list of path prefixes to filter. If not provided, treats as single app repo.'
         type: string
@@ -79,7 +79,7 @@ permissions:
 jobs:
   generate_changelog:
     name: Generate Consolidated Changelog
-    runs-on: ${{ vars.GENERAL_RUNNERS || inputs.runner_type }}
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     outputs:
       has_changes: ${{ steps.changelog.outputs.has-changes }}
 

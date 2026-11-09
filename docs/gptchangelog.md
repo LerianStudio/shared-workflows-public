@@ -63,8 +63,6 @@ jobs:
   changelog:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     uses: LerianStudio/shared-workflows-public/.github/workflows/gptchangelog.yml@tier-1
-    with:
-      runner_type: "blacksmith-4vcpu-ubuntu-2404"
     secrets: inherit
 ```
 
@@ -88,8 +86,6 @@ permissions:
 jobs:
   changelog:
     uses: LerianStudio/shared-workflows-public/.github/workflows/gptchangelog.yml@tier-1
-    with:
-      runner_type: "blacksmith-4vcpu-ubuntu-2404"
     secrets: inherit
 ```
 
@@ -130,7 +126,6 @@ jobs:
   changelog:
     uses: LerianStudio/shared-workflows-public/.github/workflows/gptchangelog.yml@tier-1
     with:
-      runner_type: "blacksmith"
       filter_paths: |-
         charts/agent
         charts/control-plane
@@ -188,8 +183,6 @@ jobs:
   changelog:
     needs: release
     uses: LerianStudio/shared-workflows-public/.github/workflows/gptchangelog.yml@tier-1
-    with:
-      runner_type: "blacksmith"
     secrets: inherit
 ```
 
@@ -197,7 +190,7 @@ jobs:
 
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
-| `runner_type` | string | `blacksmith` | GitHub runner type |
+| `runner_type` | string | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |
 | `filter_paths` | string | `''` | Newline-separated list of path prefixes. If empty, single-app mode |
 | `stable_releases_only` | boolean | `true` | Only generate changelogs for stable releases (skip beta/rc/alpha) |
 | `openai_model` | string | `openai/gpt-4o` | OpenRouter model for changelog generation |

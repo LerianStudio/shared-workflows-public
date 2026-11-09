@@ -18,7 +18,7 @@ Ensure every composite action under `src/` has a sibling `README.md` file.
 ```yaml
 jobs:
   readme-check:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6

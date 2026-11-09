@@ -65,7 +65,7 @@ Each value must be a **string** of pipe-separated patterns. A non-string value (
 ```yaml
 jobs:
   source-branch:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Validate Source Branch
         uses: LerianStudio/shared-workflows-public/src/validate/pr-source-branch@v1.x.x

@@ -74,7 +74,6 @@ jobs:
       enable_tests: true
       enable_coverage: true
       enable_build: true
-      integration_test_runner_type: blacksmith-8vcpu-ubuntu-2404
     secrets: inherit
 ```
 
@@ -95,12 +94,12 @@ jobs:
 
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
-| `runner_type` | GitHub runner type | No | `firmino-lxc-runners` |
-| `lint_runner_type` | Optional runner override for the Lint jobs only; empty falls back to `vars.GENERAL_RUNNERS`, then `runner_type` | No | `''` |
-| `test_runner_type` | Optional runner override for the Tests jobs only; empty falls back to `vars.GENERAL_RUNNERS`, then `runner_type` | No | `''` |
-| `integration_test_runner_type` | Optional runner override for the Integration Tests jobs only; empty falls back to `vars.GENERAL_RUNNERS`, then `runner_type` | No | `''` |
-| `coverage_runner_type` | Optional runner override for the Coverage jobs only; empty falls back to `vars.GENERAL_RUNNERS`, then `runner_type` | No | `''` |
-| `build_runner_type` | Optional runner override for the Build jobs only; empty falls back to `vars.GENERAL_RUNNERS`, then `runner_type` | No | `''` |
+| `runner_type` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). | No | `''` |
+| `lint_runner_type` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). | No | `''` |
+| `test_runner_type` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). | No | `''` |
+| `integration_test_runner_type` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). | No | `''` |
+| `coverage_runner_type` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). | No | `''` |
+| `build_runner_type` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). | No | `''` |
 | `filter_paths` | JSON array of paths to monitor for changes. If empty, treats repo as single-app. | No | `''` |
 | `path_level` | Directory depth level to extract app name | No | `2` |
 | `normalize_to_filter` | Collapse every changed file under a `filter_paths` entry into that one component (`working_dir` = the filter itself) instead of the `path_level`-trimmed directory. With `false`, a change deeper than `path_level` segments inside a filtered component spawns a bogus matrix entry rooted at that subdirectory — no testable package, so no `coverage.txt`, and the coverage job fails with "Artifact not found". | No | `true` |

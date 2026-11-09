@@ -28,7 +28,7 @@ Composite action that sends a release notification to a Discord channel via webh
 ```yaml
 jobs:
   notify:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - uses: actions/checkout@v4
       - uses: LerianStudio/shared-workflows-public/src/notify/discord-release@v1.2.3

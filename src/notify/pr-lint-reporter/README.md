@@ -38,7 +38,7 @@ The deployment matrix moved to the private `LerianStudio/github-actions-shared-w
 ```yaml
 jobs:
   lint-report:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: [changed-files, yamllint, actionlint, pinned-actions, markdown-link-check, typos, shellcheck, readme-check, composite-schema]
     if: always() && github.event_name == 'pull_request' && needs.changed-files.result == 'success'
     steps:

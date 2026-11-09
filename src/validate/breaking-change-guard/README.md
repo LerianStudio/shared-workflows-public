@@ -91,7 +91,7 @@ permissions:
 
 jobs:
   breaking-change-guard:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Check out full history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -119,7 +119,7 @@ Pin the pull request branch to test a change to the composite before it merges:
 ```yaml
 jobs:
   breaking-change-guard:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
     steps:
@@ -142,7 +142,7 @@ After the release publishes this composite in `v1`, use the stable major tag:
 ```yaml
 jobs:
   breaking-change-guard:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
     steps:

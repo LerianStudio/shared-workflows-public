@@ -28,7 +28,7 @@ When the payload is flagged as a legacy patch, the PR is routed to a **chart lin
 | `legacy_branch_prefix` | Branch prefix for chart line patches | no | `hotfix` |
 | `legacy_branch_source` | Branch a chart line branch is created from when it does not exist yet | no | `main` |
 | `legacy_update_readme` | Update the README matrix on legacy patches | no | `false` |
-| `runner_type` | GitHub runner type | no | `blacksmith-4vcpu-ubuntu-2404` |
+| `runner_type` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). | no | `''` |
 | `gpg_sign_commits` | Sign commits with GPG | no | `true` |
 | `slack_notification` | Send a Slack notification: when the PR is opened, and when the run fails | no | `false` |
 | `slack_channel` | Slack channel ID for the Severino mention, and for the update and failure cards when no notification channel is set | no | — |

@@ -35,7 +35,7 @@ This composite produces the following file in the runner working directory:
 ```yaml
 jobs:
   security:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - uses: actions/checkout@v6
 

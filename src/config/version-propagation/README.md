@@ -73,7 +73,7 @@ Per-repo keys (all optional):
 ```yaml
 jobs:
   propagate:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
     steps:

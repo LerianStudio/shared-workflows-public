@@ -94,7 +94,7 @@ This gives teams a built-in reminder mechanism: acknowledge a deferred bump with
 ```yaml
 jobs:
   lerian-lib-check:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
       pull-requests: write

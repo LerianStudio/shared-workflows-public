@@ -43,7 +43,7 @@ The `blocking-checks` job must define a `breaking-change-result` output normaliz
 ```yaml
 jobs:
   blocking-checks:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     outputs:
       # ...other check outputs...
       breaking-change-result: ${{ steps.breaking-change-result.outputs.result }}
@@ -73,7 +73,7 @@ jobs:
           fi
 
   pr-validation-report:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: [blocking-checks, advisory-checks]
     if: always() && github.event.pull_request.draft != true
     steps:
