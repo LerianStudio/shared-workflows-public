@@ -46,6 +46,10 @@ expect spaced-indexed-variables 0 "    runs-on: \${{ vars[ 'GENERAL_RUNNERS' ] |
 expect lowercase-fallback 0 "    runs-on: \${{ vars.GENERAL_RUNNERS || vars.fallback_runners }}"
 expect flow-style-input-declaration 0 "      build_runner_type: {type: string, default: ''}"
 expect runner-type-outside-with 0 '      runner_type: blacksmith-4vcpu-ubuntu-2404'
+expect public-term-chain 0 "    runs-on: \${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}"
+expect public-term-literal 1 "    runs-on: \${{ (github.event.repository.visibility == 'public' && 'ubuntu-latest') || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}"
+expect public-term-other-condition 1 "    runs-on: \${{ (github.event.repository.visibility == 'private' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}"
+expect public-term-only 1 "    runs-on: \${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) }}"
 expect variable-chain 0 "    runs-on: \${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}"
 expect job-variable-chain 0 "    runs-on: \${{ vars.TEST_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }} # tests"
 expect indexed-variable-chain 0 "    runs-on: \${{ vars['GENERAL_RUNNERS'] || vars['FALLBACK_RUNNERS'] }}"

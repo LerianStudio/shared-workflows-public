@@ -79,7 +79,7 @@ permissions:
 jobs:
   generate_changelog:
     name: Generate Consolidated Changelog
-    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     outputs:
       has_changes: ${{ steps.changelog.outputs.has-changes }}
 
