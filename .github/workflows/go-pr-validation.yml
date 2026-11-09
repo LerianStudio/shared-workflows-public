@@ -523,7 +523,7 @@ jobs:
   changes:
     name: Detect non-doc changes
     if: contains(fromJSON('["opened","edited","synchronize","reopened","ready_for_review"]'), github.event.action)
-    runs-on: ${{ vars.GATE_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GATE_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
       pull-requests: read
@@ -584,7 +584,7 @@ jobs:
     name: ${{ inputs.run_go_analysis && 'Go Analysis' || 'Go Analysis (disabled)' }}
     needs: [changes, go-analysis]
     if: always()
-    runs-on: ${{ vars.GATE_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GATE_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Aggregate Go Analysis result
         uses: LerianStudio/shared-workflows-public/src/validate/result-gate@v1
@@ -627,7 +627,7 @@ jobs:
     name: ${{ inputs.run_security && 'Security' || 'Security (disabled)' }}
     needs: [changes, security]
     if: always()
-    runs-on: ${{ vars.GATE_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GATE_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Aggregate security result
         uses: LerianStudio/shared-workflows-public/src/validate/result-gate@v1
@@ -662,7 +662,7 @@ jobs:
     name: ${{ inputs.run_lib_version_check && 'Lib Version' || 'Lib Version (disabled)' }}
     needs: [changes, lib-version]
     if: always()
-    runs-on: ${{ vars.GATE_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GATE_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Aggregate Lib Version result
         uses: LerianStudio/shared-workflows-public/src/validate/result-gate@v1
@@ -686,7 +686,7 @@ jobs:
     name: Permission Manifest Nudge
     if: inputs.run_manifest_nudge && github.event_name == 'pull_request'
     continue-on-error: true
-    runs-on: ${{ vars.GATE_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GATE_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
       pull-requests: write
@@ -737,7 +737,7 @@ jobs:
       && inputs.enable_coderabbit_gate
       && github.event_name == 'pull_request'
       && github.event.pull_request.draft != true
-    runs-on: ${{ vars.GATE_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GATE_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
     outputs:

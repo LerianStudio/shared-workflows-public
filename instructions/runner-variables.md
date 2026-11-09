@@ -17,6 +17,7 @@ Changing org variables must move every Lerian CI job in minutes. A literal label
 - No literal label, not even as the last fallback. No `inputs.*`.
 - No `runner_type` / `*_runner_type` passed to a shared workflow. They are deprecated and ignored.
 - Exceptions: self-hosted labels (`eveo-*`, `[self-hosted, …]`) and `${{ matrix.* }}`.
+- A chain may start with `(github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS)` so public repositories run on their own variable. The shared workflows do this on every non-self-hosted job.
 
 ## Variables
 
@@ -29,6 +30,7 @@ Organization variables, visible to all repositories (public included):
 | `LARGE_RUNNERS` | `blacksmith-8vcpu-ubuntu-2404` | 8 vCPU jobs |
 | `XLARGE_RUNNERS` | `blacksmith-16vcpu-ubuntu-2404` | 16 vCPU jobs |
 | `FALLBACK_RUNNERS` | `ubuntu-24.04` | last link of every chain |
+| `PUBLIC_RUNNERS` | `ubuntu-24.04` | every non-self-hosted shared job when the calling repository is public |
 | `GITOPS_RUNNERS` | `eveo-lxc-runners` | GitOps jobs, which must reach ArgoCD |
 | `DEPLOYED_ENV_RUNNERS` | `eveo-lxc-runners` | ApiDog and End-to-End tests, which must reach the deployed environment |
 | `UNGOLIANT_RUNNERS` | `eveo-anacleto-lxc-runners` | Ungoliant release diff, which needs Tailscale to anacleto (selected repositories) |
