@@ -223,7 +223,7 @@ jobs:
   # ----------------- Mandatory Breaking Change Detection (always runs, including drafts) -----------------
   breaking-change-guard:
     name: Breaking Change Guard
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
     outputs:
@@ -371,7 +371,7 @@ jobs:
   # ----------------- Tier 1: Blocking Checks (no checkout, fail-fast) -----------------
   blocking-checks:
     name: Blocking Checks
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: [breaking-change-guard]
     if: always()
     outputs:
@@ -471,7 +471,7 @@ jobs:
   # `needs:` stays for ordering only. The verdict is no longer consulted.
   advisory-checks:
     name: Advisory Checks
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: [blocking-checks]
     if: always() && github.event_name == 'pull_request' && github.event.pull_request.draft != true
     outputs:
@@ -524,7 +524,7 @@ jobs:
   # Not on merge_group: the queue commit carries the same files the pull request did.
   runner-labels:
     name: Runner Labels Check
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     if: inputs.runner_labels_check && github.event_name == 'pull_request'
     steps:
       - name: Checkout code
@@ -538,7 +538,7 @@ jobs:
   # ----------------- PR Checks Summary -----------------
   pr-checks-summary:
     name: PR Checks Summary
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.PR_CHECKS_SUMMARY_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.PR_CHECKS_SUMMARY_RUNNERS || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: [breaking-change-guard, blocking-checks, advisory-checks]
     if: always()
 
@@ -561,7 +561,7 @@ jobs:
   # ----------------- PR Validation Summary Comment -----------------
   pr-validation-report:
     name: PR Validation Report
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: [breaking-change-guard, blocking-checks, advisory-checks]
     if: always() && github.event_name == 'pull_request' && github.event.pull_request.draft != true
 

@@ -1,5 +1,17 @@
 # Shared-workflows-public Changelog
 
+## [1.6.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.6.0)
+
+Features:
+- Route public repositories to `PUBLIC_RUNNERS`. (@bedatty)
+
+Improvements:
+- Send this repository's own workflows through `PUBLIC_RUNNERS` as well. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.5.1...v1.6.0)
+
+---
+
 ## [1.5.1](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.5.1)
 
 Fixes:
