@@ -53,7 +53,7 @@ permissions:
 jobs:
   propagate:
     name: Propagate ${{ inputs.new_tag || 'latest stable' }}
-    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       # ----------------- Source Checkout -----------------
       # Pin to the immutable workflow-file SHA that originated this run.

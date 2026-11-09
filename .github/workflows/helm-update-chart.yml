@@ -122,7 +122,7 @@ permissions:
 jobs:
   update-chart:
     name: Update Chart
-    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       # An org secret the calling repository has not been granted resolves to an
       # empty string, not an error. Fail here, naming it, instead of letting a

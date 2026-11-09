@@ -24,6 +24,8 @@ var_re="^vars(\\.[A-Za-z0-9_]+|\\[[[:space:]]*${quote}[A-Za-z0-9_]+${quote}[[:sp
 fallback_re="^VARS(\\.FALLBACK_RUNNERS|\\[[[:space:]]*${quote}FALLBACK_RUNNERS${quote}[[:space:]]*\\])\$"
 with_re='^([[:space:]]*)with:[[:space:]]*(#.*)?$'
 matrix_re='^matrix\.[A-Za-z0-9_.-]+$'
+# An optional leading term sends public repositories to their own variable.
+public_re="^\\([[:space:]]*github\\.event\\.repository\\.visibility[[:space:]]*==[[:space:]]*${quote}public${quote}[[:space:]]*&&[[:space:]]*vars\\.[A-Za-z0-9_]+[[:space:]]*\\)[[:space:]]*\\|\\|[[:space:]]*(.+)\$"
 
 # An inline array passes when one top-level member is exactly `self-hosted`: GitHub
 # then picks only a self-hosted runner, whatever the other members are (a
@@ -69,6 +71,7 @@ runs_on_problem() {
 
   inner=${BASH_REMATCH[1]}
   [[ $inner =~ $matrix_re ]] && return
+  [[ $inner =~ $public_re ]] && inner=${BASH_REMATCH[1]}
 
   IFS='|' read -r -a terms <<< "${inner//||/|}"
   for term in "${terms[@]}"; do
