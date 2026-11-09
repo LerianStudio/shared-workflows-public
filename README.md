@@ -51,6 +51,8 @@ Runners are chosen only by organization variables, so moving CI to another runne
 
 The caller's organization must define `GENERAL_RUNNERS` or `FALLBACK_RUNNERS` (LerianStudio defines both). A caller with neither gets an empty `runs-on` and the job is refused. The same applies to the `runs-on` examples in the composite READMEs.
 
+This repository's own CI (`self-*` workflows) reads `vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS` and never `GENERAL_RUNNERS`.
+
 **Public repositories.** Every chain except GitOps starts with `(github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS)`. When the calling repository is public and `PUBLIC_RUNNERS` is set, the job runs there. Otherwise the chain continues as listed. GitHub-hosted runners are free on public repositories, and a public repository must never run on a self-hosted runner. The check reads `visibility`, not `private`, because a payload without `repository` makes `!private` true and would send private repositories to the public runner.
 
 An unset variable falls through to the next one. A repository variable with the same name overrides the organization one, and keeps that repository out of an organization-wide switch.

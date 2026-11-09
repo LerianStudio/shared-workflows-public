@@ -46,7 +46,7 @@ jobs:
   # ----------------- Changed Files Detection -----------------
   changed-files:
     name: Detect Changed Files
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
       pull-requests: read
@@ -77,7 +77,7 @@ jobs:
     name: Branch Test Instructions
     needs: changed-files
     if: github.event_name == 'pull_request' && needs.changed-files.result == 'success'
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
       pull-requests: write
@@ -134,7 +134,7 @@ jobs:
   # ----------------- Breaking Change Guard Detector Tests -----------------
   breaking-change-guard-tests:
     name: Breaking Change Guard Detector Tests
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
     steps:
@@ -182,7 +182,7 @@ jobs:
   # insteadOf goes to a RUNNER_TEMP file deleted when its step ends.
   credential-hygiene:
     name: Credential Hygiene
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
     steps:
@@ -214,7 +214,7 @@ jobs:
   # ----------------- GitOps Chart Tooling Tests -----------------
   gitops-chart-tooling-tests:
     name: GitOps Chart Tooling Tests
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
     steps:
@@ -237,7 +237,7 @@ jobs:
   # ----------------- Commit Signature Validation Tests -----------------
   pr-commit-signatures-tests:
     name: Commit Signature Validation Tests
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
     steps:
@@ -252,7 +252,7 @@ jobs:
   # ----------------- CodeRabbit Collapse Tests -----------------
   coderabbit-collapse-tests:
     name: CodeRabbit Collapse Tests
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
     steps:
@@ -267,7 +267,7 @@ jobs:
   # ----------------- CodeRabbit Gate Tests -----------------
   coderabbit-gate-tests:
     name: CodeRabbit Gate Tests
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
     steps:
@@ -286,7 +286,7 @@ jobs:
   # ----------------- Helm Update Chart Tests -----------------
   helm-update-chart-tests:
     name: Helm Update Chart Tests
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
     steps:
@@ -317,7 +317,7 @@ jobs:
   # ----------------- Trivy Installer Tests -----------------
   trivy-install-tests:
     name: Trivy Installer Tests
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
     steps:
@@ -345,7 +345,7 @@ jobs:
   # ----------------- Non-Doc Changes Gate Tests -----------------
   non-doc-changes-tests:
     name: Non-Doc Changes Gate Tests
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
     steps:
@@ -360,7 +360,7 @@ jobs:
   # ----------------- Lerian Lib Version Advisory Tests -----------------
   lerian-lib-version-tests:
     name: Lerian Lib Version Advisory Tests
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
     steps:
@@ -375,7 +375,7 @@ jobs:
   # ----------------- Pre-release Check Tests -----------------
   prerelease-check-tests:
     name: Pre-release Check Tests
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
     steps:
@@ -390,7 +390,7 @@ jobs:
   # ----------------- Workflow Secrets Contract Tests -----------------
   workflow-secrets-contract-tests:
     name: Workflow Secrets Contract Tests
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
     steps:
@@ -415,7 +415,7 @@ jobs:
   # ----------------- YAML Lint -----------------
   yamllint:
     name: YAML Lint
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: changed-files
     if: needs.changed-files.outputs.yaml_files != ''
     steps:
@@ -430,7 +430,7 @@ jobs:
   # ----------------- Action Lint -----------------
   actionlint:
     name: Action Lint
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: changed-files
     if: needs.changed-files.outputs.workflow_files != ''
     steps:
@@ -445,7 +445,7 @@ jobs:
   # ----------------- Pinned Actions Check -----------------
   pinned-actions:
     name: Pinned Actions Check
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: changed-files
     if: needs.changed-files.outputs.action_files != ''
     steps:
@@ -460,7 +460,7 @@ jobs:
   # ----------------- CodeQL Action Version Consistency -----------------
   codeql-action-versions:
     name: CodeQL Action Version Consistency
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -474,7 +474,7 @@ jobs:
   # a chain without vars.FALLBACK_RUNNERS) cannot come back in a file this PR did not touch.
   runner-labels:
     name: Runner Labels Check
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -484,7 +484,7 @@ jobs:
 
   runner-labels-tests:
     name: Runner Labels Tests
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
     steps:
@@ -503,7 +503,7 @@ jobs:
   # looked at the diff would miss it.
   workflow-secrets-contract:
     name: Workflow Secrets Contract
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -514,7 +514,7 @@ jobs:
   # ----------------- Markdown Link Check -----------------
   markdown-link-check:
     name: Markdown Link Check
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: changed-files
     if: needs.changed-files.outputs.markdown_files != ''
     steps:
@@ -531,7 +531,7 @@ jobs:
     name: Spelling Check
     needs: changed-files
     if: needs.changed-files.outputs.all_files != ''
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -544,7 +544,7 @@ jobs:
   # ----------------- Shell Check -----------------
   shellcheck:
     name: Shell Check
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: changed-files
     if: needs.changed-files.outputs.action_files != ''
     steps:
@@ -559,7 +559,7 @@ jobs:
   # ----------------- README Check -----------------
   readme-check:
     name: README Check
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: changed-files
     if: needs.changed-files.outputs.action_files != ''
     steps:
@@ -574,7 +574,7 @@ jobs:
   # ----------------- Composite Schema Lint -----------------
   composite-schema:
     name: Composite Schema Lint
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: changed-files
     if: needs.changed-files.outputs.composite_files != ''
     steps:
@@ -589,7 +589,7 @@ jobs:
   # ----------------- CodeQL Analysis -----------------
   codeql:
     name: CodeQL Analysis
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: changed-files
     if: needs.changed-files.outputs.action_files != ''
     permissions:
@@ -631,7 +631,7 @@ jobs:
   # ----------------- Lint Report -----------------
   lint-report:
     name: Lint Report
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       actions: read
       contents: read
