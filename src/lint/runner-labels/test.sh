@@ -30,6 +30,9 @@ expect input-in-chain 1 "    runs-on: \${{ inputs.test_runner_type || vars.TEST_
 expect input-only 1 "    runs-on: \${{ inputs.runner_type }}"
 expect no-fallback 1 "    runs-on: \${{ vars.GENERAL_RUNNERS }}"
 expect fallback-not-last 1 "    runs-on: \${{ vars.FALLBACK_RUNNERS || vars.GENERAL_RUNNERS }}"
+expect private-only-term 0 "    runs-on: \${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}"
+expect private-only-term-literal 1 "    runs-on: \${{ (github.event.repository.visibility != 'public' && 'proxmox') || vars.FALLBACK_RUNNERS }}"
+expect private-only-term-last 1 "    runs-on: \${{ vars.GENERAL_RUNNERS || (github.event.repository.visibility != 'public' && vars.FALLBACK_RUNNERS) }}"
 expect self-hosted-literal-fallback 1 "    runs-on: \${{ vars.GITOPS_RUNNERS || 'eveo-lxc-runners' }}"
 expect job-input-value 1 '    with:
       test_runner_type: blacksmith-16vcpu-ubuntu-2404'

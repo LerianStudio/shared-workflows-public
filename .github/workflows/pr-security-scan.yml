@@ -471,7 +471,7 @@ jobs:
     name: Results
     needs: [prepare_matrix, security_scan, codeql_scan]
     if: always()
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.LIGHT_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
     outputs:
@@ -528,7 +528,7 @@ jobs:
     name: Notify
     needs: [prepare_matrix, security_scan, codeql_scan]
     if: always() && inputs.enable_slack_notification && needs.prepare_matrix.outputs.matrix != '[]'
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.LIGHT_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Slack Notification
         uses: LerianStudio/shared-workflows-public/src/notify/slack-notify@v1

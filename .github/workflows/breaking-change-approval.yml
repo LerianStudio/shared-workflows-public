@@ -258,7 +258,7 @@ jobs:
   # ----------------- Scope resolution and breaking-change detection -----------------
   detect:
     name: Detect Breaking Changes
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.LIGHT_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
       pull-requests: read
@@ -419,7 +419,7 @@ jobs:
   # an unprotected Environment before anything depends on it.
   request:
     name: Request Approval
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.LIGHT_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: [detect]
     if: always()
     permissions:
@@ -841,7 +841,7 @@ jobs:
   # pull request never puts an entry in anybody's review queue.
   approval:
     name: Approve Breaking Change
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.LIGHT_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: [detect, request]
     # `in-scope` is not optional here. Out of scope means no approval is
     # required — #918 started preserving the caller's real detection so the
@@ -884,7 +884,7 @@ jobs:
   # ----------------- Verdict -----------------
   outcome:
     name: Breaking Change Approval
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.LIGHT_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: [detect, request, approval]
     if: always()
     # Deliberately NOT declaring `actions: read`, and for the same reason not

@@ -13,6 +13,7 @@ Fails on a runner that org variables alone cannot move. Changing `GENERAL_RUNNER
 |---|---|---|
 | A chain of org variables ending in `FALLBACK_RUNNERS` | `runs-on: ${{ vars.GENERAL_RUNNERS \|\| vars.FALLBACK_RUNNERS }}` | ✅ |
 | The same chain led by the public-repository term | `runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) \|\| vars.GENERAL_RUNNERS \|\| vars.FALLBACK_RUNNERS }}` | ✅ only this exact condition, with a variable |
+| A term inside the chain skipped for public repositories | `(github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) \|\| vars.GENERAL_RUNNERS \|\| vars.FALLBACK_RUNNERS` | ✅ only this exact condition, with a variable; never as the last term |
 | A matrix reference | `runs-on: ${{ matrix.os }}` | ✅ |
 | A self-hosted label | `runs-on: eveo-lxc-runners`, `runs-on: [self-hosted, linux]` | ✅ stays literal |
 | A literal label | `runs-on: blacksmith-4vcpu-ubuntu-2404`, `runs-on: ubuntu-latest` | ❌ error |

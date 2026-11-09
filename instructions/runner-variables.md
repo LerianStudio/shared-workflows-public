@@ -17,7 +17,7 @@ Changing org variables must move every Lerian CI job in minutes. A literal label
 - No literal label, not even as the last fallback. No `inputs.*`.
 - No `runner_type` / `*_runner_type` passed to a shared workflow. They are deprecated and ignored.
 - Exceptions: self-hosted labels (`eveo-*`, `[self-hosted, …]`) and `${{ matrix.* }}`.
-- A light job (notification, change detection, gate, PR metadata check, summary, maintenance) puts `vars.LIGHT_RUNNERS` right before `vars.GENERAL_RUNNERS`, so it can move to a smaller runner without moving the rest.
+- A light job (notification, change detection, gate, PR metadata check, summary, maintenance) puts `(github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS)` right before `vars.GENERAL_RUNNERS`, so it can move to a smaller runner without moving the rest. The condition keeps public repositories off that pool even when `PUBLIC_RUNNERS` is unset.
 - A chain may start with `(github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS)` so public repositories run on their own variable. The shared workflows do this on every non-self-hosted job.
 
 ## Runner types

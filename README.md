@@ -45,9 +45,9 @@ Runners are chosen only by organization variables, so moving CI to another runne
 
 | Job | Resolves |
 |---|---|
-| With a job variable (`gate`, `test`, `lint`, `coverage`, `integration_test`, `build`, `security_scan`, `publish`, `pr_checks_summary`) | `vars.<JOB>_RUNNERS` → `vars.GENERAL_RUNNERS` → `vars.FALLBACK_RUNNERS` |
-| Light job with a job variable (`gate`, `pr_checks_summary`) | `vars.<JOB>_RUNNERS` → `vars.LIGHT_RUNNERS` → `vars.GENERAL_RUNNERS` → `vars.FALLBACK_RUNNERS` |
-| Light job | `vars.LIGHT_RUNNERS` → `vars.GENERAL_RUNNERS` → `vars.FALLBACK_RUNNERS` |
+| With a job variable (`test`, `lint`, `coverage`, `integration_test`, `build`, `security_scan`, `publish`) | `vars.<JOB>_RUNNERS` → `vars.GENERAL_RUNNERS` → `vars.FALLBACK_RUNNERS` |
+| Light job with a job variable (`gate`, `pr_checks_summary`) | `vars.<JOB>_RUNNERS` → `vars.LIGHT_RUNNERS` (private repositories only) → `vars.GENERAL_RUNNERS` → `vars.FALLBACK_RUNNERS` |
+| Light job | `vars.LIGHT_RUNNERS` (private repositories only) → `vars.GENERAL_RUNNERS` → `vars.FALLBACK_RUNNERS` |
 | Every other job | `vars.GENERAL_RUNNERS` → `vars.FALLBACK_RUNNERS` |
 | GitOps (ArgoCD sync) | `vars.GITOPS_RUNNERS` → `vars.FALLBACK_RUNNERS` |
 

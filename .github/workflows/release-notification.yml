@@ -126,7 +126,7 @@ permissions:
 jobs:
   notify:
     name: Release Notification
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.LIGHT_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     env:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -226,7 +226,7 @@ jobs:
       - name: Dry run summary
         if: ${{ inputs.dry_run }}
         env:
-          RESOLVED_RUNNER: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+          RESOLVED_RUNNER: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
           PRODUCT_NAME: ${{ inputs.product_name }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           DISCORD_COLOR: ${{ inputs.discord_color }}
