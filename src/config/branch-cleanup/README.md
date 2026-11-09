@@ -25,7 +25,7 @@ Composite action that deletes stale branches (no commits for N days, no open PRs
 # Use the pull request branch to test before merging
 jobs:
   cleanup:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: write
       pull-requests: read
@@ -43,7 +43,7 @@ jobs:
 ```yaml
 jobs:
   cleanup:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: write
     steps:

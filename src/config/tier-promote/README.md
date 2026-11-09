@@ -40,7 +40,7 @@ The caller must configure the signing identity first — the `tier-rule` ruleset
 ```yaml
 jobs:
   promote:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     environment: tier-0
     permissions:
       contents: read

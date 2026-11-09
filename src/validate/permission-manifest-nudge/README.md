@@ -55,7 +55,7 @@ The scope is deliberately narrow (direct lib-auth dep) to avoid noise on non-plu
 ```yaml
 jobs:
   permission-manifest-nudge:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     continue-on-error: true   # non-blocking by contract
     permissions:
       contents: read

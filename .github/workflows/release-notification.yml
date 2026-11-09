@@ -126,7 +126,7 @@ permissions:
 jobs:
   notify:
     name: Release Notification
-    runs-on: ${{ vars.GENERAL_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     env:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -226,7 +226,7 @@ jobs:
       - name: Dry run summary
         if: ${{ inputs.dry_run }}
         env:
-          RESOLVED_RUNNER: ${{ vars.GENERAL_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
+          RESOLVED_RUNNER: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
           PRODUCT_NAME: ${{ inputs.product_name }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           DISCORD_COLOR: ${{ inputs.discord_color }}

@@ -37,7 +37,7 @@ Depends on [`azure/setup-helm`](https://github.com/Azure/setup-helm) to install 
 ```yaml
 jobs:
   alpha:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
       packages: write

@@ -26,7 +26,7 @@ Composite action that deletes old GitHub Actions workflow runs to keep the repos
 ```yaml
 jobs:
   cleanup:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       actions: write
     steps:

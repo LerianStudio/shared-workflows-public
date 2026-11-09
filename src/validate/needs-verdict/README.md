@@ -38,7 +38,7 @@ jobs:
     name: CodeRabbit Verdict
     needs: [metadata, changes, go-analysis, security, lib-version-gate]
     if: always()
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     outputs:
       passed: ${{ steps.verdict.outputs.passed }}
     steps:

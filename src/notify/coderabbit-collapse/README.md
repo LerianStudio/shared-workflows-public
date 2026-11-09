@@ -70,7 +70,7 @@ A failed mutation is a `::warning::`, never a failed job. Tidying is not worth a
 ```yaml
 jobs:
   collapse:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       pull-requests: write
     steps:

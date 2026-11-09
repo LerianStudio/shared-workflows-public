@@ -19,7 +19,7 @@ Automatically adds labels to a PR based on changed files using the [actions/labe
 ```yaml
 jobs:
   pr-labels:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6

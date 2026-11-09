@@ -95,7 +95,7 @@ jobs:
 
 | Name             | Type    | Default                     | Description                                                                                  |
 |------------------|---------|-----------------------------|----------------------------------------------------------------------------------------------|
-| `runner_type`    | string  | `blacksmith-4vcpu-ubuntu-2404` | Runner label                                                                              |
+| `runner_type`    | string  | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |
 | `go_mod_path`    | string  | `go.mod`                    | Path to `go.mod` relative to the repo root                                                   |
 | `ignore_file`    | string  | `.lerianstudiolibignore`    | Path to the optional ignore file. Missing file produces a warning, not a failure.            |
 | `check_indirect` | boolean | `false`                     | Also check transitive (`// indirect`) deps                                                   |

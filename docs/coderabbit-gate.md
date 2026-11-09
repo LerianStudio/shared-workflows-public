@@ -169,7 +169,7 @@ than which of them get reviewed.
 | `ignore_authors` | string | `dependabot[bot]` | Comma-separated logins never reviewed, checked before scope as a veto. A trailing `[bot]` is optional. Empty reviews every author. |
 | `label` | string | `review-ready` | Visual marker applied alongside the command. Cosmetic — failing to apply it never fails the job. Empty disables it. |
 | `dry_run` | boolean | `false` | Log the decision without changing any label. |
-| `runner_type` | string | `blacksmith-4vcpu-ubuntu-2404` | Runner label. Overridden by `vars.GENERAL_RUNNERS`. |
+| `runner_type` | string | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |
 
 Whitespace around commas is tolerated: `"develop, release-candidate"` works.
 

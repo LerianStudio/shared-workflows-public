@@ -92,7 +92,7 @@ jobs:
     # which a hosted runner cannot reach — the sync times out after the
     # commit has already landed. gitops-update.yml resolves its runner the
     # same way for the same reason.
-    runs-on: ${{ vars.GITOPS_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.GITOPS_RUNNERS || vars.FALLBACK_RUNNERS }}
     outputs:
       has_changes: ${{ steps.update.outputs.has-changes }}
       level: ${{ steps.update.outputs.level }}

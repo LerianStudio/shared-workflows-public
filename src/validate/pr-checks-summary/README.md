@@ -40,7 +40,7 @@ When `blocking-checks-result` is omitted, `skipped`, or `success`, the summary r
 ```yaml
 jobs:
   pr-checks-summary:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     needs: [blocking-checks, advisory-checks]
     if: always()
     steps:

@@ -103,7 +103,7 @@ jobs:
   # whatever `main` looks like at that moment.
   resolve:
     name: Open train
-    runs-on: ${{ vars.GENERAL_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     outputs:
       tag: ${{ steps.tag.outputs.value }}
       sha: ${{ steps.tag.outputs.sha }}
@@ -237,7 +237,7 @@ jobs:
     if: >-
       inputs.only_tiers == ''
       || contains(format(',{0},', inputs.only_tiers), ',tier-0,')
-    runs-on: ${{ vars.GENERAL_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     environment: tier-0
     # Per-tier group, never shared: a shared group would park this promotion
     # behind an approval pending on a later tier. Because a group holds at most
@@ -316,7 +316,7 @@ jobs:
       && needs.resolve.result == 'success'
       && (needs.tier-0.result == 'success' || needs.tier-0.result == 'skipped')
       && (inputs.only_tiers == '' || contains(format(',{0},', inputs.only_tiers), ',tier-1,'))
-    runs-on: ${{ vars.GENERAL_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     environment: tier-1
     concurrency:
       group: tier-promote-1
@@ -374,7 +374,7 @@ jobs:
       && needs.resolve.result == 'success'
       && (needs.tier-1.result == 'success' || needs.tier-1.result == 'skipped')
       && (inputs.only_tiers == '' || contains(format(',{0},', inputs.only_tiers), ',tier-2,'))
-    runs-on: ${{ vars.GENERAL_RUNNERS || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     environment: tier-2
     concurrency:
       group: tier-promote-2

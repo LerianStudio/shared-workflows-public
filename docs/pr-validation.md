@@ -158,8 +158,8 @@ jobs:
 
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
-| `runner_type` | string | `blacksmith-4vcpu-ubuntu-2404` | GitHub runner type |
-| `pr_checks_summary_runner_type` | string | `''` | Optional runner override for the PR Checks Summary job only; empty falls back to `vars.GENERAL_RUNNERS`, then `runner_type` |
+| `runner_type` | string | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |
+| `pr_checks_summary_runner_type` | string | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |
 | `dry_run` | boolean | `false` | Preview validations without posting comments or labels |
 | `pr_title_types` | string | (see below) | Allowed commit types (newline-separated) |
 | `pr_title_scopes` | string | `''` | Allowed scopes (newline-separated, empty = any) |
@@ -174,6 +174,7 @@ jobs:
 | `automation_only_source_patterns` | string | `''` | Source patterns (pipe-separated) accepted only on PRs opened by automation, e.g. `backmerge/*`. Restricts rather than grants — the pattern must still be allowed by `allowed_source_branches` or `source_branch_rules` |
 | `automation_source_actors` | string | `'lerian-studio-midaz-push-bot[bot],lerian-studio'` | Comma-separated logins counting as automation. A list is authoritative: those logins are accepted whatever their account type, which matters because `lerian-studio` is a `User`, not a `Bot`. Empty accepts any author of type `Bot` |
 | `require_verified_commits` | boolean | `true` | Block the PR when any of its commits is unsigned or has an unverified signature |
+| `runner_labels_check` | boolean | `false` | Run [`src/lint/runner-labels`](../src/lint/runner-labels/) as its own `Runner Labels Check` job on `pull_request`: fails when a `runs-on` or `*_runner_type` line does not resolve through org variables. Not part of `Blocking Checks` or the summary yet. See [Runner variables](../README.md#runner-variables) |
 | `enable_breaking_change_approval` | boolean | `true` | Hold a PR carrying breaking-change commits at the `breaking-approval` Environment until a reviewer approves it. Requires the Environment to exist with required reviewers — see [`breaking-change-approval.md`](breaking-change-approval.md) |
 | `breaking_change_scope_rules` | string | `{"develop": "*", "main": "hotfix/*"}` | JSON object mapping an exact base branch to the pipe-separated head globs gated for breaking changes |
 | `breaking_change_additional_scope_rules` | string | `''` | JSON object merged over `breaking_change_scope_rules`, key by key, for repository-specific promotion paths |
