@@ -1,5 +1,14 @@
 # Shared-workflows-public Changelog
 
+## [1.5.1](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.5.1)
+
+Fixes:
+- Accept self-hosted runner arrays with matrix labels in shared-workflows-public. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.5.0...v1.5.1)
+
+---
+
 ## [1.5.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.5.0)
 
 Features:
