@@ -1,5 +1,22 @@
 # Shared-workflows-public Changelog
 
+## [1.7.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.7.0)
+
+Features:
+- Route light jobs through `LIGHT_RUNNERS`. (@bedatty)
+
+Fixes:
+- Keep public repositories off `LIGHT_RUNNERS`. (@bedatty)
+
+Improvements:
+- List runner variables without their values in the documentation. (@bedatty)
+- List the organization runner types and current variable values in the documentation. (@bedatty)
+- Run this repository's CI on `PUBLIC_RUNNERS`. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.6.0...v1.7.0)
+
+---
+
 ## [1.6.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.6.0)
 
 Features:
