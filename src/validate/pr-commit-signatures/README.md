@@ -78,7 +78,7 @@ See [Managing commit signature verification](https://docs.github.com/en/authenti
 ```yaml
 jobs:
   commit-signatures:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read        # required to fetch the commit range past the 250-commit cap
       pull-requests: read

@@ -501,7 +501,7 @@ Declare them with [`labels-sync`](labels-sync.md), or pass `label: ''` /
 | `status_context` | string | *(empty)* | Publish the verdict as a commit status under this name — the one check name that is identical in every repository. Through `pr-validation` this defaults to the `BREAKING_APPROVAL_STATUS_CONTEXT` organisation variable. Needs `statuses: write`. Empty publishes nothing. |
 | `enable_comment` | boolean | `true` | Post and keep the comment updated. |
 | `dry_run` | boolean | `false` | Report what would be gated without commenting, labelling, requesting an approval, or failing. |
-| `runner_type` | string | `blacksmith-4vcpu-ubuntu-2404` | Runner label. Overridden by `vars.GENERAL_RUNNERS`. |
+| `runner_type` | string | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |
 
 Whitespace around commas is tolerated.
 

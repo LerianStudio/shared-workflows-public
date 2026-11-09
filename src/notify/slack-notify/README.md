@@ -24,7 +24,7 @@ Composite action that sends a workflow status notification to Slack with rich fo
 ```yaml
 jobs:
   build:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Build
         run: make build
@@ -32,7 +32,7 @@ jobs:
   notify:
     needs: build
     if: always()
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Slack Notification
         uses: LerianStudio/shared-workflows-public/src/notify/slack-notify@v1.x.x

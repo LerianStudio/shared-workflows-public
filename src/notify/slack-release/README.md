@@ -26,7 +26,7 @@ Composite action that sends a release notification to a Slack channel via webhoo
 ```yaml
 jobs:
   notify:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - uses: LerianStudio/shared-workflows-public/src/notify/slack-release@v1.2.3
         with:

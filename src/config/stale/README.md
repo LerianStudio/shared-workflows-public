@@ -31,7 +31,7 @@ Composite action that flags and closes stale PRs and issues. Wraps [actions/stal
 ```yaml
 jobs:
   stale:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       pull-requests: write
       issues: write

@@ -31,15 +31,15 @@ This distinguishes the two skips that used to look identical: a pipeline the cal
 
 | Input | Description | Type | Default |
 |-------|-------------|------|---------|
-| `runner_type` | GitHub runner type | string | `blacksmith-4vcpu-ubuntu-2404` |
-| `gate_runner_type` | Optional runner override for the umbrella utility jobs only (Detect non-doc changes + Go Analysis / Security / Lib Version result gates); empty falls back to `vars.GENERAL_RUNNERS`, then `runner_type` | string | `''` |
-| `lint_runner_type` | Optional runner override for the Go analysis Lint jobs only | string | `''` |
-| `test_runner_type` | Optional runner override for the Go analysis Tests jobs only | string | `''` |
-| `integration_test_runner_type` | Optional runner override for the Go analysis Integration Tests jobs only | string | `''` |
-| `coverage_runner_type` | Optional runner override for the Go analysis Coverage jobs only | string | `''` |
-| `build_runner_type` | Optional runner override for the Go analysis Build jobs only | string | `''` |
-| `security_scan_runner_type` | Optional runner override for the security_scan jobs only | string | `''` |
-| `pr_checks_summary_runner_type` | Optional runner override for the PR Checks Summary job only | string | `''` |
+| `runner_type` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). | string | `''` |
+| `gate_runner_type` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). | string | `''` |
+| `lint_runner_type` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). | string | `''` |
+| `test_runner_type` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). | string | `''` |
+| `integration_test_runner_type` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). | string | `''` |
+| `coverage_runner_type` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). | string | `''` |
+| `build_runner_type` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). | string | `''` |
+| `security_scan_runner_type` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). | string | `''` |
+| `pr_checks_summary_runner_type` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). | string | `''` |
 | `dry_run` | Preview metadata validations without posting comments/labels | boolean | `false` |
 | `run_metadata` | Run the PR metadata pipeline (title, scopes, labeler, size, breaking-change guard). Set `false` in a multi-component repository that also calls `js-pr-validation.yml`, so exactly one umbrella owns PR metadata | boolean | `true` |
 | `run_go_analysis` | Run the Go analysis pipeline | boolean | `true` |
@@ -276,7 +276,6 @@ jobs:
     with:
       go_version: "1.26.4"
       golangci_lint_version: "v2.12.2"
-      integration_test_runner_type: blacksmith-8vcpu-ubuntu-2404
       coverage_threshold: 79
       fail_on_coverage_threshold: true
       go_private_modules: "github.com/LerianStudio/*"

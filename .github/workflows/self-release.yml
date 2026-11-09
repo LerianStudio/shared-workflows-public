@@ -42,7 +42,6 @@ jobs:
       || github.ref == 'refs/heads/main'
     uses: ./.github/workflows/release.yml
     with:
-      runner_type: ubuntu-latest
       enable_changelog: ${{ github.ref == 'refs/heads/main' }}
       enable_major_tag: ${{ github.ref == 'refs/heads/main' }}
       # The doc gate is for callers, whose pipeline edits ship byte-identical

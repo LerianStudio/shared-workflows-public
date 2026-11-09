@@ -88,7 +88,7 @@ notify:
 | `workflow_name` | string | Yes | - | Name of the calling workflow |
 | `failed_jobs` | string | No | `''` | Comma-separated list of failed job names |
 | `custom_message` | string | No | `''` | Optional custom message to include |
-| `runner_type` | string | No | `firmino-lxc-runners` | GitHub runner type |
+| `runner_type` | string | No | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |
 
 ## Secrets
 

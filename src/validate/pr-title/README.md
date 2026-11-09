@@ -21,7 +21,7 @@ Validates PR title follows [Conventional Commits](https://www.conventionalcommit
 ```yaml
 jobs:
   pr-title:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Validate PR Title
         uses: LerianStudio/shared-workflows-public/src/validate/pr-title@v1.x.x
