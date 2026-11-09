@@ -18,7 +18,7 @@ Auto-assigns the PR author as assignee when no one is assigned. Skips bot accoun
 ```yaml
 jobs:
   pr-metadata:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Auto-assign PR author
         uses: LerianStudio/shared-workflows-public/src/validate/pr-metadata@v1.x.x

@@ -32,13 +32,12 @@ jobs:
 
 > **Required Secrets**: `LERIAN_STUDIO_MIDAZ_PUSH_BOT_APP_ID`, `LERIAN_STUDIO_MIDAZ_PUSH_BOT_PRIVATE_KEY`, `LERIAN_CI_CD_USER_GPG_KEY`, `LERIAN_CI_CD_USER_GPG_KEY_PASSWORD`, `LERIAN_CI_CD_USER_NAME`, `LERIAN_CI_CD_USER_EMAIL`
 
-### With Custom Runner
+### With a Pinned semantic-release Version
 
 ```yaml
 release:
   uses: LerianStudio/shared-workflows-public/.github/workflows/release.yml@tier-1
   with:
-    runner_type: "blacksmith-4vcpu-ubuntu-2404"
     semantic_version: "23.0.8"
   secrets: inherit
 ```
@@ -127,8 +126,8 @@ is the correct setting.
 | `release_on_workflow_changes` | boolean | `false` | Release when a branch push touches only `.github/workflows/`, `.github/actions/` or `.github/scripts/`. Turn it on only where the released artifact lives under `.github/` |
 | `semantic_version` | string | `23.0.8` | Semantic release version to use |
 | `changelog_release_branch` | string | `''` | Branch whose tags get a changelog. Empty derives it from the run: the branch that triggered the release, falling back to searching which branch contains the tag commit for tag-triggered runs. Set it only for layouts neither step can infer |
-| `runner_type` | string | `firmino-lxc-runners` | GitHub runner type |
-| `publish_runner_type` | string | `''` | Optional runner override for the Release (publish) jobs only; empty falls back to `vars.GENERAL_RUNNERS`, then `runner_type` |
+| `runner_type` | string | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |
+| `publish_runner_type` | string | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |
 | `backmerge_enabled` | boolean | `true` | Backmerge the release branch into the target branch after a successful release |
 | `backmerge_source` | string | `main` | Release branch eligible for backmerge; backmerge runs only when the release ref matches this |
 | `backmerge_target` | string | `develop` | Branch that receives the backmerge |

@@ -86,7 +86,7 @@ verified anything.
 ```yaml
 jobs:
   verify-images:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
       packages: read

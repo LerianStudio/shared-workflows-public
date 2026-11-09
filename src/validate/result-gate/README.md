@@ -28,7 +28,7 @@ jobs:
     name: Go Analysis
     needs: [go-analysis]
     if: always()
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Aggregate Go Analysis result
         uses: LerianStudio/shared-workflows-public/src/validate/result-gate@v1

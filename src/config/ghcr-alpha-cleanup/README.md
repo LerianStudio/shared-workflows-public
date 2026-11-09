@@ -34,7 +34,7 @@ Plus `keep-n-most-recent` as a floor so it never wipes a package entirely, and `
 ```yaml
 jobs:
   cleanup:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - uses: LerianStudio/shared-workflows-public/src/config/ghcr-alpha-cleanup@v1
         with:

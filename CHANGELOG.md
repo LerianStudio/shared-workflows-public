@@ -1,5 +1,14 @@
 # Shared-workflows-public Changelog
 
+## [1.4.10](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.10)
+
+Improvements:
+- Bumped `rtCamp/action-slack-notify` from `2.4.0` to `2.4.1` in the notifications group. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.4.9...v1.4.10)
+
+---
+
 ## [1.4.9](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.4.9)
 
 Improvements:

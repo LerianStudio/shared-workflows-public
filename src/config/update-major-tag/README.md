@@ -39,7 +39,7 @@ _None._ All behavior is derived from the repository's tag list.
 ```yaml
 jobs:
   update-major-tag:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: write
     steps:
