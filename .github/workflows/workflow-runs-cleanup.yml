@@ -40,7 +40,7 @@ permissions:
 jobs:
   cleanup:
     name: Delete old workflow runs
-    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Delete old workflow runs
         uses: LerianStudio/shared-workflows-public/src/config/workflow-runs-cleanup@v1

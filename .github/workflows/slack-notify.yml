@@ -41,7 +41,7 @@ on:
 jobs:
   notify:
     name: Send Notification
-    runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Check if Slack webhook is configured
         id: check_webhook
