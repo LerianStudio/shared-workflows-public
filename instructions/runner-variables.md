@@ -26,44 +26,44 @@ The runner labels available to Lerian repositories today:
 
 | Label | Kind | Where it runs | Notes |
 |---|---|---|---|
-| `ubuntu-24.04` | GitHub-hosted | GitHub | 2 vCPU on private repositories, billed per minute; free on public ones. The only label a public repository may use |
-| `proxmox` | Self-hosted, Linux x64 | Proxmox VMs (`gh-runner-proxmox-ubuntu-x64-*`), runner group `Default` | Private repositories only |
-| `eveo-lxc-runners` | Self-hosted | Eveo LXC containers | Reaches ArgoCD and the deployed environments. Private repositories only |
-| `eveo-anacleto-lxc-runners` | Self-hosted | Eveo LXC containers | Reaches anacleto over Tailscale. Private repositories only |
-| `blacksmith-{2,4,8,16}vcpu-ubuntu-2404` | Blacksmith | Blacksmith | No variable points to it today. Kept in `.github/actionlint.yml` so a switch back is a variable change |
+| `ubuntu-24.04` | GitHub-hosted | GitHub | 2 vCPU on private repositories, billed per minute; free on public ones. The only kind a public repository may use |
+| `proxmox` | Self-hosted, Linux x64 | Proxmox VMs (`gh-runner-proxmox-ubuntu-x64-*`), runner group `default` | Never from a public repository |
+| `eveo-lxc-runners` | Self-hosted | Eveo LXC containers | Reaches ArgoCD and the deployed environments. Never from a public repository |
+| `eveo-anacleto-lxc-runners` | Self-hosted | Eveo LXC containers | Reaches anacleto over Tailscale. Never from a public repository |
+| `blacksmith-{2,4,8,16}vcpu-ubuntu-2404` | Blacksmith | Blacksmith | The labels stay in `.github/actionlint.yml` |
 
 `go-ci` also runs its test matrix on GitHub-hosted macOS and Windows runners, built from its `operating_systems` input.
 
 ## Variables
 
-Organization variables. Values read on 2026-11-09 through `gh api repos/LerianStudio/<repo>/actions/organization-variables`, which any member can call; listing them at the org level needs an org admin.
+Organization variables. Their values change over time, so this guide lists only what each one is for. To see the current value from any repository: `gh api repos/LerianStudio/<repo>/actions/organization-variables --jq '.variables[] | select(.name | endswith("_RUNNERS")) | "\(.name)=\(.value)"'`.
 
-| Variable | Value today | Use |
-|---|---|---|
-| `GENERAL_RUNNERS` | `ubuntu-24.04` | Default for shared jobs, after the job variable |
-| `LIGHT_RUNNERS` | `proxmox` | Light jobs: notifications, change detection, gates, PR metadata checks, summaries, maintenance |
-| `FALLBACK_RUNNERS` | `ubuntu-24.04` | Last link of every chain |
-| `PUBLIC_RUNNERS` | `ubuntu-24.04` | Every non-self-hosted shared job when the calling repository is public |
-| `SMALL_RUNNERS` | `ubuntu-24.04` | Repository workflows sized for 2 vCPU |
-| `LARGE_RUNNERS` | `ubuntu-24.04` | Repository workflows sized for 8 vCPU |
-| `XLARGE_RUNNERS` | `ubuntu-24.04` | Repository workflows sized for 16 vCPU |
-| `GITOPS_RUNNERS` | `eveo-lxc-runners` | GitOps jobs, which must reach ArgoCD |
-| `DEPLOYED_ENV_RUNNERS` | `eveo-lxc-runners` | ApiDog and End-to-End tests, which must reach the deployed environment |
-| `UNGOLIANT_RUNNERS` | `eveo-anacleto-lxc-runners` | Ungoliant release diff, which needs Tailscale to anacleto. Visible to selected repositories only |
-| `COVERAGE_RUNNERS` | `proxmox` | Coverage jobs |
-| `GATE_RUNNERS` | `proxmox` | Umbrella gates |
-| `PR_CHECKS_SUMMARY_RUNNERS` | `proxmox` | PR Checks Summary |
-| `BUILD_RUNNERS` | `ubuntu-24.04` | Build jobs |
-| `CUSTOM_CHECKS_RUNNERS` | `ubuntu-24.04` | Custom checks |
-| `E2E_RUNNERS` | `ubuntu-24.04` | Playwright E2E |
-| `INSTALL_TEST_RUNNERS` | `ubuntu-24.04` | Not read by the shared workflows; used by the `helm` repository's chart install tests |
-| `INTEGRATION_TEST_RUNNERS` | `ubuntu-24.04` | Integration tests |
-| `LINT_RUNNERS` | `ubuntu-24.04` | Lint jobs |
-| `PUBLISH_RUNNERS` | `ubuntu-24.04` | Release publish jobs |
-| `SECURITY_SCAN_RUNNERS` | `ubuntu-24.04` | Security scans |
-| `TEST_RUNNERS` | `ubuntu-24.04` | Test jobs |
-| `RELEASE_RUNNERS` | `ubuntu-24.04` | Not read by the shared workflows; used by the `helm` repository's own release workflows |
-| `DIGGER_RUNNERS` | `ubuntu-24.04` | Not read by the shared workflows; used by `lerian-infrastructure`'s Digger workflow |
+| Variable | Use |
+|---|---|
+| `GENERAL_RUNNERS` | Default for shared jobs, after the job variable |
+| `LIGHT_RUNNERS` | Light jobs: notifications, change detection, gates, PR metadata checks, summaries, maintenance |
+| `FALLBACK_RUNNERS` | Last link of every chain |
+| `PUBLIC_RUNNERS` | Every non-self-hosted shared job when the calling repository is public |
+| `SMALL_RUNNERS` | Repository workflows sized for 2 vCPU |
+| `LARGE_RUNNERS` | Repository workflows sized for 8 vCPU |
+| `XLARGE_RUNNERS` | Repository workflows sized for 16 vCPU |
+| `GITOPS_RUNNERS` | GitOps jobs, which must reach ArgoCD |
+| `DEPLOYED_ENV_RUNNERS` | ApiDog and End-to-End tests, which must reach the deployed environment |
+| `UNGOLIANT_RUNNERS` | Ungoliant release diff, which needs Tailscale to anacleto. Visible to selected repositories only |
+| `COVERAGE_RUNNERS` | Coverage jobs |
+| `GATE_RUNNERS` | Umbrella gates |
+| `PR_CHECKS_SUMMARY_RUNNERS` | PR Checks Summary |
+| `BUILD_RUNNERS` | Build jobs |
+| `CUSTOM_CHECKS_RUNNERS` | Custom checks |
+| `E2E_RUNNERS` | Playwright E2E |
+| `INSTALL_TEST_RUNNERS` | Not read by the shared workflows; used by the `helm` repository's chart install tests |
+| `INTEGRATION_TEST_RUNNERS` | Integration tests |
+| `LINT_RUNNERS` | Lint jobs |
+| `PUBLISH_RUNNERS` | Release publish jobs |
+| `SECURITY_SCAN_RUNNERS` | Security scans |
+| `TEST_RUNNERS` | Test jobs |
+| `RELEASE_RUNNERS` | Not read by the shared workflows; used by the `helm` repository's own release workflows |
+| `DIGGER_RUNNERS` | Not read by the shared workflows; used by `lerian-infrastructure`'s Digger workflow |
 
 A job variable applies to every repository: change it only when that kind of job needs another runner organization-wide. See [Runner variables](../README.md#runner-variables).
 
@@ -129,9 +129,9 @@ It prints nothing once every job resolves through org variables. To keep it that
 
 ## Switching runners
 
-Set each variable that holds the runner being left to the target label. Today that is every variable in the table above except the three Eveo ones. A variable cannot reference another one, so each must be changed. No PR.
+Set each variable that holds the runner being left to the target label. Every variable in the table above except the three Eveo ones. A variable cannot reference another one, so each must be changed. No PR.
 
-`ubuntu-24.04` (`FALLBACK_RUNNERS`) is a GitHub-hosted runner: on private repositories it has 2 vCPU and bills per minute. It is the safety net at the end of every chain. Leave the Eveo variables (`GITOPS_RUNNERS`, `DEPLOYED_ENV_RUNNERS`, `UNGOLIANT_RUNNERS`) alone: those jobs need the Eveo network.
+`FALLBACK_RUNNERS` is the safety net at the end of every chain: keep it on a GitHub-hosted runner, which depends on no infrastructure of ours. Leave the Eveo variables (`GITOPS_RUNNERS`, `DEPLOYED_ENV_RUNNERS`, `UNGOLIANT_RUNNERS`) alone: those jobs need the Eveo network.
 
 ## Reference
 
