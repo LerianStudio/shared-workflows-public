@@ -1,5 +1,14 @@
 # Shared-workflows-public Changelog
 
+## [1.7.1](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.7.1)
+
+Fixes:
+- Follow `RADAGAST_BLOCKED_AUTHORS` in the `coderabbit-gate` workflow to ensure proper handling of blocked authors. (@fredcamaral)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.7.0...v1.7.1)
+
+---
+
 ## [1.7.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.7.0)
 
 Features:
