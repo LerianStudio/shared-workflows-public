@@ -305,11 +305,10 @@ remembers which one was approved, and only asks again when that changes.
 | rewords the breaking commit | **yes** — it is different text now |
 | adds another breaking commit | **yes** |
 
-This matters more than convenience, because of how the review gate is wired:
-CodeRabbit only runs once every check has passed, which includes this one. So
-without the memory, every iteration of *approve → review → fix → push* would
-need a fresh human approval to get the next review — and the reviewer would be
-answering the identical question each time. A question asked five times gets a
+This matters more than convenience. Without the memory, every iteration of
+*approve → review → fix → push* would need a fresh human approval to turn the
+check green again — and the reviewer would be answering the identical question
+each time. A question asked five times gets a
 reflex answer by the third.
 
 **How it is remembered.** `breaking-change-commits` digests the SHAs of the

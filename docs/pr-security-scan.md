@@ -237,8 +237,7 @@ permissions:
 
 Read this rather than the job's own result when gating on the scan: a reusable
 workflow's result also folds in `notify`, and a Slack delivery that did not land
-is not a security finding. Both PR umbrellas read it to decide whether to request
-a CodeRabbit review — see [coderabbit-gate](./coderabbit-gate.md).
+is not a security finding.
 
 ## Workflow Steps
 
