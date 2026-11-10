@@ -216,6 +216,19 @@ runs:
         CHART_VERSION: ${{ inputs.chart-version }}
       run: |
         set -euo pipefail
+        # Persistent runners keep their home directory, so a login written there
+        # outlives its token, and every later Helm call to ghcr.io on that machine
+        # sends the expired credential and gets 403, public charts included. Log
+        # in against a copy under RUNNER_TEMP instead, seeded from the caller's
+        # config so a registry it already logged in to stays visible; the render
+        # gate reads it through GITHUB_ENV.
+        caller_config=$(helm env HELM_REGISTRY_CONFIG)
+        registry_config=$(mktemp "${RUNNER_TEMP}/gitops-chart-registry.XXXXXX")
+        if [[ -f "$caller_config" ]]; then
+          cp "$caller_config" "$registry_config"
+        fi
+        export HELM_REGISTRY_CONFIG="$registry_config"
+        echo "HELM_REGISTRY_CONFIG=$registry_config" >> "$GITHUB_ENV"
         printf '%s' "$REGISTRY_TOKEN" | helm registry login ghcr.io -u x-access-token --password-stdin
         # rm, not mkdir -p: helm refuses to untar over an existing directory, and
         # this job runs on a self-hosted pool whose workspace is not new each

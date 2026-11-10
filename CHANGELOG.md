@@ -1,5 +1,14 @@
 # Shared-workflows-public Changelog
 
+## [1.7.2](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.7.2)
+
+Fixes:
+- Retired the CodeRabbit integration from the shared-workflows-public. (@fredcamaral)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.7.1...v1.7.2)
+
+---
+
 ## [1.7.1](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.7.1)
 
 Fixes:
