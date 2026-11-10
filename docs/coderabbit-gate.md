@@ -173,7 +173,7 @@ than which of them get reviewed.
 | `head_sha` | string | — | Commit the verdict covers. Required — also the idempotency key. |
 | `review_base_branches` | string | `develop` | Comma-separated exact base branch names. Empty removes this dimension. |
 | `review_head_patterns` | string | `hotfix/*` | Comma-separated globs matched against the head branch. Empty removes this dimension. |
-| `ignore_authors` | string | `dependabot[bot]` | Comma-separated logins never reviewed, checked before scope as a veto. A trailing `[bot]` is optional. Empty reviews every author. |
+| `ignore_authors` | string | `dependabot[bot]` | Comma-separated logins never reviewed, checked before scope as a veto. A trailing `[bot]` is optional. Empty disables only this veto; the Radagast veto still skips every person off `RADAGAST_BLOCKED_AUTHORS`. |
 | `label` | string | `review-ready` | Visual marker applied alongside the command. Cosmetic — failing to apply it never fails the job. Empty disables it. |
 | `dry_run` | boolean | `false` | Log the decision without changing any label. |
 | `runner_type` | string | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |

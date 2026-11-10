@@ -67,7 +67,7 @@ on:
         type: string
         default: hotfix/*
       ignore_authors:
-        description: Comma-separated logins whose pull requests are never reviewed, checked before scope as a veto. Write the login however you know it — `dependabot`, `dependabot[bot]` and `app/dependabot` are the same entry, since REST, GraphQL and the `gh` CLI each spell a bot differently. Empty reviews every author.
+        description: Comma-separated logins whose pull requests are never reviewed, checked before scope as a veto. Write the login however you know it — `dependabot`, `dependabot[bot]` and `app/dependabot` are the same entry, since REST, GraphQL and the `gh` CLI each spell a bot differently. Empty disables only this veto; the Radagast veto still skips every person off `RADAGAST_BLOCKED_AUTHORS`.
         required: false
         type: string
         default: dependabot[bot]
