@@ -11,6 +11,8 @@ Does **not** run semantic-release: no `Chart.yaml` commit, git tag, CHANGELOG, b
 
 Depends on [`azure/setup-helm`](https://github.com/Azure/setup-helm) to install the `helm` CLI on the runner — required for `helm dependency update`, `helm lint`, `helm package`, and `helm push` to the OCI registry. It is the maintained, official installer, avoiding a hand-rolled download/verify step.
 
+The `helm registry login` before the push writes to a copy of the Helm registry config under `RUNNER_TEMP`, seeded from the caller's, and `HELM_REGISTRY_CONFIG` points at that copy for the rest of the job. The credential is never left in the runner's home directory, where on a persistent self-hosted runner it would outlive its token and make later Helm calls to that registry fail with `403 denied`.
+
 ## Inputs
 
 | Input | Description | Required | Default |

@@ -190,3 +190,5 @@ permissions:
 ```
 
 Write access to the GitOps repository, and read access to the deployment matrix in `LerianStudio/github-actions-shared-workflows`, come from `gitops-token`, not from the job's `GITHUB_TOKEN`. A token scoped to the GitOps repository alone (a GitHub App installation token limited to it, for instance) fails at the matrix checkout. The token is never persisted in the checkout: `helmfile` can execute release hooks against it, so credentials are supplied to git only at push time.
+
+The `ghcr.io` login made with `gitops-token` is not persisted on the runner either. It goes to a copy of the Helm registry config under `RUNNER_TEMP`, seeded from the caller's, and `HELM_REGISTRY_CONFIG` points at that copy for the rest of the job. On a self-hosted runner whose home directory survives between jobs, a login written there outlives its token, and every later Helm call to `ghcr.io` on that machine then fails with `403 denied`, public charts included.
