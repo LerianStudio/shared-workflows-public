@@ -129,7 +129,7 @@ same shape as the "release PRs reviewed anyway" failure in the table above.
 Dependabot is the default because its bumps target the same base branches as
 human work, which leaves the base dimension unable to separate them, and the
 review allowance is hourly: a batch of bumps can consume it before a human PR
-asks for anything. Set it to an empty string to review every author.
+asks for anything. Set it to an empty string to turn this veto off; the Radagast veto below still applies.
 
 Write the login however you know it. Bot logins have three spellings and all of
 them match: REST returns `dependabot[bot]`, GraphQL returns `dependabot`, and
