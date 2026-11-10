@@ -140,11 +140,18 @@ stripped before comparing, so `dependabot`, `dependabot[bot]` and
 
 ### Authors reviewed by Radagast
 
-The variable `RADAGAST_AUTHORS` (comma-separated logins, spelled as for
-`ignore_authors`) is a second veto, checked right after it: Radagast reviews those
-authors, so the gate never asks CodeRabbit for them. It is read from the caller's
-organization or repository, so changing it needs no input and no promotion. Unset
-or empty, it vetoes nobody. A `dry_run` prints the value the run saw.
+Radagast is a second veto, checked right after `ignore_authors`: it reviews every
+person's pull request, so the gate never asks CodeRabbit for one. Two kinds of
+author still go through scope: bots (`app/<name>` as `gh pr view` prints them, or a
+`[bot]` suffix), and the people listed in the variable `RADAGAST_BLOCKED_AUTHORS`
+(comma-separated logins, spelled as for `ignore_authors`), whom Radagast does not
+review. The variable is read from the caller's organization or repository, so
+changing it needs no input and no promotion. Unset or empty, it blocks nobody. A
+`dry_run` prints the value the run saw.
+
+The gate does not check that the author can write to the repository: for an
+outside contributor, whom Radagast skips, the veto only means CodeRabbit is not
+asked, an accepted gap in a trigger retiring along with CodeRabbit.
 
 ### The caller's trigger bounds this
 
