@@ -30,9 +30,10 @@ name: CodeRabbit Gate
 # human work and would otherwise spend the hourly review allowance on diffs that
 # are a version number.
 #
-# The organization variable `RADAGAST_AUTHORS` (comma-separated logins) is a second
-# veto: Radagast reviews those authors instead. Unset or empty, it vetoes nobody —
-# which is the case in every organization that does not define it.
+# Radagast is a second veto: it reviews every person's pull request, so the gate
+# does not ask CodeRabbit for one. Bots, and the people listed in the organization
+# variable `RADAGAST_BLOCKED_AUTHORS` (comma-separated logins), still go through
+# scope. Unset or empty, the variable blocks nobody.
 #
 # NOTE for callers: the caller's own `pull_request` trigger bounds this. A base
 # branch listed here but absent from `on.pull_request.branches` never sees the
@@ -66,7 +67,7 @@ on:
         type: string
         default: hotfix/*
       ignore_authors:
-        description: Comma-separated logins whose pull requests are never reviewed, checked before scope as a veto. Write the login however you know it — `dependabot`, `dependabot[bot]` and `app/dependabot` are the same entry, since REST, GraphQL and the `gh` CLI each spell a bot differently. Empty reviews every author.
+        description: Comma-separated logins whose pull requests are never reviewed, checked before scope as a veto. Write the login however you know it — `dependabot`, `dependabot[bot]` and `app/dependabot` are the same entry, since REST, GraphQL and the `gh` CLI each spell a bot differently. Empty disables only this veto; the Radagast veto still skips every person off `RADAGAST_BLOCKED_AUTHORS`.
         required: false
         type: string
         default: dependabot[bot]
@@ -115,7 +116,7 @@ jobs:
           REVIEW_BASE_BRANCHES: ${{ inputs.review_base_branches }}
           REVIEW_HEAD_PATTERNS: ${{ inputs.review_head_patterns }}
           IGNORE_AUTHORS: ${{ inputs.ignore_authors }}
-          RADAGAST_AUTHORS: ${{ vars.RADAGAST_AUTHORS }}
+          RADAGAST_BLOCKED_AUTHORS: ${{ vars.RADAGAST_BLOCKED_AUTHORS }}
           LABEL: ${{ inputs.label }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
@@ -143,7 +144,7 @@ jobs:
             echo "  scope bases       : [${REVIEW_BASE_BRANCHES}]"
             echo "  scope head globs  : [${REVIEW_HEAD_PATTERNS}]"
             echo "  ignored authors   : [${IGNORE_AUTHORS}]"
-            echo "  radagast authors  : [${RADAGAST_AUTHORS}]"
+            echo "  radagast blocked  : [${RADAGAST_BLOCKED_AUTHORS}]"
           fi
 
           # `checks_passed` describes one specific commit. Without concurrency
@@ -198,7 +199,9 @@ jobs:
             exit 0
           fi
 
-          if listed "$RADAGAST_AUTHORS"; then
+          # Radagast reviews every person off its blocklist. A bot reads as
+          # `app/<name>` here, `<name>[bot]` elsewhere.
+          if [[ ${author,,} != app/* && ${author,,} != *'[bot]' ]] && ! listed "$RADAGAST_BLOCKED_AUTHORS"; then
             echo "::notice::PR #${PR_NUMBER} was opened by ${author}, whose pull requests are reviewed by Radagast — not requesting a CodeRabbit review"
             exit 0
           fi
