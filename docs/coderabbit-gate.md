@@ -129,7 +129,7 @@ same shape as the "release PRs reviewed anyway" failure in the table above.
 Dependabot is the default because its bumps target the same base branches as
 human work, which leaves the base dimension unable to separate them, and the
 review allowance is hourly: a batch of bumps can consume it before a human PR
-asks for anything. Set it to an empty string to review every author.
+asks for anything. Set it to an empty string to turn this veto off; the Radagast veto below still applies.
 
 Write the login however you know it. Bot logins have three spellings and all of
 them match: REST returns `dependabot[bot]`, GraphQL returns `dependabot`, and
@@ -140,11 +140,18 @@ stripped before comparing, so `dependabot`, `dependabot[bot]` and
 
 ### Authors reviewed by Radagast
 
-The variable `RADAGAST_AUTHORS` (comma-separated logins, spelled as for
-`ignore_authors`) is a second veto, checked right after it: Radagast reviews those
-authors, so the gate never asks CodeRabbit for them. It is read from the caller's
-organization or repository, so changing it needs no input and no promotion. Unset
-or empty, it vetoes nobody. A `dry_run` prints the value the run saw.
+Radagast is a second veto, checked right after `ignore_authors`: it reviews every
+person's pull request, so the gate never asks CodeRabbit for one. Two kinds of
+author still go through scope: bots (`app/<name>` as `gh pr view` prints them, or a
+`[bot]` suffix), and the people listed in the variable `RADAGAST_BLOCKED_AUTHORS`
+(comma-separated logins, spelled as for `ignore_authors`), whom Radagast does not
+review. The variable is read from the caller's organization or repository, so
+changing it needs no input and no promotion. Unset or empty, it blocks nobody. A
+`dry_run` prints the value the run saw.
+
+The gate does not check that the author can write to the repository: for an
+outside contributor, whom Radagast skips, the veto only means CodeRabbit is not
+asked, an accepted gap in a trigger retiring along with CodeRabbit.
 
 ### The caller's trigger bounds this
 
@@ -166,7 +173,7 @@ than which of them get reviewed.
 | `head_sha` | string | — | Commit the verdict covers. Required — also the idempotency key. |
 | `review_base_branches` | string | `develop` | Comma-separated exact base branch names. Empty removes this dimension. |
 | `review_head_patterns` | string | `hotfix/*` | Comma-separated globs matched against the head branch. Empty removes this dimension. |
-| `ignore_authors` | string | `dependabot[bot]` | Comma-separated logins never reviewed, checked before scope as a veto. A trailing `[bot]` is optional. Empty reviews every author. |
+| `ignore_authors` | string | `dependabot[bot]` | Comma-separated logins never reviewed, checked before scope as a veto. A trailing `[bot]` is optional. Empty disables only this veto; the Radagast veto still skips every person off `RADAGAST_BLOCKED_AUTHORS`. |
 | `label` | string | `review-ready` | Visual marker applied alongside the command. Cosmetic — failing to apply it never fails the job. Empty disables it. |
 | `dry_run` | boolean | `false` | Log the decision without changing any label. |
 | `runner_type` | string | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |
