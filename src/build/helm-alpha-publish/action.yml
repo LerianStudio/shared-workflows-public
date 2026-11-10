@@ -85,6 +85,18 @@ runs:
           exit 0
         fi
 
+        # Log in against a copy under RUNNER_TEMP: on a persistent runner a login
+        # written to the home directory outlives its token, and later Helm calls
+        # to that registry on the machine then get 403, public charts included.
+        # Seeded from the caller's config so other registries stay visible.
+        CALLER_CONFIG="$(helm env HELM_REGISTRY_CONFIG)"
+        REGISTRY_CONFIG="$(mktemp "${RUNNER_TEMP}/helm-alpha-registry.XXXXXX")"
+        if [ -f "$CALLER_CONFIG" ]; then
+          cp "$CALLER_CONFIG" "$REGISTRY_CONFIG"
+        fi
+        export HELM_REGISTRY_CONFIG="$REGISTRY_CONFIG"
+        echo "HELM_REGISTRY_CONFIG=$REGISTRY_CONFIG" >> "$GITHUB_ENV"
+
         echo "$REGISTRY_PASSWORD" | helm registry login "$REGISTRY_HOST" -u "$REGISTRY_USERNAME" --password-stdin
         helm push "$PKG" "$REGISTRY"
         echo "::notice::alpha published: ${REGISTRY}/${NAME}:${ALPHA}"
