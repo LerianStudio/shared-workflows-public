@@ -26,6 +26,9 @@ with_re='^([[:space:]]*)with:[[:space:]]*(#.*)?$'
 matrix_re='^matrix\.[A-Za-z0-9_.-]+$'
 # An optional leading term sends public repositories to their own variable.
 public_re="^\\([[:space:]]*github\\.event\\.repository\\.visibility[[:space:]]*==[[:space:]]*${quote}public${quote}[[:space:]]*&&[[:space:]]*vars\\.[A-Za-z0-9_]+[[:space:]]*\\)[[:space:]]*\\|\\|[[:space:]]*(.+)\$"
+# A term inside the chain may be skipped for public repositories, so a self-hosted
+# pool never serves them even when PUBLIC_RUNNERS is unset.
+private_re="^\\([[:space:]]*github\\.event\\.repository\\.visibility[[:space:]]*!=[[:space:]]*${quote}public${quote}[[:space:]]*&&[[:space:]]*(vars\\.[A-Za-z0-9_]+)[[:space:]]*\\)\$"
 
 # An inline array passes when one top-level member is exactly `self-hosted`: GitHub
 # then picks only a self-hosted runner, whatever the other members are (a
@@ -57,7 +60,7 @@ array_problem() {
 
 # Prints why a runs-on value fails, or nothing when it passes.
 runs_on_problem() {
-  local value=$1 inner term last
+  local value=$1 inner term last guarded=""
   local -a terms
   value=${value%\"}; value=${value#\"}; value=${value%\'}; value=${value#\'}
 
@@ -76,11 +79,14 @@ runs_on_problem() {
   IFS='|' read -r -a terms <<< "${inner//||/|}"
   for term in "${terms[@]}"; do
     term=${term#"${term%%[![:space:]]*}"}; term=${term%"${term##*[![:space:]]}"}
+    guarded=""
+    if [[ $term =~ $private_re ]]; then term=${BASH_REMATCH[1]}; guarded=1; fi
     if ! [[ $term =~ $var_re ]]; then
       echo "'${term}' is not an org variable"; return
     fi
     last=$term
   done
+  if [ -n "$guarded" ]; then echo "the chain ends in a term skipped for public repositories"; return; fi
   [[ $(printf '%s' "$last" | tr '[:lower:]' '[:upper:]') =~ $fallback_re ]] || echo "the chain does not end in vars.FALLBACK_RUNNERS"
 }
 

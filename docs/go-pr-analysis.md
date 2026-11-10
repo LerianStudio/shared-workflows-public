@@ -155,9 +155,7 @@ Uses `secrets: inherit` pattern. Required secrets:
 
 Read this rather than the job's own result when gating on the analysis: a
 reusable workflow's result also folds in jobs that are not analysis — `notify`,
-for one, whose failure to reach Slack says nothing about the code. That is how
-[go-pr-validation](./go-pr-validation.md) decides whether to request a CodeRabbit
-review; see [coderabbit-gate](./coderabbit-gate.md).
+for one, whose failure to reach Slack says nothing about the code.
 
 ```yaml
 checks_passed: >-

@@ -107,10 +107,10 @@ This distinguishes the two skips that used to look identical: a pipeline the cal
 | `shared_paths` | Path patterns that trigger analysis/security for all components | string | `''` |
 | `security_filter_paths` | Optional security-only component prefixes. Empty reuses `filter_paths`; set it when analysis runs at root while Docker scans remain per component | string | `''` |
 | `security_shared_paths` | Optional security-only shared paths. Empty reuses `shared_paths` | string | `''` |
-| `enable_coderabbit_gate` | Ask CodeRabbit for a review once this validation passes. Needs only `auto_review.enabled: false` in the repo — see [coderabbit-gate](coderabbit-gate.md) | boolean | `true` |
-| `coderabbit_review_base_branches` | Comma-separated exact base branch names whose PRs get a review. Empty removes this dimension | string | `develop` |
-| `coderabbit_review_head_patterns` | Comma-separated globs matched against the head branch; a match is reviewed regardless of base | string | `hotfix/*` |
-| `coderabbit_gate_label` | Trigger label. Must match `reviews.auto_review.labels` in `.coderabbit.yml` | string | `review-ready` |
+| `enable_coderabbit_gate` | Deprecated, ignored. CodeRabbit was removed from the organization; Radagast reviews pull requests — see [coderabbit-gate](coderabbit-gate.md) | boolean | `true` |
+| `coderabbit_review_base_branches` | Deprecated, ignored | string | `develop` |
+| `coderabbit_review_head_patterns` | Deprecated, ignored | string | `hotfix/*` |
+| `coderabbit_gate_label` | Deprecated, ignored | string | `review-ready` |
 
 The Breaking Change Guard has no dedicated input, enable flag or target-branch filter. This umbrella inherits the guard automatically from `pr-validation.yml`, as part of the metadata pipeline.
 
@@ -240,7 +240,7 @@ be declared — the security scan uses it only as a fallback for `MANAGE_TOKEN`.
 
 Callers pass `secrets: inherit`, which is still the supported contract. Inside
 this workflow, each nested job is then forwarded **only the secrets it declares** —
-the security scan gets five, the metadata job two, the CodeRabbit gate one. A job
+the security scan gets five, the metadata job two. A job
 no longer sees the whole set of secrets the calling repository happens to hold.
 
 The six above are what the chain actually consumes, verified end to end. An
@@ -290,28 +290,6 @@ jobs:
         Makefile
     secrets: inherit
 ```
-
-## CodeRabbit review gate
-
-`enable_coderabbit_gate` requests a review once `metadata`, `changes`,
-`lib-version-gate`, the Go analysis verdict and the security scan verdict are all
-clear — not once the umbrella as a whole passes. The two differ: `go-analysis` or
-`security` can end in `failure` because its `notify` job failed, and a review is
-still requested, which is the point — a Slack delivery that did not land says
-nothing about the code.
-
-A `CodeRabbit Verdict` job computes this with the
-[`needs-verdict`](../src/validate/needs-verdict/README.md) composite over
-`toJSON(needs)`, so the job's `needs:` list is the whole declaration of what the
-gate requires. It reads the `checks_passed` outputs of `go-analysis`
-([go-pr-analysis](./go-pr-analysis.md)) and `security`
-([pr-security-scan](./pr-security-scan.md)) rather than the `Go Analysis` and
-`Security` aggregators, which mirror their workflows' own results. Nothing is
-excluded from either verdict: the whole pipeline has to be clean. `skipped`
-counts as passed throughout.
-
-Both aggregators are unchanged and still gate the merge. See
-[coderabbit-gate](./coderabbit-gate.md).
 
 ## Branch protection
 

@@ -437,21 +437,21 @@ on:
         type: string
         default: ''
 
-      # ----------------- CodeRabbit Review Gate -----------------
+      # ----------------- CodeRabbit Review Gate (removed) -----------------
       enable_coderabbit_gate:
-        description: 'Ask CodeRabbit for a review once this validation passes, so no review is spent on a failing or out-of-scope pull request. On by default. The consuming repository only needs `reviews.auto_review.enabled: false` in its .coderabbit.yml — the gate posts `@coderabbitai review` itself. The `review-ready` label is applied as a visual marker when declared, and skipped silently when not. See docs/coderabbit-gate.md.'
+        description: 'Deprecated, ignored. CodeRabbit was removed from the organization; Radagast reviews pull requests.'
         type: boolean
         default: true
       coderabbit_review_base_branches:
-        description: 'Comma-separated exact base branch names whose pull requests get a review. Empty removes this dimension.'
+        description: 'Deprecated, ignored. CodeRabbit was removed from the organization; Radagast reviews pull requests.'
         type: string
         default: develop
       coderabbit_review_head_patterns:
-        description: 'Comma-separated globs matched against the head branch. A match is reviewed regardless of base — for code that reached no other review on its way in.'
+        description: 'Deprecated, ignored. CodeRabbit was removed from the organization; Radagast reviews pull requests.'
         type: string
         default: hotfix/*
       coderabbit_gate_label:
-        description: 'Label used as the review trigger. Must match `reviews.auto_review.labels` in .coderabbit.yml.'
+        description: 'Deprecated, ignored. CodeRabbit was removed from the organization; Radagast reviews pull requests.'
         type: string
         default: review-ready
     secrets:
@@ -523,7 +523,7 @@ jobs:
   changes:
     name: Detect non-doc changes
     if: contains(fromJSON('["opened","edited","synchronize","reopened","ready_for_review"]'), github.event.action)
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GATE_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GATE_RUNNERS || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
       pull-requests: read
@@ -584,7 +584,7 @@ jobs:
     name: ${{ inputs.run_go_analysis && 'Go Analysis' || 'Go Analysis (disabled)' }}
     needs: [changes, go-analysis]
     if: always()
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GATE_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GATE_RUNNERS || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Aggregate Go Analysis result
         uses: LerianStudio/shared-workflows-public/src/validate/result-gate@v1
@@ -627,7 +627,7 @@ jobs:
     name: ${{ inputs.run_security && 'Security' || 'Security (disabled)' }}
     needs: [changes, security]
     if: always()
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GATE_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GATE_RUNNERS || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Aggregate security result
         uses: LerianStudio/shared-workflows-public/src/validate/result-gate@v1
@@ -662,7 +662,7 @@ jobs:
     name: ${{ inputs.run_lib_version_check && 'Lib Version' || 'Lib Version (disabled)' }}
     needs: [changes, lib-version]
     if: always()
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GATE_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GATE_RUNNERS || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     steps:
       - name: Aggregate Lib Version result
         uses: LerianStudio/shared-workflows-public/src/validate/result-gate@v1
@@ -686,7 +686,7 @@ jobs:
     name: Permission Manifest Nudge
     if: inputs.run_manifest_nudge && github.event_name == 'pull_request'
     continue-on-error: true
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GATE_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GATE_RUNNERS || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
       pull-requests: write
@@ -706,77 +706,3 @@ jobs:
           go-mod-path: ${{ inputs.lib_version_go_mod_path }}
           # Preview mode: no comment / no PR side effects when the umbrella runs dry.
           dry-run: ${{ inputs.dry_run }}
-
-  # ----------------- CodeRabbit Review Gate -----------------
-  # Holds CodeRabbit until this umbrella passes, so no review is spent on a pull
-  # request that is failing or out of the configured scope. Opt-in: it needs
-  # `reviews.auto_review.enabled: false` plus `labels: ["review-ready"]` in the
-  # consuming repository's .coderabbit.yml, and the label to exist there.
-  #
-  # See docs/coderabbit-gate.md for the contract and the setup checklist.
-  # The verdict is computed in its own job so that adding a required job to the
-  # gate is one line in the `needs:` list below — not a line there plus a clause
-  # in an expression. needs-verdict reads `toJSON(needs)` and believes a job's own
-  # `checks_passed` output over its result, because a reusable workflow's result
-  # also folds in jobs that report on the run rather than on the code: Notify, for
-  # one, whose failure to reach Slack is no reason to withhold a review. Jobs that
-  # publish no such output are judged by their result, and `skipped` passes
-  # throughout — every job here is conditional on the diff and on the toggles.
-  coderabbit-verdict:
-    name: CodeRabbit Verdict
-    needs:
-      - metadata
-      - changes
-      - go-analysis
-      - security
-      - lib-version-gate
-    # `always()` so a skipped component does not skip the verdict along with it.
-    # Draft pull requests are excluded; CodeRabbit ignores them anyway.
-    if: >-
-      always()
-      && inputs.enable_coderabbit_gate
-      && github.event_name == 'pull_request'
-      && github.event.pull_request.draft != true
-    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || vars.GATE_RUNNERS || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
-    permissions:
-      contents: read
-    outputs:
-      passed: ${{ steps.verdict.outputs.passed }}
-    steps:
-      - name: Compute verdict
-        id: verdict
-        uses: LerianStudio/shared-workflows-public/src/validate/needs-verdict@v1
-        with:
-          needs: ${{ toJSON(needs) }}
-          label: CodeRabbit gate
-
-  coderabbit-review:
-    name: CodeRabbit Review
-    # `always()` is load-bearing, and the reason is not obvious. The verdict job
-    # already carries every condition, so this one looks like it needs none — but
-    # a failure anywhere upstream propagates through the graph and skips a job
-    # left on the implicit `success()`, even when its own dependency succeeded.
-    # `always()` on the verdict does not neutralise that for what comes after it.
-    # Without this line the gate goes quiet on exactly the pull requests the
-    # verdict was built to approve: the ones where something failed that the
-    # verdict deliberately excluded, such as a red end-to-end suite under
-    # `core_passed`. Measured on product-console#1067, where the verdict logged
-    # `CodeRabbit gate: passed` and this job was skipped anyway.
-    if: always() && needs.coderabbit-verdict.result == 'success'
-    needs: coderabbit-verdict
-    permissions:
-      contents: read
-      pull-requests: write
-    uses: ./.github/workflows/coderabbit-gate.yml
-    with:
-      pr_number: ${{ github.event.pull_request.number }}
-      checks_passed: ${{ needs.coderabbit-verdict.outputs.passed == 'true' }}
-      # Binds the verdict to the commit it was computed for, so a run superseded
-      # by a newer push cannot authorise a head it never validated.
-      head_sha: ${{ github.event.pull_request.head.sha }}
-      review_base_branches: ${{ inputs.coderabbit_review_base_branches }}
-      review_head_patterns: ${{ inputs.coderabbit_review_head_patterns }}
-      label: ${{ inputs.coderabbit_gate_label }}
-      dry_run: ${{ inputs.dry_run }}
-    secrets:
-      MANAGE_TOKEN: ${{ secrets.MANAGE_TOKEN }}

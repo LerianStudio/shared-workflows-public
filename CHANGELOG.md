@@ -1,5 +1,43 @@
 # Shared-workflows-public Changelog
 
+## [1.7.1](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.7.1)
+
+Fixes:
+- Follow `RADAGAST_BLOCKED_AUTHORS` in the `coderabbit-gate` workflow to ensure proper handling of blocked authors. (@fredcamaral)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.7.0...v1.7.1)
+
+---
+
+## [1.7.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.7.0)
+
+Features:
+- Route light jobs through `LIGHT_RUNNERS`. (@bedatty)
+
+Fixes:
+- Keep public repositories off `LIGHT_RUNNERS`. (@bedatty)
+
+Improvements:
+- List runner variables without their values in the documentation. (@bedatty)
+- List the organization runner types and current variable values in the documentation. (@bedatty)
+- Run this repository's CI on `PUBLIC_RUNNERS`. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.6.0...v1.7.0)
+
+---
+
+## [1.6.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.6.0)
+
+Features:
+- Route public repositories to `PUBLIC_RUNNERS`. (@bedatty)
+
+Improvements:
+- Send this repository's own workflows through `PUBLIC_RUNNERS` as well. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.5.1...v1.6.0)
+
+---
+
 ## [1.5.1](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.5.1)
 
 Fixes:
