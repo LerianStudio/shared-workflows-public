@@ -1,5 +1,14 @@
 # Shared-workflows-public Changelog
 
+## [1.7.3](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.7.3)
+
+Fixes:
+- Keep registry logins off persistent runners to enhance security in Helm workflows. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.7.2...v1.7.3)
+
+---
+
 ## [1.7.2](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.7.2)
 
 Fixes:
