@@ -205,6 +205,22 @@ runs:
         "${RUNNER_TEMP}/gitops-chart-update-venv/bin/pip" install --quiet ruamel.yaml pyyaml
         echo "bin=${RUNNER_TEMP}/gitops-chart-update-venv/bin/python" >> "$GITHUB_OUTPUT"
 
+    # Persistent runners keep their home directory, so a `helm registry login`
+    # written there outlives its token, and every later Helm call to ghcr.io on
+    # that machine sends the expired credential and gets 403, public charts
+    # included. Log in against a copy under RUNNER_TEMP instead, seeded from the
+    # caller's config so a registry it already logged in to stays visible.
+    - name: Isolate the Helm registry config
+      shell: bash
+      run: |
+        set -euo pipefail
+        caller_config=$(helm env HELM_REGISTRY_CONFIG)
+        registry_config=$(mktemp "${RUNNER_TEMP}/gitops-chart-registry.XXXXXX")
+        if [[ -f "$caller_config" ]]; then
+          cp "$caller_config" "$registry_config"
+        fi
+        echo "HELM_REGISTRY_CONFIG=$registry_config" >> "$GITHUB_ENV"
+
     # The chart's own values.yaml is what the orphan gate compares against, and
     # it travels inside the package — no need to clone the chart repository.
     - name: Pull the chart
