@@ -153,9 +153,3 @@
 - name: pinned
   color: "d4a017"
   description: Pinned discussion/tracker — exempt from stale auto-close
-
-# ── Review routing ─────────────────────────────────────────────────────────────
-
-- name: review-ready
-  color: "0e8a16"
-  description: Required checks passed — CodeRabbit is cleared to review

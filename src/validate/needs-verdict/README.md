@@ -34,8 +34,8 @@ Pair it with `if: always()` on the calling job, so the verdict evaluates even wh
 
 ```yaml
 jobs:
-  coderabbit-verdict:
-    name: CodeRabbit Verdict
+  verdict:
+    name: Verdict
     needs: [metadata, changes, go-analysis, security, lib-version-gate]
     if: always()
     runs-on: ${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
@@ -47,19 +47,10 @@ jobs:
         uses: LerianStudio/shared-workflows-public/src/validate/needs-verdict@v1
         with:
           needs: ${{ toJSON(needs) }}
-          label: CodeRabbit gate
+          label: release gate
 ```
 
-## Usage as reusable workflow
-
-```yaml
-jobs:
-  validation:
-    uses: LerianStudio/shared-workflows-public/.github/workflows/go-pr-validation.yml@v1
-    secrets: inherit
-```
-
-`go-pr-validation.yml` already wires this composite behind `enable_coderabbit_gate`; a caller does not call it directly.
+No workflow in this repository calls it any more: `go-pr-validation.yml` used it only for the CodeRabbit gate, which was removed. It stays for repositories that call it directly.
 
 ## Required permissions
 
