@@ -14,7 +14,7 @@ import unittest
 
 ACTION = Path(os.environ.get("NON_DOC_ACTION_PATH", str(Path(__file__).with_name("action.yml"))))
 
-DEFAULT_GLOBS = "*.md docs/* .github/* LICENSE* .gitignore .coderabbit.yml .coderabbit.yaml"
+DEFAULT_GLOBS = "*.md docs/* .github/* LICENSE* .gitignore"
 
 
 def run_body(name):

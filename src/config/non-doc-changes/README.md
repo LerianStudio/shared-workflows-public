@@ -28,7 +28,7 @@ An unrecognised value fails the step. A typo would not fail here, it would decid
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
 | `github-token` | GitHub token for gh CLI access (read on contents and pull requests) | Yes | |
-| `ignore-globs` | Space-separated glob patterns treated as documentation/meta | No | `*.md docs/* .github/* LICENSE* .gitignore .coderabbit.yml .coderabbit.yaml` |
+| `ignore-globs` | Space-separated glob patterns treated as documentation/meta | No | `*.md docs/* .github/* LICENSE* .gitignore` |
 | `workflow-paths-are-code` | Classify `.github/workflows/`, `.github/actions/` and `.github/scripts/` as code before the globs are applied. Release callers pass `false` | No | `true` |
 
 ## Outputs
@@ -51,7 +51,7 @@ jobs:
         uses: LerianStudio/shared-workflows-public/src/config/non-doc-changes@v1
         with:
           github-token: ${{ github.token }}
-          ignore-globs: "*.md docs/* .github/* LICENSE* .gitignore .coderabbit.yml .coderabbit.yaml"
+          ignore-globs: "*.md docs/* .github/* LICENSE* .gitignore"
           # Release callers add this, so a .github/**-only push does not release:
           # workflow-paths-are-code: "false"
 ```

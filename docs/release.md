@@ -122,7 +122,7 @@ is the correct setting.
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enable_doc_gate` | boolean | `true` | Skip the release when a branch push touches only documentation/meta files. Callers that already gate upstream (`go-release.yml`, `js-release.yml`) pass `false` |
-| `ignore_globs` | string | `*.md docs/* .github/* LICENSE* .gitignore .coderabbit.yml .coderabbit.yaml` | Globs treated as docs/meta by the gate |
+| `ignore_globs` | string | `*.md docs/* .github/* LICENSE* .gitignore` | Globs treated as docs/meta by the gate |
 | `release_on_workflow_changes` | boolean | `false` | Release when a branch push touches only `.github/workflows/`, `.github/actions/` or `.github/scripts/`. Turn it on only where the released artifact lives under `.github/` |
 | `semantic_version` | string | `23.0.8` | Semantic release version to use |
 | `changelog_release_branch` | string | `''` | Branch whose tags get a changelog. Empty derives it from the run: the branch that triggered the release, falling back to searching which branch contains the tag commit for tag-triggered runs. Set it only for layouts neither step can infer |
