@@ -2251,7 +2251,7 @@ class ApprovalGateStructureTests(unittest.TestCase):
         # and the caller's job name lives in the consumer's repository. Measured
         # across the organisation, the same gate produces six different names,
         # so no single ruleset can require it. A commit status carries no job
-        # path — which is why CodeRabbit and Socket look identical everywhere.
+        # path — which is why Socket looks identical everywhere.
         def published(**overrides):
             result, calls = run_gate_status(**overrides)
             self.assertEqual(0, result.returncode, result.stderr)

@@ -39,7 +39,7 @@ on:
       ignore_globs:
         description: 'Space-separated glob patterns treated as docs/meta; when every changed file matches one, the scan is skipped. Files under .github/workflows/, .github/actions/ and .github/scripts/ always count as code.'
         type: string
-        default: '*.md docs/* .github/* LICENSE* .gitignore .coderabbit.yml .coderabbit.yaml'
+        default: '*.md docs/* .github/* LICENSE* .gitignore'
 
       runner_type:
         description: 'Deprecated, ignored. Runner comes from org variables.'
