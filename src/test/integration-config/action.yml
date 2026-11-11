@@ -92,6 +92,17 @@ runs:
         # these values show up in the env: header of every later step. A mask lasts
         # for the whole job, so it covers service-container too. Only values that
         # look sensitive: masking a `true` would blank every `true` in the log.
+        # The runner decodes %25, %0D and %0A in a command's data and ends a line at
+        # CR or LF, so a raw `%25` would register a different string and text after
+        # a CR would print in clear. Encode before emitting; the value itself stays.
+        add_mask() {
+          local v="$1"
+          v=${v//%/%25}
+          v=${v//$'\r'/%0D}
+          v=${v//$'\n'/%0A}
+          echo "::add-mask::${v}"
+        }
+
         mask_sensitive() {
           local key="$1" value="$2" whole=false line escaped
           local userinfo='://[^/@[:space:]:]*:([^/@[:space:]]+)@'
@@ -105,15 +116,15 @@ runs:
           shopt -u nocasematch
           if [[ "$value" =~ $userinfo ]]; then
             whole=true
-            [[ ${#BASH_REMATCH[1]} -lt 4 ]] || echo "::add-mask::${BASH_REMATCH[1]}"
+            [[ ${#BASH_REMATCH[1]} -lt 4 ]] || add_mask "${BASH_REMATCH[1]}"
           fi
           [[ "$whole" == true ]] || return 0
-          # One mask per line: the runner does not match a mask across lines.
+          # One mask per line, CR included: the runner never matches across lines.
           while IFS= read -r line; do
-            [[ ${#line} -lt 4 ]] || echo "::add-mask::${line}"
-          done <<<"$value"
+            [[ ${#line} -lt 4 ]] || add_mask "$line"
+          done <<<"${value//$'\r'/$'\n'}"
           escaped=$(jq -rn --arg v "$value" '$v | tojson | .[1:-1]')
-          [[ "$escaped" == "$value" ]] || echo "::add-mask::${escaped}"
+          [[ "$escaped" == "$value" ]] || add_mask "$escaped"
         }
 
         # mask_env_object <json>: mask_sensitive over every entry.

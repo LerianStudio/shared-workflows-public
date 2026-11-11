@@ -88,6 +88,16 @@ run_config '{"test_env":{"DB_PASS":"pa\"ss\\word"}}'
 expect_mask 'JSON escape: the raw value is masked' 'pa"ss\word'
 expect_mask 'JSON escape: the escaped copy is masked' 'pa\"ss\\word'
 
+# The runner decodes %25 in a command's data: a raw `%25` would register `%`.
+run_config '{"test_env":{"DB_PASS":"p%25ss!word"}}'
+expect_mask 'percent: the value is encoded so the runner decodes it back' 'p%2525ss!word'
+
+# The runner ends a line at CR: each side is its own mask, and no raw CR is emitted.
+run_config '{"test_env":{"DB_PASS":"first-part\rsecond-part"}}'
+expect_mask 'CR: the text before the CR is masked' 'first-part'
+expect_mask 'CR: the text after the CR is masked' 'second-part'
+if grep -q $'\r' "${OUT}"; then fail 'CR: a raw CR reached the step output'; else pass 'CR: no raw CR reaches the step output'; fi
+
 run_config '{"service":{"image":"postgres:16.4","health_cmd":"pg_isready","env":{"POSTGRES_PASSWORD":"svc-secret","POSTGRES_DB":"app_db"}}}'
 expect_mask 'service.env: a sensitive key is masked' 'svc-secret'
 expect_no_mask 'service.env: a non-sensitive key is not masked' 'app_db'
