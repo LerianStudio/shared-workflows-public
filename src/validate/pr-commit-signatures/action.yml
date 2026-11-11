@@ -86,10 +86,13 @@ runs:
 
         # Auth via a local http header, the way actions/checkout does it: the token stays
         # out of the remote URL, so it cannot leak through `git remote -v` or error output.
+        # The runner masks the token, not its base64, which is a different string.
+        auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+        echo "::add-mask::${auth}"
         git -C "$work" remote add origin "https://github.com/${REPOSITORY}.git"
         git -C "$work" config --local \
           "http.https://github.com/.extraheader" \
-          "AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          "AUTHORIZATION: basic ${auth}"
 
         # refs/pull/N/head works for fork pull requests too — the base repository always
         # carries it, so this never has to reach into the contributor's fork.

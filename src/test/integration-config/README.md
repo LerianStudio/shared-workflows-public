@@ -70,6 +70,14 @@ Validation performed:
 
 `test_env` has no output: its entries are written straight to `$GITHUB_ENV`, and the log records the names only — the values are typically connection strings carrying credentials.
 
+Every runner step prints its environment, so a value that reaches `$GITHUB_ENV` or `service-env-json` also shows up in the step headers that follow. The runner masks a `secrets.*` value only where it appears verbatim: a DSN composed from it, or its JSON-escaped copy, would show in clear text. Before any value is written, this action registers `::add-mask::` for the values of `test_env` and `service.env` that look sensitive:
+
+- the whole value, line by line, when the key contains `PASS`, `SECRET`, `TOKEN`, `KEY`, `CRED` or `DSN` (case-insensitive);
+- the whole value and the password alone, whatever the key, when the value carries `scheme://user:password@`;
+- the JSON-escaped copy too, when it differs from the raw value.
+
+Booleans (`true`, `false`, `yes`, `no`, `on`, `off`), plain numbers and values shorter than 4 characters are never masked, even under a sensitive key: the runner replaces every occurrence of a mask in the log, and a masked `true` would blank all of them.
+
 ## Usage as composite step
 
 ```yaml

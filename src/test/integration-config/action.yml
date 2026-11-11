@@ -87,6 +87,44 @@ runs:
           done < <(jq -r 'keys[]' <<<"$json")
         }
 
+        # The runner masks a secrets.* value only where it appears verbatim, not a
+        # DSN composed from it nor its JSON-escaped copy in service-env-json, and
+        # these values show up in the env: header of every later step. A mask lasts
+        # for the whole job, so it covers service-container too. Only values that
+        # look sensitive: masking a `true` would blank every `true` in the log.
+        mask_sensitive() {
+          local key="$1" value="$2" whole=false line escaped
+          local userinfo='://[^/@[:space:]:]*:([^/@[:space:]]+)@'
+          [[ ${#value} -ge 4 ]] || return 0
+          shopt -s nocasematch
+          if [[ "$value" =~ ^(true|false|yes|no|on|off|[0-9]+)$ ]]; then
+            shopt -u nocasematch
+            return 0
+          fi
+          [[ ! "$key" =~ (PASS|SECRET|TOKEN|KEY|CRED|DSN) ]] || whole=true
+          shopt -u nocasematch
+          if [[ "$value" =~ $userinfo ]]; then
+            whole=true
+            [[ ${#BASH_REMATCH[1]} -lt 4 ]] || echo "::add-mask::${BASH_REMATCH[1]}"
+          fi
+          [[ "$whole" == true ]] || return 0
+          # One mask per line: the runner does not match a mask across lines.
+          while IFS= read -r line; do
+            [[ ${#line} -lt 4 ]] || echo "::add-mask::${line}"
+          done <<<"$value"
+          escaped=$(jq -rn --arg v "$value" '$v | tojson | .[1:-1]')
+          [[ "$escaped" == "$value" ]] || echo "::add-mask::${escaped}"
+        }
+
+        # mask_env_object <json>: mask_sensitive over every entry.
+        mask_env_object() {
+          local json="$1" key
+          while IFS= read -r key; do
+            [[ -n "$key" ]] || continue
+            mask_sensitive "$key" "$(jq -r --arg k "$key" '.[$k] | tostring' <<<"$json")"
+          done < <(jq -r 'keys[]' <<<"$json")
+        }
+
         jq -e . >/dev/null 2>&1 <<<"$CONFIG" || die "not valid JSON"
         [[ "$(jq -r 'type' <<<"$CONFIG")" == "object" ]] || die "must be a JSON object"
         reject_unknown "$CONFIG" "integration_tests_config" '["service","test_env","guard"]'
@@ -120,6 +158,7 @@ runs:
 
           SERVICE_ENV=$(jq -c '.env // {}' <<<"$SERVICE")
           validate_env_object "$SERVICE_ENV" "service.env"
+          mask_env_object "$SERVICE_ENV"
 
           HAS_SERVICE=true
         fi
@@ -131,6 +170,7 @@ runs:
           while IFS= read -r key; do
             [[ -n "$key" ]] || continue
             value=$(jq -r --arg k "$key" '.[$k] | tostring' <<<"$TEST_ENV")
+            mask_sensitive "$key" "$value"
             delim="GHE_$(openssl rand -hex 8)"
             printf '%s<<%s\n%s\n%s\n' "$key" "$delim" "$value" "$delim" >> "$GITHUB_ENV"
             # Names only. These values are connection strings that may embed
