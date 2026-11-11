@@ -1211,7 +1211,7 @@ jobs:
       # caller's job name is in the consumer's own file — measured across the
       # organisation, the same gate produces six different names, so no single
       # organisation ruleset can require it. A commit status carries no job
-      # path, which is why CodeRabbit and Socket look identical everywhere.
+      # path, which is why Socket looks identical everywhere.
       #
       # Published on every run, including the ones with nothing to approve: a
       # required status check that never arrives leaves the pull request

@@ -67,7 +67,7 @@ on:
       ignore_globs:
         description: 'Space-separated glob patterns treated as docs/meta; when only these change, the analysis and security pipelines are skipped.'
         type: string
-        default: '*.md docs/* .github/* LICENSE* .gitignore .coderabbit.yml .coderabbit.yaml'
+        default: '*.md docs/* .github/* LICENSE* .gitignore'
       analyze_on_workflow_changes:
         description: 'Run the analysis, security and lib version pipelines when a pull request touches only .github/workflows/, .github/actions/ or .github/scripts/ (plus ignore_globs paths). On by default: a pull request editing the pipeline runs it. Set false in a repository whose analysis exercises nothing under .github/ (a Go service with no composite actions or scripts of its own), so a pipeline-only pull request runs PR metadata and skips the rest. When false, those paths are classified by ignore_globs like any other: the default .github/* covers them, but an ignore_globs override must keep .github/* (or list the paths) for the skip to happen.'
         type: boolean
@@ -436,24 +436,6 @@ on:
         description: 'Optional security-only shared path patterns. Empty reuses shared_paths.'
         type: string
         default: ''
-
-      # ----------------- CodeRabbit Review Gate (removed) -----------------
-      enable_coderabbit_gate:
-        description: 'Deprecated, ignored. CodeRabbit was removed from the organization; Radagast reviews pull requests.'
-        type: boolean
-        default: true
-      coderabbit_review_base_branches:
-        description: 'Deprecated, ignored. CodeRabbit was removed from the organization; Radagast reviews pull requests.'
-        type: string
-        default: develop
-      coderabbit_review_head_patterns:
-        description: 'Deprecated, ignored. CodeRabbit was removed from the organization; Radagast reviews pull requests.'
-        type: string
-        default: hotfix/*
-      coderabbit_gate_label:
-        description: 'Deprecated, ignored. CodeRabbit was removed from the organization; Radagast reviews pull requests.'
-        type: string
-        default: review-ready
     secrets:
       MANAGE_TOKEN:
         required: false

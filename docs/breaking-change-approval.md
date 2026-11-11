@@ -589,7 +589,7 @@ arrives leaves every pull request pending forever.
 
 `status_context` removes the caller from the name. The gate publishes a commit
 status, which carries no job path, so the same string works everywhere — the
-reason `CodeRabbit` and `Socket Security` look identical in every repository.
+reason `Socket Security` looks identical in every repository.
 
 ```
 BREAKING_APPROVAL_STATUS_CONTEXT = breaking-change-approval
