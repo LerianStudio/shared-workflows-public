@@ -13,7 +13,9 @@ pull requests above the 250-commit API cap.
 The wrapper prints a single JSON blob on stdout; every assertion reads it.
 """
 
+import base64
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -627,6 +629,83 @@ class CommitSignatureValidation(unittest.TestCase):
         )
         self.assertFalse(record["failed"], msg=record["failedMessage"])
         self.assertEqual(record["outputs"]["evaluation-complete"], "true")
+
+
+RANGE_STEP_NAME = "Resolve the full commit range"
+
+# A git that records every call and fails the fetch, so the range step runs only up to
+# the point where the credential is written and masked.
+FAKE_GIT = """#!/usr/bin/env bash
+printf '%s\\n' "$*" >>"$GIT_LOG"
+case "$*" in
+  *check-ref-format*) exit 0 ;;
+  *" fetch "*) exit 1 ;;
+  init\\ *) mkdir -p "${@: -1}/.git" ;;
+esac
+exit 0
+"""
+
+
+def extract_run_body(text, step_name):
+    step = extract_step(text, step_name)
+    lines = step.splitlines()
+    for start, line in enumerate(lines):
+        if line.strip() == "run: |":
+            run_indent = indentation(line)
+            break
+    else:
+        raise AssertionError(f"run body not found for step: {step_name}")
+
+    body = []
+    for line in lines[start + 1:]:
+        if line.strip() and indentation(line) <= run_indent:
+            break
+        body.append(line)
+    return textwrap.dedent("\n".join(body)).rstrip() + "\n"
+
+
+class RangeCredentialMasking(unittest.TestCase):
+    """The base64 extraheader credential is masked before git can print it."""
+
+    TOKEN = "ghs_fake-token-123"
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        bin_dir = self.tmp / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "git").write_text(FAKE_GIT, encoding="utf-8")
+        (bin_dir / "git").chmod(0o755)
+        self.git_log = self.tmp / "git.log"
+        self.result = subprocess.run(
+            ["bash", "-c", extract_run_body(ACTION, RANGE_STEP_NAME)],
+            env={
+                **os.environ,
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+                "GIT_LOG": str(self.git_log),
+                "GH_TOKEN": self.TOKEN,
+                "REPOSITORY": "example/service",
+                "PR_NUMBER": "7",
+                "BASE_REF": "develop",
+                "RUNNER_TEMP": str(self.tmp),
+                "GITHUB_OUTPUT": str(self.tmp / "output"),
+            },
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.auth = base64.b64encode(f"x-access-token:{self.TOKEN}".encode()).decode()
+
+    def test_base64_credential_is_masked(self):
+        self.assertIn(f"::add-mask::{self.auth}", self.result.stdout.splitlines())
+
+    def test_header_carries_the_masked_value(self):
+        calls = self.git_log.read_text(encoding="utf-8")
+        self.assertIn(f"AUTHORIZATION: basic {self.auth}", calls)
+        self.assertNotEqual(self.result.returncode, 0, msg="the fake fetch fails the step")
+
+    def test_credential_is_removed_on_exit(self):
+        self.assertFalse((self.tmp / "pr-commit-signatures" / ".git").exists())
 
 
 if __name__ == "__main__":
