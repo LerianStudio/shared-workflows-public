@@ -89,6 +89,19 @@ class NonDocChangesTests(unittest.TestCase):
 
     # ---- the defect: a pull request made only of deletions ----
 
+    def test_coderabbit_config_is_code_under_every_shipped_default(self):
+        """CodeRabbit is gone from the org, so its config is no longer repo meta."""
+        root = Path(__file__).resolve().parents[3]
+        action = ACTION.read_text().split("  ignore-globs:", 1)[1]
+        defaults = {"action": action.split("default: '", 1)[1].split("'", 1)[0]}
+        for name in ("go-pr-validation", "pr-security-scan", "release"):
+            block = (root / ".github" / "workflows" / f"{name}.yml").read_text().split("      ignore_globs:", 1)[1]
+            defaults[name] = block.split("default: '", 1)[1].split("'", 1)[0]
+        for name, globs in defaults.items():
+            for path in (".coderabbit.yml", ".coderabbit.yaml"):
+                with self.subTest(default=name, path=path):
+                    self.assertEqual(self.detect(pr_files((path, "modified")), globs=globs), "true")
+
     def test_deletion_only_go_file_is_a_code_change(self):
         self.assertEqual(self.detect(pr_files(("internal/ledger/entry.go", "removed"))), "true")
 
