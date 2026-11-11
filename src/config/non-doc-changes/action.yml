@@ -8,7 +8,7 @@ inputs:
   ignore-globs:
     description: 'Space-separated glob patterns treated as documentation/meta. When every changed file matches one of these, the gate returns code=false. Files under .github/workflows/, .github/actions/ and .github/scripts/ count as code whatever the globs say, unless workflow-paths-are-code is false.'
     required: false
-    default: '*.md docs/* .github/* LICENSE* .gitignore .coderabbit.yml .coderabbit.yaml'
+    default: '*.md docs/* .github/* LICENSE* .gitignore'
   workflow-paths-are-code:
     description: 'When true (the default), files under .github/workflows/, .github/actions/ and .github/scripts/ are classified as code before the globs are applied. Set to false to classify them by the globs like any other path — what release callers want, so that a push touching only the pipeline definition does not cut a release.'
     required: false

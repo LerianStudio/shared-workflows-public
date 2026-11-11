@@ -181,7 +181,7 @@ The detection regex can be overridden centrally through the optional **organizat
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enable_doc_gate` | boolean | `true` | Skip the scan when the PR touches only documentation/meta files. Needs `pull-requests: read` on the calling job to list the PR's files; without it the gate produces no verdict and the scan runs in full. Callers that already gate upstream (`go-pr-validation.yml`, `js-pr-validation.yml`) pass `false` |
-| `ignore_globs` | string | `*.md docs/* .github/* LICENSE* .gitignore .coderabbit.yml .coderabbit.yaml` | Globs treated as docs/meta by the gate. Files under `.github/workflows/`, `.github/actions/` and `.github/scripts/` always count as code |
+| `ignore_globs` | string | `*.md docs/* .github/* LICENSE* .gitignore` | Globs treated as docs/meta by the gate. Files under `.github/workflows/`, `.github/actions/` and `.github/scripts/` always count as code |
 | `runner_type` | string | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |
 | `security_scan_runner_type` | string | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |
 | `filter_paths` | string | - | Paths to monitor (newline separated). If empty, treats as single app |

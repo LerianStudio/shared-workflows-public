@@ -46,7 +46,7 @@ This distinguishes the two skips that used to look identical: a pipeline the cal
 | `run_security` | Run the security scan pipeline | boolean | `true` |
 | `run_lib_version_check` | Run the Lerian library version check | boolean | `true` |
 | `run_manifest_nudge` | Run the **non-blocking** Access-Manager RI nudge: warns via a sticky PR comment when a `lib-auth` repo has no `permissions.yaml`. Never fails or blocks the PR. | boolean | `true` |
-| `ignore_globs` | Space-separated globs treated as docs/meta for the change gate | string | `*.md docs/* .github/* LICENSE* .gitignore .coderabbit.yml .coderabbit.yaml` |
+| `ignore_globs` | Space-separated globs treated as docs/meta for the change gate | string | `*.md docs/* .github/* LICENSE* .gitignore` |
 | `analyze_on_workflow_changes` | Run the analysis, security and lib version pipelines when a pull request touches only `.github/workflows/`, `.github/actions/` or `.github/scripts/` (plus `ignore_globs` paths). On by default; set `false` in a repository whose analysis exercises nothing under `.github/`, so a pipeline-only pull request runs PR metadata and skips the rest. When `false`, those paths are classified by `ignore_globs` like any other: the default `.github/*` covers them, but an `ignore_globs` override must keep `.github/*` (or list the paths) for the skip to happen | boolean | `true` |
 | `lib_version_go_mod_path` | Path to go.mod for the Lerian lib check | string | `go.mod` |
 | `lib_version_check_indirect` | Also check transitive (indirect) Lerian deps | boolean | `false` |
@@ -107,10 +107,6 @@ This distinguishes the two skips that used to look identical: a pipeline the cal
 | `shared_paths` | Path patterns that trigger analysis/security for all components | string | `''` |
 | `security_filter_paths` | Optional security-only component prefixes. Empty reuses `filter_paths`; set it when analysis runs at root while Docker scans remain per component | string | `''` |
 | `security_shared_paths` | Optional security-only shared paths. Empty reuses `shared_paths` | string | `''` |
-| `enable_coderabbit_gate` | Deprecated, ignored. CodeRabbit was removed from the organization; Radagast reviews pull requests — see [coderabbit-gate](coderabbit-gate.md) | boolean | `true` |
-| `coderabbit_review_base_branches` | Deprecated, ignored | string | `develop` |
-| `coderabbit_review_head_patterns` | Deprecated, ignored | string | `hotfix/*` |
-| `coderabbit_gate_label` | Deprecated, ignored | string | `review-ready` |
 
 The Breaking Change Guard has no dedicated input, enable flag or target-branch filter. This umbrella inherits the guard automatically from `pr-validation.yml`, as part of the metadata pipeline.
 
