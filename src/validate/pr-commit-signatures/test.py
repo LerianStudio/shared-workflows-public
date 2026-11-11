@@ -634,9 +634,11 @@ class CommitSignatureValidation(unittest.TestCase):
 RANGE_STEP_NAME = "Resolve the full commit range"
 
 # A git that records every call and fails the fetch, so the range step runs only up to
-# the point where the credential is written and masked.
+# the point where the credential is written and masked. Each call is also echoed on
+# stdout, the stream the runner reads ::add-mask:: from, so the two share one order.
 FAKE_GIT = """#!/usr/bin/env bash
 printf '%s\\n' "$*" >>"$GIT_LOG"
+printf 'fake-git %s\\n' "$*"
 case "$*" in
   *check-ref-format*) exit 0 ;;
   *" fetch "*) exit 1 ;;
@@ -703,6 +705,13 @@ class RangeCredentialMasking(unittest.TestCase):
         calls = self.git_log.read_text(encoding="utf-8")
         self.assertIn(f"AUTHORIZATION: basic {self.auth}", calls)
         self.assertNotEqual(self.result.returncode, 0, msg="the fake fetch fails the step")
+
+    def test_mask_is_registered_before_git_sees_the_header(self):
+        lines = self.result.stdout.splitlines()
+        mask = lines.index(f"::add-mask::{self.auth}")
+        header = next(i for i, line in enumerate(lines)
+                      if line.startswith("fake-git ") and self.auth in line)
+        self.assertLess(mask, header)
 
     def test_credential_is_removed_on_exit(self):
         self.assertFalse((self.tmp / "pr-commit-signatures" / ".git").exists())
