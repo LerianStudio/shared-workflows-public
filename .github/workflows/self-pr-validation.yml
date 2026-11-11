@@ -211,6 +211,27 @@ jobs:
           done <<< "$hits"
           exit 1
 
+  # ----------------- integration-config Masking Tests -----------------
+  # Runs the parse step of src/test/integration-config against fixtures: sensitive
+  # test_env / service.env values are masked, a plain `true` is not.
+  integration-config-tests:
+    name: integration-config Masking Tests
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The shellcheck job lints `run:` blocks inside YAML, not standalone scripts.
+      - name: Lint integration-config test script
+        run: shellcheck tests/integration-config/*.sh
+
+      - name: Run integration-config masking tests
+        run: bash tests/integration-config/test.sh
+
   # ----------------- GitOps Chart Tooling Tests -----------------
   gitops-chart-tooling-tests:
     name: GitOps Chart Tooling Tests

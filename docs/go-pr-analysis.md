@@ -295,7 +295,7 @@ One invocation per package is deliberate: a merged log cannot express this, beca
 
 - **Pin the image to a patch version.** `postgres:16` is mutable and silently becomes 16.14, 16.15…, so "CI matches the deployed planner" quietly stops being true — and a planner difference that passes CI and fails in the cluster is exactly what the job exists to catch. A tagless image raises a warning.
 - **Always set `health_cmd`.** Without one, the first connection races the container's startup and the job fails intermittently rather than usefully. Its absence raises a warning.
-- **Use throwaway credentials only.** `service.env` and `test_env` values are CI-local; they are never echoed, but they are not secrets storage.
+- **Use throwaway credentials only.** `service.env` and `test_env` values are CI-local; they are never echoed, and values that look sensitive are masked in the job log (see the [`integration-config` README](../src/test/integration-config/README.md)), but they are not secrets storage.
 - **`service` uses `docker run`, not a `services:` block.** `services.<id>.env` is a static mapping that cannot be expanded from an input, and a `services:` block cannot be declared conditionally. The job runs on the runner itself, so a published port lands on `localhost` exactly as it would with `services:`. The container is removed under `if: always()`, and its last 200 log lines are printed on the way out.
 
 ## How Change Detection Works
