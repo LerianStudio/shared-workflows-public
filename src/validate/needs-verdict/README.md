@@ -50,7 +50,7 @@ jobs:
           label: release gate
 ```
 
-No workflow in this repository calls it any more: `go-pr-validation.yml` used it only for the CodeRabbit gate, which was removed. It stays for repositories that call it directly.
+No workflow in this repository calls it. It stays for repositories that call it directly.
 
 ## Required permissions
 
