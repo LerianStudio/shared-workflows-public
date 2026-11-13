@@ -186,6 +186,12 @@ class CancelledRun(unittest.TestCase):
         self.assertNotIn("Record verdict", attachment(payload)["text"].split("*Jobs:*")[0])
         self.assertEqual(len(lines(payload)), 3)
 
+    def test_cancelled_run_still_lists_a_real_failure(self):
+        payload = summary(fixture("failure"), base_env(VERDICT="cancelled"))
+        self.assertEqual(attachment(payload)["color"], "#808080")
+        self.assertRegex(attachment(payload)["text"], r"\n❌ <[^>]+\|Go Analysis \(pipeline\) / Tests \(app\)> — Run tests \(make\)")
+        self.assertTrue(attachment(payload)["fallback"].endswith("— 2 failed"))
+
 
 class InProgressJobs(unittest.TestCase):
     def test_jobs_not_completed_are_left_out(self):

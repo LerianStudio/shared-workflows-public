@@ -186,11 +186,14 @@ def render(jobs_doc, environ=None):
     head = [f"{WORKFLOW_MARK} *{escape(workflow)}* {status_text} in *{escape(repo_name)}*"]
 
     failed = [j for j in jobs if j.get("conclusion") in FAILED_CONCLUSIONS]
-    # A superseded (cancelled) run reads like a green one: no job list. A
-    # failed run lists its failed (❌) and cancelled (⚪) jobs, each linked to
-    # its log, with the first step that failed.
+    # A failed run lists its failed (❌) and cancelled (⚪) jobs, each linked to
+    # its log, with the first step that failed. A cancelled run leaves its
+    # cancelled jobs out, so a superseded run reads like a green one, but still
+    # lists a job that had failed before the cancel.
+    if verdict == "cancelled":
+        failed = [j for j in failed if j.get("conclusion") != "cancelled"]
     failed_lines = []
-    for job in failed if verdict != "cancelled" else []:
+    for job in failed:
         step = first_failed_step(job)
         mark = "⚪" if job.get("conclusion") == "cancelled" else "❌"
         name = escape(clip(job["short_name"], 300))

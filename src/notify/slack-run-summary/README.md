@@ -25,7 +25,7 @@ The message keeps the look of `slack-notify`, the one the channel already reads,
 - The **colour bar** is green, red, or grey for a superseded run; only a legacy attachment draws it.
 - The **actor**'s avatar and bold name lead as the attachment's author header, linked to their GitHub profile. Slack always draws a footer line under an attachment with an author, and repeats the author there when the footer is empty, so the **footer** names the workflow (`Workflow: <name>`), as `slack-notify`'s did.
 - The first line carries a fixed `⚙️`; the verdict is the bar and the **Jobs** line: `✅` all passed, `❌` a job failed, `⚪` cancelled.
-- **Failed** — on a failed run, one line per job that ended `failure` or `timed_out` (❌) or `cancelled` (⚪): its name, linked to the job log, and the first step that failed. A cancelled run, superseded by a newer one, has no list and reads like a green one.
+- **Failed** — on a failed run, one line per job that ended `failure` or `timed_out` (❌) or `cancelled` (⚪): its name, linked to the job log, and the first step that failed. A cancelled run leaves its cancelled jobs out, so a run superseded by a newer one reads like a green one; a job that had failed before the cancel is still listed.
 - **Warnings** — advisory checks that failed without failing a gate (`advisory-results`).
 - **Jobs** — `succeeded/ran` per group.
 - The branch line adds `attempt N` on a re-run and `verdict reused` when the gates reported an earlier run's verdict.
