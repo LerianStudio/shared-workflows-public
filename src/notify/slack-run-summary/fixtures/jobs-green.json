@@ -1,0 +1,2485 @@
+{
+  "total_count": 44,
+  "jobs": [
+    {
+      "id": 2000,
+      "name": "Resolve tool versions",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:08:16Z",
+      "completed_at": "2026-11-13T14:08:22Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2000",
+      "runner_name": "runner-0",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Read golangci-lint version from .tool-versions",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        }
+      ]
+    },
+    {
+      "id": 2001,
+      "name": "Detect non-doc changes",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:08:16Z",
+      "completed_at": "2026-11-13T14:08:20Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2001",
+      "runner_name": "runner-1",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Run LerianStudio/github-actions-shared-workflows/src/config/non-doc-changes@v1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        }
+      ]
+    },
+    {
+      "id": 2002,
+      "name": "Lint the tagged test suites (new issues only)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:08:28Z",
+      "completed_at": "2026-11-13T14:15:25Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2002",
+      "runner_name": "runner-2",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Run actions/setup-go@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Configure access to private Lerian modules",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Install golangci-lint",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Lint the tagged test suites",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Post Run actions/setup-go@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15
+        }
+      ]
+    },
+    {
+      "id": 2003,
+      "name": "validate / Detect non-doc changes",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:08:31Z",
+      "completed_at": "2026-11-13T14:08:41Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2003",
+      "runner_name": "runner-3",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Validate merge queue profile",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 2
+        },
+        {
+          "name": "PR size guard",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Non-doc change gate",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Reuse the verdict for this commit",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        }
+      ]
+    },
+    {
+      "id": 2004,
+      "name": "validate / PR Metadata / Breaking Change Guard",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:08:27Z",
+      "completed_at": "2026-11-13T14:08:34Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2004",
+      "runner_name": "runner-4",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Validate original event",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Detect breaking changes",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Normalize breaking change result",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Post Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13
+        }
+      ]
+    },
+    {
+      "id": 2005,
+      "name": "validate / PR Metadata / Runner Labels Check",
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-11-13T14:08:23Z",
+      "completed_at": "2026-11-13T14:08:23Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2005",
+      "runner_name": null,
+      "steps": []
+    },
+    {
+      "id": 2006,
+      "name": "validate / PR Metadata / Breaking Change Approval (merge queue)",
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-11-13T14:08:23Z",
+      "completed_at": "2026-11-13T14:08:23Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2006",
+      "runner_name": null,
+      "steps": []
+    },
+    {
+      "id": 2007,
+      "name": "validate / PR Metadata / Blocking Checks",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:08:39Z",
+      "completed_at": "2026-11-13T14:08:44Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2007",
+      "runner_name": "runner-7",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Merge queue — validated on the pull request",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 3
+        },
+        {
+          "name": "Validate source branch",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Validate PR title",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Validate PR description",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Validate commit signatures",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Validate PR size limit",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Enforce breaking change guard",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Collect results and enforce blocking",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10
+        },
+        {
+          "name": "Post Validate PR title",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21
+        }
+      ]
+    },
+    {
+      "id": 2008,
+      "name": "validate / PR Metadata / Breaking Change Approval / Detect Breaking Changes",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:08:40Z",
+      "completed_at": "2026-11-13T14:08:44Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2008",
+      "runner_name": "runner-8",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Resolve the gate scope",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Announce the scope verdict",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "List the breaking-change commits",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 5
+        },
+        {
+          "name": "Normalize detection result",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13
+        }
+      ]
+    },
+    {
+      "id": 2009,
+      "name": "validate / Permission Manifest Nudge",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:08:50Z",
+      "completed_at": "2026-11-13T14:10:09Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2009",
+      "runner_name": "runner-9",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Checkout",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Nudge when no permissions.yaml manifest exists",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Detect permissions.yaml changes",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Validate the changed permissions.yaml",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Post Validate the changed permissions.yaml",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Post Checkout",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11
+        }
+      ]
+    },
+    {
+      "id": 2010,
+      "name": "validate / Go Analysis (pipeline) / Detect Changes",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:08:47Z",
+      "completed_at": "2026-11-13T14:08:53Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2010",
+      "runner_name": "runner-10",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "PR size guard",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 3
+        },
+        {
+          "name": "Get changed paths",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Plan integration shards",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Plan unit-test shards",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Resolve owner runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Post Get changed paths",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15
+        }
+      ]
+    },
+    {
+      "id": 2011,
+      "name": "validate / Lib Version (check) / Lerian Library Version Check",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:08:47Z",
+      "completed_at": "2026-11-13T14:08:59Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2011",
+      "runner_name": "runner-11",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Checkout",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Validate Lerian library versions",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Post Checkout",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        }
+      ]
+    },
+    {
+      "id": 2012,
+      "name": "validate / Security (pipeline) / prepare_matrix",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:08:47Z",
+      "completed_at": "2026-11-13T14:08:54Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2012",
+      "runner_name": "runner-12",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "PR size guard",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 3
+        },
+        {
+          "name": "Non-doc change gate",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 4
+        },
+        {
+          "name": "Get changed paths",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Resolve scan matrix",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Post Get changed paths",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13
+        }
+      ]
+    },
+    {
+      "id": 2013,
+      "name": "validate / Secret scan (docs-only)",
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-11-13T14:08:42Z",
+      "completed_at": "2026-11-13T14:08:42Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2013",
+      "runner_name": null,
+      "steps": []
+    },
+    {
+      "id": 2014,
+      "name": "validate / Secret scan (merge queue)",
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-11-13T14:08:42Z",
+      "completed_at": "2026-11-13T14:08:42Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2014",
+      "runner_name": null,
+      "steps": []
+    },
+    {
+      "id": 2015,
+      "name": "validate / PR Metadata / Breaking Change Approval / Request Approval",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:08:49Z",
+      "completed_at": "2026-11-13T14:08:52Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2015",
+      "runner_name": "runner-15",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Check for a prior approval of the same change",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 3
+        },
+        {
+          "name": "Resolve what the approving run approved",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 4
+        },
+        {
+          "name": "Confirm the approval covers this change",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Derive the reviewers from CODEOWNERS",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 6
+        },
+        {
+          "name": "Verify the breaking-approval Environment is protected",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 7
+        },
+        {
+          "name": "Report the acknowledgement requirement",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8
+        },
+        {
+          "name": "Hold the gate status while the decision is pending",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9
+        },
+        {
+          "name": "Request the approval on the pull request",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21
+        }
+      ]
+    },
+    {
+      "id": 2016,
+      "name": "validate / PR Metadata / Advisory Checks",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:08:50Z",
+      "completed_at": "2026-11-13T14:09:00Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2016",
+      "runner_name": "runner-16",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Merge queue — advisory checks belong to the pull request",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 3
+        },
+        {
+          "name": "Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Check PR metadata",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Check PR size",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Auto-label PR",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Collect results",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Post Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 16
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 17
+        }
+      ]
+    },
+    {
+      "id": 2017,
+      "name": "validate / PR Metadata / Breaking Change Approval / Breaking Change Approval",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:08:57Z",
+      "completed_at": "2026-11-13T14:09:05Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2017",
+      "runner_name": "runner-17",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Collect the Environment decisions",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 3
+        },
+        {
+          "name": "Resolve the verdict",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Report the outcome on the pull request",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 5
+        },
+        {
+          "name": "Close the pull request on rejection",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 6
+        },
+        {
+          "name": "Publish the gate status",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Record the verdict",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 16
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 17
+        }
+      ]
+    },
+    {
+      "id": 2018,
+      "name": "validate / PR Metadata / Breaking Change Approval / Approve Breaking Change",
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-11-13T14:08:52Z",
+      "completed_at": "2026-11-13T14:08:52Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2018",
+      "runner_name": null,
+      "steps": []
+    },
+    {
+      "id": 2019,
+      "name": "validate / Go Analysis (pipeline) / Build (app)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:09:48Z",
+      "completed_at": "2026-11-13T14:11:16Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2019",
+      "runner_name": "runner-19",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Install system dependencies",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 3
+        },
+        {
+          "name": "Setup Go",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Require secrets",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Fetch private Go modules",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Detect Makefile build target",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Download dependencies",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8
+        },
+        {
+          "name": "Build (make)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Build (go)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10
+        },
+        {
+          "name": "Post Setup Go",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19
+        },
+        {
+          "name": "Post Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21
+        }
+      ]
+    },
+    {
+      "id": 2020,
+      "name": "validate / Go Analysis (pipeline) / Security (app)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:08:59Z",
+      "completed_at": "2026-11-13T14:10:30Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2020",
+      "runner_name": "runner-20",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Pull ghcr.io/securego/gosec@sha256:a6cd2f302b5f692e0b77b25751b299ddfbc0763a9711fa36e5a6bccd5292b0e8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Install system dependencies",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 5
+        },
+        {
+          "name": "Setup Go",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Require secrets",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Fetch private Go modules",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Detect Makefile sec target",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Run Security (make)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10
+        },
+        {
+          "name": "Run Gosec for SARIF",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11
+        },
+        {
+          "name": "Upload Gosec SARIF",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12
+        },
+        {
+          "name": "Install govulncheck",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13
+        },
+        {
+          "name": "Run govulncheck",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14
+        },
+        {
+          "name": "Post Upload Gosec SARIF",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 25
+        },
+        {
+          "name": "Post Setup Go",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 26
+        },
+        {
+          "name": "Post Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 27
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 28
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 29
+        }
+      ]
+    },
+    {
+      "id": 2021,
+      "name": "validate / Go Analysis (pipeline) / Go Modules (app)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:08:58Z",
+      "completed_at": "2026-11-13T14:09:11Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2021",
+      "runner_name": "runner-21",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Setup Go",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Require secrets",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Fetch private Go modules",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Hand off private Go modules",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Post Setup Go",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12
+        },
+        {
+          "name": "Post Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15
+        }
+      ]
+    },
+    {
+      "id": 2022,
+      "name": "validate / Go Analysis (pipeline) / Lint (app)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:08:59Z",
+      "completed_at": "2026-11-13T14:09:38Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2022",
+      "runner_name": "runner-22",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Install system dependencies",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 4
+        },
+        {
+          "name": "Setup Go",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Require secrets",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Fetch private Go modules",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Install golangci-lint",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Detect Makefile lint target",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Run GolangCI-Lint (make)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10
+        },
+        {
+          "name": "Run GolangCI-Lint (direct)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 11
+        },
+        {
+          "name": "Post Setup Go",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20
+        },
+        {
+          "name": "Post Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 22
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 23
+        }
+      ]
+    },
+    {
+      "id": 2023,
+      "name": "validate / Go Analysis (pipeline) / No Go Changes",
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-11-13T14:08:54Z",
+      "completed_at": "2026-11-13T14:08:54Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2023",
+      "runner_name": null,
+      "steps": []
+    },
+    {
+      "id": 2024,
+      "name": "validate / Security (pipeline) / security_scan (example-service, .)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:09:01Z",
+      "completed_at": "2026-11-13T14:09:50Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2024",
+      "runner_name": "runner-24",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Checkout Repository",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Login to Docker Registry",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Select Docker builder",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Set up Docker Buildx",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 6
+        },
+        {
+          "name": "Set up Docker Builder (Blacksmith)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Remove builder config from the build context",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Build Docker Image for Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Trivy Filesystem Scan",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10
+        },
+        {
+          "name": "Trivy Image Scan",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11
+        },
+        {
+          "name": "Dockerfile Compliance Checks",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12
+        },
+        {
+          "name": "Distroless Image Check",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13
+        },
+        {
+          "name": "Pre-release Version Check",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14
+        },
+        {
+          "name": "Stage report inputs",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15
+        },
+        {
+          "name": "Upload report inputs",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 16
+        },
+        {
+          "name": "Security Gate",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 17
+        },
+        {
+          "name": "Gate - Fail on Pre-release Versions",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 18
+        },
+        {
+          "name": "Gate - Distroless image",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19
+        },
+        {
+          "name": "Post Trivy Image Scan",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 32
+        },
+        {
+          "name": "Post Trivy Filesystem Scan",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 33
+        },
+        {
+          "name": "Post Build Docker Image for Scanning",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 34
+        },
+        {
+          "name": "Post Set up Docker Builder (Blacksmith)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 35
+        },
+        {
+          "name": "Post Login to Docker Registry",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 36
+        },
+        {
+          "name": "Post Checkout Repository",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 37
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 38
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 39
+        }
+      ]
+    },
+    {
+      "id": 2025,
+      "name": "validate / Security (pipeline) / docs_secret_scan",
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-11-13T14:08:55Z",
+      "completed_at": "2026-11-13T14:08:55Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2025",
+      "runner_name": null,
+      "steps": []
+    },
+    {
+      "id": 2026,
+      "name": "validate / Security (pipeline) / codeql_scan",
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-11-13T14:08:55Z",
+      "completed_at": "2026-11-13T14:08:55Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2026",
+      "runner_name": null,
+      "steps": []
+    },
+    {
+      "id": 2027,
+      "name": "validate / Lib Version",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:09:08Z",
+      "completed_at": "2026-11-13T14:09:17Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2027",
+      "runner_name": "runner-27",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Aggregate Lib Version result",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        }
+      ]
+    },
+    {
+      "id": 2028,
+      "name": "validate / PR Metadata / PR Checks Summary",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:09:11Z",
+      "completed_at": "2026-11-13T14:09:35Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2028",
+      "runner_name": "runner-28",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "PR Checks Summary",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Merge queue — summary belongs to the pull request",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 3
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        }
+      ]
+    },
+    {
+      "id": 2029,
+      "name": "validate / PR Metadata / PR Validation Report",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:09:05Z",
+      "completed_at": "2026-11-13T14:09:09Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2029",
+      "runner_name": "runner-29",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Post PR validation summary comment",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        }
+      ]
+    },
+    {
+      "id": 2030,
+      "name": "validate / Go Analysis (pipeline) / Tests (app)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:09:17Z",
+      "completed_at": "2026-11-13T14:11:19Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2030",
+      "runner_name": "runner-30",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Install system dependencies",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 4
+        },
+        {
+          "name": "Setup Go",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Restore private Go modules",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Detect Makefile test target",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Download dependencies",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8
+        },
+        {
+          "name": "Run tests (make)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Generate coverage (fallback for make test)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10
+        },
+        {
+          "name": "Run tests (go)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 11
+        },
+        {
+          "name": "OpenAPI spec drift gate",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12
+        },
+        {
+          "name": "Upload coverage artifact",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13
+        },
+        {
+          "name": "Post Setup Go",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 24
+        },
+        {
+          "name": "Post Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 25
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 26
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 27
+        }
+      ]
+    },
+    {
+      "id": 2031,
+      "name": "validate / Go Analysis (pipeline) / Integration Tests (app)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:09:16Z",
+      "completed_at": "2026-11-13T14:18:02Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2031",
+      "runner_name": "runner-31",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Install system dependencies",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 4
+        },
+        {
+          "name": "Setup Go",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Restore private Go modules",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Parse integration configuration",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 7
+        },
+        {
+          "name": "Start service container",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8
+        },
+        {
+          "name": "Run integration tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Verify the integration suite actually ran",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10
+        },
+        {
+          "name": "Stop service container",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 11
+        },
+        {
+          "name": "Post Setup Go",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20
+        },
+        {
+          "name": "Post Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 22
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 23
+        }
+      ]
+    },
+    {
+      "id": 2032,
+      "name": "validate / Go Analysis (pipeline) / Test Determinism (${{ matrix.app.name }})",
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-11-13T14:09:11Z",
+      "completed_at": "2026-11-13T14:09:11Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2032",
+      "runner_name": null,
+      "steps": []
+    },
+    {
+      "id": 2033,
+      "name": "validate / Go Analysis (pipeline) / Custom Checks (${{ matrix.app.name }})",
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-11-13T14:09:12Z",
+      "completed_at": "2026-11-13T14:09:11Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2033",
+      "runner_name": null,
+      "steps": []
+    },
+    {
+      "id": 2034,
+      "name": "validate / PR Metadata / Notify / Send Notification",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:09:40Z",
+      "completed_at": "2026-11-13T14:09:45Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2034",
+      "runner_name": "runner-34",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Pull ghcr.io/rtcamp/action-slack-notify@sha256:67a9d3fcb08b56f715f854668f7b65cb4b39e84fc1612687f01ef2364335a14a",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Check if Slack webhook is configured",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Determine notification settings",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Build notification message",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Send Slack notification",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Warn on a failed Slack notification",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8
+        },
+        {
+          "name": "Log notification skipped",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19
+        }
+      ]
+    },
+    {
+      "id": 2035,
+      "name": "validate / Security (pipeline) / Notify",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:09:56Z",
+      "completed_at": "2026-11-13T14:10:02Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2035",
+      "runner_name": "runner-35",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Pull ghcr.io/rtcamp/action-slack-notify:v2.3.3",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Slack Notification",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        }
+      ]
+    },
+    {
+      "id": 2036,
+      "name": "validate / Security (pipeline) / Results",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:09:55Z",
+      "completed_at": "2026-11-13T14:09:57Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2036",
+      "runner_name": "runner-36",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Aggregate results",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        }
+      ]
+    },
+    {
+      "id": 2037,
+      "name": "validate / Security (pipeline) / Security Report (example-service, .)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:09:56Z",
+      "completed_at": "2026-11-13T14:10:01Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2037",
+      "runner_name": "runner-37",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Resolve report key",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Download report inputs",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Report inputs missing",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 5
+        },
+        {
+          "name": "Read report inputs",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Post Security Scan Results to PR",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15
+        }
+      ]
+    },
+    {
+      "id": 2038,
+      "name": "validate / Security",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:10:11Z",
+      "completed_at": "2026-11-13T14:10:19Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2038",
+      "runner_name": "runner-38",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Aggregate security result",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        }
+      ]
+    },
+    {
+      "id": 2039,
+      "name": "validate / Go Analysis (pipeline) / Coverage (app)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:11:28Z",
+      "completed_at": "2026-11-13T14:12:21Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2039",
+      "runner_name": "runner-39",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Setup Go",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Download coverage artifact",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Download shard coverage artifacts",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 5
+        },
+        {
+          "name": "Merge shard coverage",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 6
+        },
+        {
+          "name": "Filter coverage with .ignorecoverunit",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Calculate coverage",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Generate HTML coverage report",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Upload coverage report",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10
+        },
+        {
+          "name": "Post coverage comment",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11
+        },
+        {
+          "name": "Check coverage threshold",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12
+        },
+        {
+          "name": "Coverage summary",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13
+        },
+        {
+          "name": "Post Setup Go",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 25
+        },
+        {
+          "name": "Post Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 26
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 27
+        }
+      ]
+    },
+    {
+      "id": 2040,
+      "name": "validate / Go Analysis (pipeline) / Results",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:18:07Z",
+      "completed_at": "2026-11-13T14:18:09Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2040",
+      "runner_name": "runner-40",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Aggregate results",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        }
+      ]
+    },
+    {
+      "id": 2041,
+      "name": "validate / Go Analysis (pipeline) / Notify / Send Notification",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:18:07Z",
+      "completed_at": "2026-11-13T14:18:12Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2041",
+      "runner_name": "runner-41",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Set up runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Pull ghcr.io/rtcamp/action-slack-notify@sha256:67a9d3fcb08b56f715f854668f7b65cb4b39e84fc1612687f01ef2364335a14a",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Check if Slack webhook is configured",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Determine notification settings",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Build notification message",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Send Slack notification",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Warn on a failed Slack notification",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8
+        },
+        {
+          "name": "Log notification skipped",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9
+        },
+        {
+          "name": "Complete runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19
+        }
+      ]
+    },
+    {
+      "id": 2042,
+      "name": "validate / Go Analysis",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:18:21Z",
+      "completed_at": "2026-11-13T14:18:29Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2042",
+      "runner_name": "runner-42",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Aggregate Go Analysis result",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        }
+      ]
+    },
+    {
+      "id": 2043,
+      "name": "validate / Record verdict",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-13T14:18:37Z",
+      "completed_at": "2026-11-13T14:18:47Z",
+      "html_url": "https://github.com/LerianStudio/example-service/actions/runs/1000/job/2043",
+      "runner_name": "runner-43",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Record the gate verdict",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        }
+      ]
+    }
+  ]
+}

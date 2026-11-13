@@ -36,6 +36,18 @@ on:
         value: >-
           ${{ inputs.enable_breaking_change_approval
               && jobs.breaking-change-approval.outputs.approved == 'true' && 'true' || 'false' }}
+      # The advisory steps are continue-on-error, so their job reports success
+      # whatever they did: these outputs are how a caller sees that one of them
+      # failed (the Slack run summary lists them as warnings). Never a verdict.
+      advisory_metadata_result:
+        description: 'Outcome of the advisory PR metadata check (success/failure/skipped)'
+        value: ${{ jobs.advisory-checks.outputs.metadata-result || 'skipped' }}
+      advisory_size_result:
+        description: 'Outcome of the advisory PR size labelling (success/failure/skipped)'
+        value: ${{ jobs.advisory-checks.outputs.size-result || 'skipped' }}
+      advisory_label_result:
+        description: 'Outcome of the advisory auto-labeler (success/failure/skipped)'
+        value: ${{ jobs.advisory-checks.outputs.label-result || 'skipped' }}
     inputs:
       runner_type:
         description: 'Deprecated, ignored. Runner comes from org variables.'
