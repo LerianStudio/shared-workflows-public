@@ -135,11 +135,13 @@ def first_failed_step(job):
     return ""
 
 
-GATE_STEP = re.compile(r"^Aggregate .+ result$")
+# "Aggregate <X> result" (result-gate in the umbrellas), "Aggregate results"
+# (the Results job of the nested pipelines).
+GATE_STEP = re.compile(r"^Aggregate( .+)? results?$")
 
 
 def is_gate_failure(job):
-    """True when every failed step is a result-gate aggregation step."""
+    """True when every failed step is an aggregation step."""
     failed_steps = [s.get("name", "") for s in job.get("steps") or [] if s.get("conclusion") in FAILED_CONCLUSIONS]
     return bool(failed_steps) and all(GATE_STEP.match(name) for name in failed_steps)
 
@@ -198,12 +200,19 @@ def render(jobs_doc, environ=None):
     failed = [j for j in jobs if j.get("conclusion") in FAILED_CONCLUSIONS]
     # A failed run lists its failed (❌) and cancelled (⚪) jobs, each linked to
     # its log, with the first step that failed. A cancelled run leaves out its
-    # cancelled jobs and its gates, the jobs whose only failed step is the
-    # result-gate aggregation ("Aggregate <X> result"): a gate fails there
-    # when a need was cancelled, and when the cause is real the job that
-    # failed is listed on its own. A superseded run reads like a green one.
+    # cancelled jobs, and the failures the cancel caused: an aggregating job
+    # (only its aggregation step failed) that finished after the first
+    # cancelled job, as a gate does when a need was cancelled. Neither test
+    # alone tells them apart: a real failure can end after an unrelated cancel,
+    # and some gates (Lib Version, a reused verdict) carry the real failure in
+    # their aggregation step. A superseded run reads like a green one.
     if verdict == "cancelled":
-        failed = [j for j in failed if j.get("conclusion") != "cancelled" and not is_gate_failure(j)]
+        cut = min((j.get("completed_at") or "" for j in failed if j.get("conclusion") == "cancelled"), default="")
+        failed = [
+            j for j in failed
+            if j.get("conclusion") != "cancelled"
+            and not (is_gate_failure(j) and cut and (j.get("completed_at") or cut) >= cut)
+        ]
     failed_lines = []
     for job in failed:
         step = first_failed_step(job)

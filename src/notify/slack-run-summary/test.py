@@ -190,8 +190,9 @@ class CancelledRun(unittest.TestCase):
         payload = summary(fixture("failure"), base_env(VERDICT="cancelled"))
         self.assertEqual(attachment(payload)["color"], "#808080")
         self.assertRegex(attachment(payload)["text"], r"\n❌ <[^>]+\|Go Analysis \(pipeline\) / Tests \(app\)> — Run tests \(make\)")
-        # The Go Analysis gate only aggregates Tests (app): listed once, via the job.
-        self.assertTrue(attachment(payload)["fallback"].endswith("— 1 failed"))
+        # No job was cancelled, so no failure is put down to a cancel.
+        self.assertIn("|Go Analysis> — Aggregate Go Analysis result", attachment(payload)["text"])
+        self.assertTrue(attachment(payload)["fallback"].endswith("— 2 failed"))
 
     def test_real_failure_after_an_unrelated_cancel_is_listed(self):
         # A job was cancelled (a timeout, say) at 12:40, before Tests (app)
@@ -210,6 +211,32 @@ class CancelledRun(unittest.TestCase):
         self.assertNotIn("security_scan", text.split("*Jobs:*")[0])
         self.assertTrue(line(payload, "❌ *Jobs:*"))
         self.assertTrue(attachment(payload)["fallback"].endswith("— 1 failed"))
+
+    def test_gate_failing_before_the_cancel_is_kept(self):
+        # Lib Version checks inside its gate: the aggregation step is the only
+        # record of the real failure, and it ended before the cancel.
+        doc = fixture("cancelled")
+        doc["jobs"].append({
+            "id": 7002, "name": "validate / Lib Version", "status": "completed",
+            "conclusion": "failure", "completed_at": "2026-11-12T12:30:00Z",
+            "html_url": RUN_URL + "/job/7002",
+            "steps": [{"name": "Aggregate Lib Version result", "status": "completed", "conclusion": "failure", "number": 3}],
+        })
+        payload = summary(doc, base_env(VERDICT="cancelled"))
+        self.assertRegex(attachment(payload)["text"], r"\n❌ <[^>]+\|Lib Version> — Aggregate Lib Version result")
+
+    def test_results_job_failing_after_the_cancel_stays_out(self):
+        # pr-security-scan's Results job fails in "Aggregate results" once a
+        # scan was cancelled.
+        doc = fixture("cancelled")
+        doc["jobs"].append({
+            "id": 7003, "name": "validate / Security (pipeline) / Results", "status": "completed",
+            "conclusion": "failure", "completed_at": "2026-11-12T12:33:30Z",
+            "html_url": RUN_URL + "/job/7003",
+            "steps": [{"name": "Aggregate results", "status": "completed", "conclusion": "failure", "number": 2}],
+        })
+        payload = summary(doc, base_env(VERDICT="cancelled"))
+        self.assertIsNone(line(payload, "💥"))
 
     def test_gates_are_listed_in_a_failed_run(self):
         payload = summary(fixture("failure"), base_env(VERDICT="failure"))
