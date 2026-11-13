@@ -18,7 +18,6 @@ The message keeps the layout of `slack-notify`, the one the channel already read
 📊 *Jobs:* Changes 1/1 · Metadata 9/9 · Security 6/6 · Analysis 8/10 · Lib Version 2/2
 👤 *Author:* dev
 📌 *Branch:* `feat/api-routes` | *PR:* #42 | *Commit:* `077cbf7` | *Duration:* 26m 46s   ← #42 links to the PR
-
 🔗 View Workflow Run
 ```
 
@@ -29,7 +28,7 @@ The message keeps the layout of `slack-notify`, the one the channel already read
 
 Skipped jobs, jobs not yet completed and the job sending the message are left out. A caller wraps the umbrella in a job of its own, so the API names its jobs `validate / PR Metadata / Blocking Checks`; the action finds that prefix from its own job (its runner, or `job-name`), keeps only the jobs under it, and groups by the next segment. Built-in group labels: `PR Metadata` → Metadata; `Go/Frontend/Python Analysis` → Analysis; `Security`, the secret scans → Security; `Lib Version` → Lib Version; `Socket` → Socket; `Detect non-doc changes` → Changes. Any other group keeps its own name.
 
-The text stays under 3000 characters, so Slack never folds it behind "Show more": a failed list that does not fit ends with `+N more`, and the lines after it are always kept.
+Slack folds an attachment's text behind "Show more" from 700 characters or 5 line breaks. A green run has 4 line breaks and shows in full; a run with failures, warnings or both folds after its first lines, with the verdict on top. The whole text is bounded at 3000 characters: a failed list that does not fit ends with `+N more`, and the lines after it are always kept.
 
 The action never fails its step on Slack's account: a refused message is a `::warning`, a missing webhook skips silently. The verdict is the caller's (`status`); the listed jobs never change it.
 
@@ -117,7 +116,7 @@ permissions:
     {
       "color": "danger",
       "fallback": "❌ PR Validation failed in example-service — PR #42: feat(api): add provider routes — 2 failed",
-      "text": "❌ *PR Validation* failed in *example-service*\n💥 *Failed:*\n• <https://github.com/LerianStudio/example-service/actions/runs/1000/job/2030|Go Analysis (pipeline) / Tests (app)> — Run tests (make) · 2m 15s\n• <https://github.com/LerianStudio/example-service/actions/runs/1000/job/2042|Go Analysis> — Aggregate Go Analysis result · 8s\n⚠️ *Warnings:* PR metadata\n📊 *Jobs:* Changes 1/1 · Metadata 9/9 · Permission Manifest Nudge 1/1 · Security 6/6 · Analysis 8/10 · Lib Version 2/2 · Record verdict 1/1\n👤 *Author:* dev\n📌 *Branch:* `feat/api-routes` | *PR:* <https://github.com/LerianStudio/example-service/pull/42|#42> | *Commit:* `077cbf7` | *Duration:* 26m 46s\n\n<https://github.com/LerianStudio/example-service/actions/runs/1000|🔗 View Workflow Run>",
+      "text": "❌ *PR Validation* failed in *example-service*\n💥 *Failed:*\n• <https://github.com/LerianStudio/example-service/actions/runs/1000/job/2030|Go Analysis (pipeline) / Tests (app)> — Run tests (make) · 2m 15s\n• <https://github.com/LerianStudio/example-service/actions/runs/1000/job/2042|Go Analysis> — Aggregate Go Analysis result · 8s\n⚠️ *Warnings:* PR metadata\n📊 *Jobs:* Changes 1/1 · Metadata 9/9 · Permission Manifest Nudge 1/1 · Security 6/6 · Analysis 8/10 · Lib Version 2/2 · Record verdict 1/1\n👤 *Author:* dev\n📌 *Branch:* `feat/api-routes` | *PR:* <https://github.com/LerianStudio/example-service/pull/42|#42> | *Commit:* `077cbf7` | *Duration:* 26m 46s\n<https://github.com/LerianStudio/example-service/actions/runs/1000|🔗 View Workflow Run>",
       "footer": "Workflow: PR Validation",
       "mrkdwn_in": [
         "text"

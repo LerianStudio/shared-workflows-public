@@ -90,6 +90,8 @@ class GreenRun(unittest.TestCase):
         self.assertIn(f"📌 *Branch:* `feat/api-things` | *PR:* <{PR_URL}|#42> | *Commit:* `077cbf7` | *Duration:* ", self.text)
         self.assertNotIn("feat(api): add things", self.text)
         self.assertTrue(self.text.endswith(f"<{RUN_URL}|🔗 View Workflow Run>"))
+        # Slack folds attachment text from 5 line breaks: a green run stays open.
+        self.assertLess(self.text.count("\n"), 5)
         self.assertEqual(attachment(self.payload)["color"], "good")
         self.assertEqual(attachment(self.payload)["footer"], "Workflow: PR Validation")
         self.assertEqual(attachment(self.payload)["mrkdwn_in"], ["text"])

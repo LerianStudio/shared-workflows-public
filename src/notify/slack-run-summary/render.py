@@ -26,8 +26,9 @@ import os
 import sys
 from datetime import datetime, timezone
 
-# Slack shows an attachment's text in full up to a few thousand characters and
-# folds the rest behind "Show more"; the failed list is cut to stay under it.
+# Bounds the message, not what Slack shows unfolded: Slack folds an
+# attachment's text behind "Show more" from 700 characters or 5 line breaks.
+# A green run stays under that; a failed one folds after its first lines.
 TEXT_LIMIT = 3000
 MORE_RESERVE = 40  # room kept for "+N more"
 LINE_LIMIT = 1000  # one job line never takes the whole message
@@ -250,7 +251,7 @@ def render(jobs_doc, environ=None):
         where += " | verdict reused"
     tail = [f"👤 *Author:* {escape(get('ACTOR'))}", where]
     if run_url:
-        tail.append(f"\n<{run_url}|🔗 View Workflow Run>")
+        tail.append(f"<{run_url}|🔗 View Workflow Run>")
 
     middle = []
     if warnings:
