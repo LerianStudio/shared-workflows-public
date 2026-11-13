@@ -5,20 +5,32 @@
   </tr>
 </table>
 
-Sends **one** Slack message for a whole workflow run: the merge verdict in the header, then every job that ran, read from the jobs API. It replaces the one-message-per-pipeline pattern of [`slack-notify`](../slack-notify/README.md) in the PR umbrellas (`go-pr-validation.yml`, `js-pr-validation.yml`, `python-pr-validation.yml`), which turn their nested pipelines' own message off.
+Sends **one** Slack message for a whole workflow run: the merge verdict in the first line, then every job that ran, read from the jobs API. It replaces the one-message-per-pipeline pattern of [`slack-notify`](../slack-notify/README.md) in the PR umbrellas (`go-pr-validation.yml`, `js-pr-validation.yml`, `python-pr-validation.yml`), which turn their nested pipelines' own message off.
 
-The message (Block Kit, posted straight to the incoming webhook, with a `text` fallback):
+The message keeps the layout of `slack-notify`, the one the channel already reads: one legacy attachment, with the colour bar (green, red, grey for a superseded run) and the `Workflow: <name>` footer, posted straight to the webhook.
 
-- **Header** — verdict emoji and `PR #<n>: <title>`, linked to the pull request (the run, outside a pull request).
-- **Context** — repository · actor · short SHA · total duration · `attempt N` on a re-run · `verdict reused` when the gates reported an earlier run's verdict.
-- **Failed (N)** — one line per job that ended `failure`, `cancelled` or `timed_out`: its name, the first failing step, its duration, linked to the job log.
-- **Warnings (N)** — advisory checks that failed without failing a gate (`advisory-results`).
-- **Passed** — one compact line, `succeeded/ran` per group: `Metadata 9/9 · Analysis 8/10 · Security 6/6`.
-- **Buttons** — View run, Open PR.
+```
+❌ *PR Validation* failed in *example-service*
+📌 PR #42: feat(api): add provider routes                      ← link to the PR
+💥 *Failed:*
+• Go Analysis (pipeline) / Tests (app) — Run tests (make) · 2m 15s   ← link to the job
+• Go Analysis — Aggregate Go Analysis result · 8s
+⚠️ *Warnings:* PR metadata
+📊 *Jobs:* Changes 1/1 · Metadata 9/9 · Security 6/6 · Analysis 8/10 · Lib Version 2/2
+👤 *Author:* dev
+📌 *Branch:* `feat/api-routes` | *Commit:* `077cbf7` | *Duration:* 26m 46s
+
+🔗 View Workflow Run
+```
+
+- **Failed** — one line per job that ended `failure`, `cancelled` or `timed_out`: its name, the first failing step, its duration, linked to the job log.
+- **Warnings** — advisory checks that failed without failing a gate (`advisory-results`).
+- **Jobs** — `succeeded/ran` per group; `✅` when every group passed, `📊` otherwise.
+- The branch line adds `attempt N` on a re-run and `verdict reused` when the gates reported an earlier run's verdict.
 
 Skipped jobs, jobs not yet completed and the job sending the message are left out. A caller wraps the umbrella in a job of its own, so the API names its jobs `validate / PR Metadata / Blocking Checks`; the action finds that prefix from its own job (its runner, or `job-name`), keeps only the jobs under it, and groups by the next segment. Built-in group labels: `PR Metadata` → Metadata; `Go/Frontend/Python Analysis` → Analysis; `Security`, the secret scans → Security; `Lib Version` → Lib Version; `Socket` → Socket; `Detect non-doc changes` → Changes. Any other group keeps its own name.
 
-Slack limits are enforced: a section never exceeds 3000 characters and the message 50 blocks; a list that does not fit ends with `+N more`.
+The text stays under 3000 characters, so Slack never folds it behind "Show more": a failed list that does not fit ends with `+N more`, and the lines after it are always kept.
 
 The action never fails its step on Slack's account: a refused message is a `::warning`, a missing webhook skips silently. The verdict is the caller's (`status`); the listed jobs never change it.
 
@@ -29,6 +41,7 @@ The action never fails its step on Slack's account: a refused message is a `::wa
 | `webhook-url` | Slack incoming webhook URL. Empty skips silently | Yes | — |
 | `github-token` | Token that can list this run's jobs (`actions: read`) | No | `${{ github.token }}` |
 | `status` | Header verdict: `success`, `failure` or `cancelled` | Yes | — |
+| `workflow-name` | Name shown in the message. Empty uses the running workflow's name (`github.workflow`, the caller's for a reusable workflow) | No | `''` |
 | `job-name` | Display name of the job running this action | No | `Slack Summary` |
 | `advisory-results` | Newline-separated `Name=result` lines; each `failure` is a warning | No | `''` |
 | `verdict-reused` | `'true'` when the gates reported an earlier run's verdict | No | `false` |
@@ -101,21 +114,20 @@ permissions:
 
 ```json
 {
-  "text": "❌ PR #42: feat(api): add provider routes — LerianStudio/example-service — 2 failed",
-  "blocks": [
-    {"type": "section", "text": {"type": "mrkdwn", "text": "❌ *<https://github.com/LerianStudio/example-service/pull/42|PR #42: feat(api): add provider routes>*"}},
-    {"type": "context", "elements": [{"type": "mrkdwn", "text": "LerianStudio/example-service · dev · `077cbf7` · 26m 46s"}]},
-    {"type": "section", "text": {"type": "mrkdwn", "text": "*Failed (2)*\n❌ <…/job/2030|Go Analysis (pipeline) / Tests (app)> — Run tests (make) · 2m 15s\n❌ <…/job/2042|Go Analysis> — Aggregate Go Analysis result · 8s"}},
-    {"type": "section", "text": {"type": "mrkdwn", "text": "*Warnings (1)*\n⚠️ PR metadata — failure"}},
-    {"type": "section", "text": {"type": "mrkdwn", "text": "*Passed*\nChanges 1/1 · Metadata 9/9 · Permission Manifest Nudge 1/1 · Security 6/6 · Analysis 8/10 · Lib Version 2/2"}},
-    {"type": "actions", "elements": [
-      {"type": "button", "text": {"type": "plain_text", "text": "View run"}, "url": "https://github.com/LerianStudio/example-service/actions/runs/1000"},
-      {"type": "button", "text": {"type": "plain_text", "text": "Open PR"}, "url": "https://github.com/LerianStudio/example-service/pull/42"}
-    ]}
+  "attachments": [
+    {
+      "color": "danger",
+      "fallback": "❌ PR Validation failed in example-service — PR #42: feat(api): add provider routes — 2 failed",
+      "text": "❌ *PR Validation* failed in *example-service*\n📌 <https://github.com/LerianStudio/example-service/pull/42|PR #42: feat(api): add provider routes>\n💥 *Failed:*\n• <https://github.com/LerianStudio/example-service/actions/runs/1000/job/2030|Go Analysis (pipeline) / Tests (app)> — Run tests (make) · 2m 15s\n• <https://github.com/LerianStudio/example-service/actions/runs/1000/job/2042|Go Analysis> — Aggregate Go Analysis result · 8s\n⚠️ *Warnings:* PR metadata\n📊 *Jobs:* Changes 1/1 · Metadata 9/9 · Permission Manifest Nudge 1/1 · Security 6/6 · Analysis 8/10 · Lib Version 2/2 · Record verdict 1/1\n👤 *Author:* dev\n📌 *Branch:* `feat/api-routes` | *Commit:* `077cbf7` | *Duration:* 26m 46s\n\n<https://github.com/LerianStudio/example-service/actions/runs/1000|🔗 View Workflow Run>",
+      "footer": "Workflow: PR Validation",
+      "mrkdwn_in": [
+        "text"
+      ]
+    }
   ]
 }
 ```
 
 ## Tests
 
-`python3 src/notify/slack-run-summary/test.py` renders the real `jobs` listings in `fixtures/` (a green run, a failed test, a cancelled run — identifiers replaced) and covers skipped and in-progress jobs, the sender's exclusion, grouping, the failed lines, warnings, escaping of titles and job names, a run without a pull request, and the 3000-character and 50-block limits.
+`python3 src/notify/slack-run-summary/test.py` renders the real `jobs` listings in `fixtures/` (a green run, a failed test, a cancelled run — identifiers replaced) and covers skipped and in-progress jobs, the sender's exclusion, grouping, the failed lines, warnings, escaping of titles and job names, a run without a pull request, and the 3000-character cut of the failed list.

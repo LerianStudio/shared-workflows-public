@@ -1,5 +1,5 @@
 name: Slack Run Summary
-description: Sends one Slack Block Kit message summarising every job a workflow run executed, grouped, with failures linked to their job.
+description: Sends one Slack message summarising every job a workflow run executed, in slack-notify's layout, with failures linked to their job.
 
 inputs:
   webhook-url:
@@ -12,6 +12,10 @@ inputs:
   status:
     description: 'Verdict shown in the header: success, failure or cancelled. Computed by the caller over its gates; jobs listed below never change it.'
     required: true
+  workflow-name:
+    description: 'Name shown in the message ("PR Validation"). Empty uses the name of the running workflow.'
+    required: false
+    default: ''
   job-name:
     description: 'Display name of the job running this action, used with the runner name to leave it out of its own summary and to find the umbrella prefix'
     required: false
@@ -92,8 +96,10 @@ runs:
         VERDICT: ${{ inputs.status }}
         SELF_RUNNER: ${{ runner.name }}
         SELF_JOB_NAME: ${{ inputs.job-name }}
+        WORKFLOW_NAME: ${{ inputs.workflow-name || github.workflow }}
         REPO: ${{ github.repository }}
         ACTOR: ${{ github.actor }}
+        BRANCH: ${{ github.head_ref || github.ref_name }}
         SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         RUN_ATTEMPT: ${{ github.run_attempt }}

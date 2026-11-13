@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render one Slack Block Kit message summarising a whole workflow run.
+"""Render one Slack message summarising a whole workflow run.
 
 Usage: python3 render.py <jobs.json>  (payload JSON on stdout)
 
@@ -12,7 +12,8 @@ reach a shell as code:
                   by the caller over its gates; this script never derives it
   SELF_RUNNER     RUNNER_NAME of the job sending the message
   SELF_JOB_NAME   display name of that job ("Slack Summary")
-  REPO, ACTOR, SHA, RUN_URL, RUN_ATTEMPT
+  WORKFLOW_NAME   name shown in the message ("PR Validation")
+  REPO, ACTOR, BRANCH, SHA, RUN_URL, RUN_ATTEMPT
   PR_NUMBER, PR_TITLE, PR_URL   empty outside a pull request
   VERDICT_REUSED  'true' when the gates reported a verdict of an earlier run
   ADVISORY        newline-separated `Name=result` lines; `failure` is a warning
@@ -25,15 +26,11 @@ import os
 import sys
 from datetime import datetime, timezone
 
-# Slack limits: a section's text is at most 3000 characters, a message at most
-# 50 blocks. The budgets below keep every combination under both.
-SECTION_LIMIT = 3000
-MAX_BLOCKS = 50
-FAILED_MAX_BLOCKS = 40
-WARNING_MAX_BLOCKS = 3
-PASSED_MAX_BLOCKS = 2
-MORE_RESERVE = 40  # room kept in the last section for "+N more"
-LINE_LIMIT = 1000  # one job line never takes a whole section
+# Slack shows an attachment's text in full up to a few thousand characters and
+# folds the rest behind "Show more"; the failed list is cut to stay under it.
+TEXT_LIMIT = 3000
+MORE_RESERVE = 40  # room kept for "+N more"
+LINE_LIMIT = 1000  # one job line never takes the whole message
 
 FAILED_CONCLUSIONS = {"failure", "cancelled", "timed_out"}
 
@@ -66,7 +63,11 @@ DEFAULT_LABELS = {
     "Detect non-doc changes": "Changes",
 }
 
-EMOJI = {"success": "✅", "failure": "❌", "cancelled": "⚪"}
+STATUS = {
+    "success": ("✅", "succeeded", "good"),
+    "failure": ("❌", "failed", "danger"),
+    "cancelled": ("⚪", "was cancelled", "#808080"),
+}
 
 
 def escape(text):
@@ -164,38 +165,26 @@ def clip(text, limit):
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
-def pack(title, lines, max_blocks):
-    """Lines into mrkdwn sections of at most SECTION_LIMIT characters, at most
-    max_blocks of them; what does not fit becomes `+N more`."""
-    blocks, current = [], f"*{title}*"
-    placed = 0
-    for line in lines:
-        candidate = current + "\n" + line
-        is_last_block = len(blocks) == max_blocks - 1
-        limit = SECTION_LIMIT - (MORE_RESERVE if is_last_block else 0)
-        if len(candidate) <= limit:
-            current = candidate
-            placed += 1
-            continue
-        if is_last_block:
-            break
-        blocks.append(current)
-        current = line
-        placed += 1
-    remaining = len(lines) - placed
-    if remaining:
-        current += f"\n_+{remaining} more_"
-    blocks.append(current)
-    return [{"type": "section", "text": {"type": "mrkdwn", "text": text}} for text in blocks]
-
-
 def advisory_warnings(raw):
     warnings = []
     for line in raw.splitlines():
         name, sep, result = line.strip().rpartition("=")
         if sep and name and result.strip() in FAILED_CONCLUSIONS:
-            warnings.append((name.strip(), result.strip()))
+            warnings.append(name.strip())
     return warnings
+
+
+def fit(lines, budget):
+    """As many lines as fit in budget characters; the rest becomes `+N more`."""
+    kept, used = [], 0
+    for line in lines:
+        if used + len(line) + 1 > budget - MORE_RESERVE:
+            break
+        kept.append(line)
+        used += len(line) + 1
+    if len(kept) < len(lines):
+        kept.append(f"_+{len(lines) - len(kept)} more_")
+    return kept
 
 
 def render(jobs_doc, environ=None):
@@ -207,85 +196,91 @@ def render(jobs_doc, environ=None):
         labels.update(json.loads(get("GROUP_LABELS")))
 
     verdict = get("VERDICT", "failure")
-    if verdict not in EMOJI:
+    if verdict not in STATUS:
         verdict = "failure"
+    emoji, status_text, color = STATUS[verdict]
     jobs = scope(jobs_doc.get("jobs", []), get("SELF_RUNNER"), get("SELF_JOB_NAME"))
 
     repo = get("REPO")
+    repo_name = repo.rsplit("/", 1)[-1]
+    workflow = clip(get("WORKFLOW_NAME") or "Workflow", 100)
     run_url = get("RUN_URL")
     pr_number, pr_title, pr_url = get("PR_NUMBER"), get("PR_TITLE"), get("PR_URL")
 
-    # ----- header -----
+    # The layout of slack-notify's message, which the channel already reads:
+    # verdict line, then what ran, then author, branch and commit, then the run.
+    head = [f"{emoji} *{escape(workflow)}* {status_text} in *{escape(repo_name)}*"]
     if pr_number:
-        headline = f"PR #{pr_number}: {pr_title}" if pr_title else f"PR #{pr_number}"
-        link = pr_url or run_url
-    else:
-        headline = f"{repo.rsplit('/', 1)[-1] or 'Workflow'} run"
-        link = run_url
-    headline = clip(headline, 200)
-    head_text = f"{EMOJI[verdict]} *<{link}|{escape(headline)}>*" if link else f"{EMOJI[verdict]} *{escape(headline)}*"
-    blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": head_text}}]
+        headline = escape(clip(f"PR #{pr_number}: {pr_title}" if pr_title else f"PR #{pr_number}", 200))
+        head.append(f"📌 <{pr_url}|{headline}>" if pr_url else f"📌 {headline}")
 
-    # ----- context -----
-    starts = [parse_time(j.get("started_at")) for j in jobs if j.get("started_at")]
-    now = parse_time(get("NOW")) or datetime.now(timezone.utc)
-    total = duration((now - min(starts)).total_seconds()) if starts else ""
-    context = [escape(repo), escape(get("ACTOR")), f"`{get('SHA')[:7]}`" if get("SHA") else ""]
-    context.append(total)
-    attempt = get("RUN_ATTEMPT", "1")
-    if attempt.isdigit() and int(attempt) > 1:
-        context.append(f"attempt {attempt}")
-    if get("VERDICT_REUSED") == "true":
-        context.append("verdict reused")
-    context_text = clip(" · ".join(part for part in context if part), SECTION_LIMIT)
-    blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": context_text}]})
-
-    # ----- failed -----
     failed = [j for j in jobs if j.get("conclusion") in FAILED_CONCLUSIONS]
     failed_lines = []
     for job in failed:
         step = first_failed_step(job)
-        mark = "⚪" if job.get("conclusion") == "cancelled" else "❌"
+        mark = "⚪" if job.get("conclusion") == "cancelled" else "•"
         name = escape(clip(job["short_name"], 300))
         text = f"<{job['html_url']}|{name}>" if job.get("html_url") else name
         detail = " · ".join(part for part in [escape(clip(step, 200)), duration(job_seconds(job))] if part)
         failed_lines.append(clip(f"{mark} {text}" + (f" — {detail}" if detail else ""), LINE_LIMIT))
-    if failed_lines:
-        blocks += pack(f"Failed ({len(failed_lines)})", failed_lines, FAILED_MAX_BLOCKS)
 
-    # ----- warnings -----
     warnings = advisory_warnings(get("ADVISORY"))
-    if warnings:
-        lines = [clip(f"⚠️ {escape(name)} — {result}", LINE_LIMIT) for name, result in warnings]
-        blocks += pack(f"Warnings ({len(lines)})", lines, WARNING_MAX_BLOCKS)
 
-    # ----- passed -----
     groups = {}
     for job in jobs:
         bucket = groups.setdefault(group_of(job["short_name"], labels), [0, 0])
         bucket[1] += 1
         if job.get("conclusion") == "success":
             bucket[0] += 1
+    jobs_line = ""
     if groups:
         parts = [f"{escape(name)} {ok}/{ran}" for name, (ok, ran) in groups.items()]
-        blocks += pack("Passed", [" · ".join(parts)] if len(" · ".join(parts)) < LINE_LIMIT else parts, PASSED_MAX_BLOCKS)
+        all_ok = all(ok == ran for ok, ran in groups.values())
+        jobs_line = clip(f"{'✅' if all_ok else '📊'} *Jobs:* " + " · ".join(parts), LINE_LIMIT)
 
-    # ----- buttons -----
-    buttons = []
+    starts = [parse_time(j.get("started_at")) for j in jobs if j.get("started_at")]
+    now = parse_time(get("NOW")) or datetime.now(timezone.utc)
+    where = f"📌 *Branch:* `{escape(clip(get('BRANCH'), 200))}` | " if get("BRANCH") else "📌 "
+    where += f"*Commit:* `{get('SHA')[:7]}`"
+    if starts:
+        where += f" | *Duration:* {duration((now - min(starts)).total_seconds())}"
+    attempt = get("RUN_ATTEMPT", "1")
+    if attempt.isdigit() and int(attempt) > 1:
+        where += f" | attempt {attempt}"
+    if get("VERDICT_REUSED") == "true":
+        where += " | verdict reused"
+    tail = [f"👤 *Author:* {escape(get('ACTOR'))}", where]
     if run_url:
-        buttons.append({"type": "button", "text": {"type": "plain_text", "text": "View run"}, "url": run_url})
-    if pr_url:
-        buttons.append({"type": "button", "text": {"type": "plain_text", "text": "Open PR"}, "url": pr_url})
-    if buttons:
-        blocks.append({"type": "actions", "elements": buttons})
+        tail.append(f"\n<{run_url}|🔗 View Workflow Run>")
 
-    assert len(blocks) <= MAX_BLOCKS, len(blocks)
+    middle = []
+    if warnings:
+        middle.append(clip("⚠️ *Warnings:* " + ", ".join(escape(w) for w in warnings), LINE_LIMIT))
+    if jobs_line:
+        middle.append(jobs_line)
 
-    # Slack parses `text` as mrkdwn too: a raw title could carry <!channel>.
-    fallback = f"{EMOJI[verdict]} {escape(headline)} — {escape(repo)}"
+    # The failed list takes whatever the rest leaves of the text budget.
+    fixed = len("\n".join(head + middle + tail)) + len("💥 *Failed:*") + 4
+    body = list(head)
+    if failed_lines:
+        body.append("💥 *Failed:*")
+        body += fit(failed_lines, TEXT_LIMIT - fixed)
+    text = "\n".join(body + middle + tail)
+
+    # Notifications and screen readers show `fallback`; Slack parses it too.
+    fallback = f"{emoji} {workflow} {status_text} in {repo_name}"
+    if pr_number:
+        fallback += f" — PR #{pr_number}: {pr_title}"
     if failed_lines:
         fallback += f" — {len(failed_lines)} failed"
-    return {"text": clip(fallback, SECTION_LIMIT), "blocks": blocks}, len(failed_lines)
+    attachment = {
+        "color": color,
+        "fallback": escape(clip(fallback, 300)),
+        "text": text,
+        "footer": f"Workflow: {escape(workflow)}",
+        "mrkdwn_in": ["text"],
+    }
+    return {"attachments": [attachment]}, len(failed_lines)
 
 
 def main():

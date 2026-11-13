@@ -19,10 +19,6 @@ HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 import render  # noqa: E402
 
-
-def summary(doc, env):
-    return render.render(doc, env)[0]
-
 RUN_URL = "https://github.com/LerianStudio/example-service/actions/runs/1000"
 PR_URL = "https://github.com/LerianStudio/example-service/pull/42"
 SELF = {
@@ -49,8 +45,10 @@ def base_env(**extra):
         "VERDICT": "success",
         "SELF_RUNNER": "runner-self",
         "SELF_JOB_NAME": "Slack Summary",
+        "WORKFLOW_NAME": "PR Validation",
         "REPO": "LerianStudio/example-service",
         "ACTOR": "dev",
+        "BRANCH": "feat/api-things",
         "SHA": "077cbf7ab433c8b9ea31c0f76aa3b67f16650cbe",
         "RUN_URL": RUN_URL,
         "RUN_ATTEMPT": "1",
@@ -63,66 +61,63 @@ def base_env(**extra):
     return env
 
 
-def texts(payload):
-    out = []
-    for block in payload["blocks"]:
-        if "text" in block:
-            out.append(block["text"]["text"])
-        for element in block.get("elements", []):
-            out.append(element.get("text", "") if isinstance(element.get("text"), str) else element["text"]["text"])
-    return "\n".join(out)
+def summary(doc, env):
+    return render.render(doc, env)[0]
 
 
-def section(payload, title):
-    return [b["text"]["text"] for b in payload["blocks"] if b.get("type") == "section" and b["text"]["text"].startswith(f"*{title}")]
+def attachment(payload):
+    return payload["attachments"][0]
+
+
+def lines(payload):
+    return attachment(payload)["text"].split("\n")
+
+
+def line(payload, prefix):
+    found = [item for item in lines(payload) if item.startswith(prefix)]
+    return found[0] if found else None
 
 
 class GreenRun(unittest.TestCase):
     def setUp(self):
         self.payload = summary(fixture("green"), base_env())
-        self.all = texts(self.payload)
+        self.text = attachment(self.payload)["text"]
+
+    def test_slack_notify_layout(self):
+        self.assertEqual(lines(self.payload)[0], "✅ *PR Validation* succeeded in *example-service*")
+        self.assertEqual(lines(self.payload)[1], f"📌 <{PR_URL}|PR #42: feat(api): add things>")
+        self.assertIn("👤 *Author:* dev", self.text)
+        self.assertIn("📌 *Branch:* `feat/api-things` | *Commit:* `077cbf7` | *Duration:* ", self.text)
+        self.assertTrue(self.text.endswith(f"<{RUN_URL}|🔗 View Workflow Run>"))
+        self.assertEqual(attachment(self.payload)["color"], "good")
+        self.assertEqual(attachment(self.payload)["footer"], "Workflow: PR Validation")
+        self.assertEqual(attachment(self.payload)["mrkdwn_in"], ["text"])
 
     def test_skipped_jobs_are_omitted(self):
-        self.assertNotIn("Runner Labels Check", self.all)
-        self.assertNotIn("No Go Changes", self.all)
+        self.assertNotIn("Runner Labels Check", self.text)
+        self.assertNotIn("No Go Changes", self.text)
 
     def test_sender_and_caller_jobs_are_excluded(self):
-        self.assertNotIn("Slack Summary", self.all)
-        # Jobs of the caller's own workflow sit outside the umbrella prefix.
-        passed = section(self.payload, "Passed")[0]
-        self.assertNotIn("Resolve tool versions", passed)
-        self.assertNotIn("Lint the tagged", passed)
+        self.assertNotIn("Slack Summary", self.text)
+        jobs = line(self.payload, "✅ *Jobs:*")
+        self.assertNotIn("Resolve tool versions", jobs)
+        self.assertNotIn("Lint the tagged", jobs)
 
     def test_groups_by_first_segment_with_labels(self):
-        passed = section(self.payload, "Passed")[0]
-        self.assertIn("Metadata 9/9", passed)
-        self.assertIn("Analysis 11/11", passed)
-        self.assertIn("Security 6/6", passed)
-        self.assertIn("Lib Version 2/2", passed)
-        self.assertIn("Changes 1/1", passed)
-        self.assertIn("Permission Manifest Nudge 1/1", passed)
+        jobs = line(self.payload, "✅ *Jobs:*")
+        for expected in ["Metadata 9/9", "Analysis 11/11", "Security 6/6", "Lib Version 2/2",
+                         "Changes 1/1", "Permission Manifest Nudge 1/1"]:
+            self.assertIn(expected, jobs)
 
-    def test_no_failed_section_and_success_header(self):
-        self.assertEqual(section(self.payload, "Failed"), [])
-        head = self.payload["blocks"][0]["text"]["text"]
-        self.assertTrue(head.startswith("✅ *<" + PR_URL + "|PR #42: feat(api): add things>*"), head)
+    def test_no_failed_or_warnings_lines(self):
+        self.assertIsNone(line(self.payload, "💥"))
+        self.assertIsNone(line(self.payload, "⚠️"))
+        self.assertNotIn("attempt", self.text)
+        self.assertNotIn("verdict reused", self.text)
 
-    def test_context_and_buttons(self):
-        context = self.payload["blocks"][1]["elements"][0]["text"]
-        self.assertIn("LerianStudio/example-service · dev · `077cbf7`", context)
-        self.assertNotIn("attempt", context)
-        self.assertNotIn("verdict reused", context)
-        actions = self.payload["blocks"][-1]
-        self.assertEqual([b["text"]["text"] for b in actions["elements"]], ["View run", "Open PR"])
-        self.assertEqual(actions["elements"][1]["url"], PR_URL)
-
-    def test_fallback_text(self):
-        self.assertIn("PR #42", self.payload["text"])
-
-    def test_fallback_text_escapes_mentions_and_links(self):
-        payload = summary(fixture("green"), base_env(PR_TITLE="fix: <!channel> ping <@U123> <https://x|label>"))
-        self.assertIn("&lt;!channel&gt; ping &lt;@U123&gt; &lt;https://x|label&gt;", payload["text"])
-        self.assertNotIn("<!channel>", payload["text"])
+    def test_fallback(self):
+        self.assertEqual(attachment(self.payload)["fallback"],
+                         "✅ PR Validation succeeded in example-service — PR #42: feat(api): add things")
 
 
 class FailureRun(unittest.TestCase):
@@ -130,34 +125,33 @@ class FailureRun(unittest.TestCase):
         self.payload = summary(fixture("failure"), base_env(VERDICT="failure", RUN_ATTEMPT="2", VERDICT_REUSED="true"))
 
     def test_failed_lines_have_step_duration_and_link(self):
-        failed = section(self.payload, "Failed")[0]
-        self.assertTrue(failed.startswith("*Failed (2)*"), failed)
+        text = lines(self.payload)
+        start = text.index("💥 *Failed:*")
         self.assertRegex(
-            failed,
-            r"❌ <https://github\.com/LerianStudio/example-service/actions/runs/1000/job/\d+\|Go Analysis \(pipeline\) / Tests \(app\)> — Run tests \(make\) · \d+m \d+s",
+            text[start + 1],
+            r"^• <https://github\.com/LerianStudio/example-service/actions/runs/1000/job/\d+\|Go Analysis \(pipeline\) / Tests \(app\)> — Run tests \(make\) · \d+m \d+s$",
         )
-        self.assertIn("|Go Analysis> — Aggregate Go Analysis result", failed)
+        self.assertIn("|Go Analysis> — Aggregate Go Analysis result", text[start + 2])
 
-    def test_partial_group_count_and_header(self):
-        self.assertIn("Analysis 8/10", section(self.payload, "Passed")[0])
-        self.assertTrue(self.payload["blocks"][0]["text"]["text"].startswith("❌"))
+    def test_header_color_and_partial_groups(self):
+        self.assertEqual(lines(self.payload)[0], "❌ *PR Validation* failed in *example-service*")
+        self.assertEqual(attachment(self.payload)["color"], "danger")
+        self.assertIn("Analysis 8/10", line(self.payload, "📊 *Jobs:*"))
 
-    def test_attempt_and_reuse_in_context(self):
-        context = self.payload["blocks"][1]["elements"][0]["text"]
-        self.assertIn("attempt 2", context)
-        self.assertIn("verdict reused", context)
+    def test_attempt_and_reuse(self):
+        branch = line(self.payload, "📌 *Branch:*")
+        self.assertTrue(branch.endswith(" | attempt 2 | verdict reused"), branch)
 
     def test_fallback_counts_failures(self):
-        self.assertTrue(self.payload["text"].endswith("2 failed"))
+        self.assertTrue(attachment(self.payload)["fallback"].endswith("— 2 failed"))
 
 
 class CancelledRun(unittest.TestCase):
     def test_cancelled_job_listed_with_its_own_mark(self):
         payload = summary(fixture("cancelled"), base_env(VERDICT="cancelled"))
-        failed = section(payload, "Failed")[0]
-        self.assertIn("⚪ <", failed)
-        self.assertIn("Record verdict", failed)
-        self.assertTrue(payload["blocks"][0]["text"]["text"].startswith("⚪"))
+        self.assertEqual(lines(payload)[0], "⚪ *PR Validation* was cancelled in *example-service*")
+        self.assertEqual(attachment(payload)["color"], "#808080")
+        self.assertIn("Record verdict", line(payload, "⚪ <"))
 
 
 class InProgressJobs(unittest.TestCase):
@@ -167,56 +161,57 @@ class InProgressJobs(unittest.TestCase):
             if job["name"] == "validate / Record verdict":
                 job["status"], job["conclusion"] = "in_progress", None
         payload = summary(doc, base_env())
-        self.assertNotIn("Record verdict", texts(payload))
-        self.assertEqual(section(payload, "Failed"), [])
+        self.assertNotIn("Record verdict", attachment(payload)["text"])
+        self.assertIsNone(line(payload, "💥"))
 
     def test_sender_found_by_name_when_runner_unknown(self):
         payload = summary(fixture("green"), base_env(SELF_RUNNER=""))
-        self.assertNotIn("Resolve tool versions", texts(payload))
-        self.assertNotIn("Slack Summary", texts(payload))
+        self.assertNotIn("Resolve tool versions", attachment(payload)["text"])
+        self.assertNotIn("Slack Summary", attachment(payload)["text"])
 
 
 class Warnings(unittest.TestCase):
     def test_advisory_failures_become_warnings(self):
         payload = summary(
             fixture("green"),
-            base_env(ADVISORY="PR Metadata check=failure\nPR Size=success\nAuto-label=skipped\nbogus\nPR Size label=failure"),
+            base_env(ADVISORY="PR metadata=failure\nPR size label=success\nAuto-label=skipped\nbogus\nSize=failure"),
         )
-        warnings = section(payload, "Warnings")[0]
-        self.assertTrue(warnings.startswith("*Warnings (2)*"))
-        self.assertIn("⚠️ PR Metadata check — failure", warnings)
-        self.assertIn("⚠️ PR Size label — failure", warnings)
+        self.assertEqual(line(payload, "⚠️"), "⚠️ *Warnings:* PR metadata, Size")
 
-    def test_no_warnings_section_when_all_passed(self):
-        payload = summary(fixture("green"), base_env(ADVISORY="PR Size=success"))
-        self.assertEqual(section(payload, "Warnings"), [])
+    def test_no_warnings_when_all_passed(self):
+        payload = summary(fixture("green"), base_env(ADVISORY="PR size label=success"))
+        self.assertIsNone(line(payload, "⚠️"))
 
 
 class Escaping(unittest.TestCase):
     def test_quotes_backticks_and_mrkdwn_controls(self):
         title = 'fix: handle "quoted" `ticks` & <b>tags</b> | pipes'
         payload = summary(fixture("green"), base_env(PR_TITLE=title))
-        head = payload["blocks"][0]["text"]["text"]
-        self.assertIn('"quoted" `ticks` &amp; &lt;b&gt;tags&lt;/b&gt;', head)
+        self.assertIn('"quoted" `ticks` &amp; &lt;b&gt;tags&lt;/b&gt;', lines(payload)[1])
         # The payload is plain JSON: the title round-trips without breaking it.
-        self.assertEqual(json.loads(json.dumps(payload))["blocks"][0]["text"]["text"], head)
+        self.assertEqual(json.loads(json.dumps(payload)), payload)
 
-    def test_job_names_are_escaped(self):
+    def test_fallback_escapes_mentions_and_links(self):
+        payload = summary(fixture("green"), base_env(PR_TITLE="fix: <!channel> ping <@U123> <https://x|label>"))
+        self.assertIn("&lt;!channel&gt; ping &lt;@U123&gt; &lt;https://x|label&gt;", attachment(payload)["fallback"])
+        self.assertNotIn("<!channel>", json.dumps(payload))
+
+    def test_job_names_and_branch_are_escaped(self):
         doc = fixture("failure")
         for job in doc["jobs"]:
             if job["name"].endswith("Tests (app)"):
                 job["name"] = "validate / Go Analysis (pipeline) / Tests <evil> & co"
-        failed = section(summary(doc, base_env(VERDICT="failure")), "Failed")[0]
-        self.assertIn("Tests &lt;evil&gt; &amp; co", failed)
+        payload = summary(doc, base_env(VERDICT="failure", BRANCH="feat/<!here>"))
+        self.assertIn("Tests &lt;evil&gt; &amp; co", attachment(payload)["text"])
+        self.assertIn("`feat/&lt;!here&gt;`", attachment(payload)["text"])
 
 
 class NoPullRequest(unittest.TestCase):
     def test_run_without_pr(self):
-        payload = summary(fixture("green"), base_env(PR_NUMBER="", PR_TITLE="", PR_URL=""))
-        head = payload["blocks"][0]["text"]["text"]
-        self.assertTrue(head.startswith(f"✅ *<{RUN_URL}|example-service run>*"), head)
-        buttons = [b["text"]["text"] for b in payload["blocks"][-1]["elements"]]
-        self.assertEqual(buttons, ["View run"])
+        payload = summary(fixture("green"), base_env(PR_NUMBER="", PR_TITLE="", PR_URL="", BRANCH="develop"))
+        self.assertTrue(lines(payload)[1].startswith("✅ *Jobs:*"), lines(payload)[1])
+        self.assertNotIn("PR #", json.dumps(payload))
+        self.assertIn("*Branch:* `develop`", attachment(payload)["text"])
 
 
 class GroupLabels(unittest.TestCase):
@@ -231,8 +226,8 @@ class GroupLabels(unittest.TestCase):
         labels = json.dumps({"validation": "PR Validation", "* Tests": "Tests", "*": "Checks"})
         payload = summary(doc, base_env(GROUP_LABELS=labels))
         # Groups keep the order their first job appears in.
-        self.assertIn("Tests 2/2 · Checks 1/1 · PR Validation 1/1", section(payload, "Passed")[0])
-        self.assertNotIn("Slack Summary", texts(payload))
+        self.assertEqual(line(payload, "✅ *Jobs:*"), "✅ *Jobs:* Tests 2/2 · Checks 1/1 · PR Validation 1/1")
+        self.assertNotIn("Slack Summary", attachment(payload)["text"])
 
 
 class Limits(unittest.TestCase):
@@ -252,39 +247,34 @@ class Limits(unittest.TestCase):
             })
         return doc
 
-    def assert_within_limits(self, payload):
-        self.assertLessEqual(len(payload["blocks"]), render.MAX_BLOCKS)
-        for block in payload["blocks"]:
-            if "text" in block:
-                self.assertLessEqual(len(block["text"]["text"]), render.SECTION_LIMIT)
+    def test_many_failures_truncate_with_more(self):
+        payload = summary(self.many_failures(200), base_env(VERDICT="failure"))
+        text = attachment(payload)["text"]
+        self.assertLessEqual(len(text), render.TEXT_LIMIT)
+        self.assertRegex(text, r"_\+\d+ more_")
+        # Everything after the list survives the cut.
+        self.assertIn("👤 *Author:* dev", text)
+        self.assertTrue(text.endswith("🔗 View Workflow Run>"))
+        self.assertTrue(attachment(payload)["fallback"].endswith("— 200 failed"))
 
-    def test_section_split_over_3000_chars(self):
-        payload = summary(self.many_failures(40), base_env(VERDICT="failure"))
-        self.assert_within_limits(payload)
-        self.assertGreater(len(section(payload, "Failed")), 0)
-        failed_blocks = [b for b in payload["blocks"] if "Tests (" in b.get("text", {}).get("text", "")]
-        self.assertGreater(len(failed_blocks), 1)
-        self.assertNotIn("more_", texts(payload))
-
-    def test_truncates_with_more_over_50_blocks(self):
-        payload = summary(self.many_failures(2000, name_len=250), base_env(VERDICT="failure"))
-        self.assert_within_limits(payload)
-        self.assertRegex(texts(payload), r"_\+\d+ more_")
-        self.assertIn("2000", payload["text"].split("—")[-1])
+    def test_few_failures_are_not_truncated(self):
+        payload = summary(self.many_failures(5), base_env(VERDICT="failure"))
+        self.assertNotIn("more_", attachment(payload)["text"])
 
     def test_single_huge_job_name_is_clipped(self):
         payload = summary(self.many_failures(1, name_len=10000), base_env(VERDICT="failure"))
-        self.assert_within_limits(payload)
+        self.assertLessEqual(len(attachment(payload)["text"]), render.TEXT_LIMIT)
 
 
 class Script(unittest.TestCase):
     def test_cli_reads_env_and_prints_json(self):
         env = dict(os.environ, **base_env())
+        env.pop("GITHUB_OUTPUT", None)
         out = subprocess.run(
             [sys.executable, str(HERE / "render.py"), str(HERE / "fixtures" / "jobs-green.json")],
             env=env, check=True, capture_output=True, text=True,
         ).stdout
-        self.assertEqual(json.loads(out)["blocks"][0]["type"], "section")
+        self.assertEqual(json.loads(out)["attachments"][0]["color"], "good")
 
 
 class Composite(unittest.TestCase):
@@ -293,17 +283,17 @@ class Composite(unittest.TestCase):
     def test_no_expressions_in_run(self):
         text = (HERE / "action.yml").read_text()
         in_run, indent = False, 0
-        for line in text.splitlines():
-            stripped = line.lstrip()
+        for raw in text.splitlines():
+            stripped = raw.lstrip()
             if stripped.startswith("run:"):
-                in_run, indent = True, len(line) - len(stripped)
+                in_run, indent = True, len(raw) - len(stripped)
                 self.assertNotIn("${{", stripped)
                 continue
             if in_run:
-                if stripped and len(line) - len(stripped) <= indent:
+                if stripped and len(raw) - len(stripped) <= indent:
                     in_run = False
                 else:
-                    self.assertNotIn("${{", line, line)
+                    self.assertNotIn("${{", raw, raw)
 
 
 if __name__ == "__main__":
