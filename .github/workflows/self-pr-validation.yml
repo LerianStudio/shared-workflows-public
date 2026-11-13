@@ -669,6 +669,17 @@ jobs:
       - name: Run slack-run-summary renderer tests
         run: python3 src/notify/slack-run-summary/test.py
 
+      # The slack-notify tests read action.yml with PyYAML; do not depend on the
+      # runner image happening to ship it.
+      - name: Install dependencies
+        run: |
+          if ! python3 -c "import yaml" 2>/dev/null; then
+            sudo apt-get install -y --no-install-recommends python3-yaml
+          fi
+
+      - name: Run slack-notify message tests
+        run: python3 tests/slack-notify/test_message.py
+
   # ----------------- Slack Run Summary -----------------
   # One message for the whole run, the same one the PR umbrellas send: every
   # job that ran, grouped, failures linked. Needs every job, so the verdict is
