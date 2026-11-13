@@ -1,0 +1,419 @@
+#!/usr/bin/env python3
+"""Behavioural tests for the run summary renderer and its composite.
+
+Usage: python3 src/notify/slack-run-summary/test.py
+
+The fixtures are real `jobs` listings of PR Validation runs (one green, one
+with a failed test, one cancelled), reduced to the fields the renderer reads
+and with the repository, run and runner identifiers replaced.
+"""
+import copy
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import unittest
+
+HERE = Path(__file__).parent
+sys.path.insert(0, str(HERE))
+import render  # noqa: E402
+
+RUN_URL = "https://github.com/LerianStudio/example-service/actions/runs/1000"
+PR_URL = "https://github.com/LerianStudio/example-service/pull/42"
+SELF = {
+    "id": 9999,
+    "name": "validate / Slack Summary",
+    "status": "in_progress",
+    "conclusion": None,
+    "started_at": "2026-11-13T14:30:00Z",
+    "completed_at": None,
+    "html_url": RUN_URL + "/job/9999",
+    "runner_name": "runner-self",
+    "steps": [],
+}
+
+
+def fixture(name):
+    doc = json.loads((HERE / "fixtures" / f"jobs-{name}.json").read_text())
+    doc["jobs"].append(copy.deepcopy(SELF))
+    return doc
+
+
+def base_env(**extra):
+    env = {
+        "VERDICT": "success",
+        "SELF_RUNNER": "runner-self",
+        "SELF_JOB_NAME": "Slack Summary",
+        "WORKFLOW_NAME": "PR Validation",
+        "REPO": "LerianStudio/example-service",
+        "ACTOR": "dev",
+        "BRANCH": "feat/api-things",
+        "SHA": "077cbf7ab433c8b9ea31c0f76aa3b67f16650cbe",
+        "RUN_URL": RUN_URL,
+        "RUN_ATTEMPT": "1",
+        "PR_NUMBER": "42",
+        "PR_TITLE": "feat(api): add things",
+        "PR_URL": PR_URL,
+    }
+    env.update(extra)
+    return env
+
+
+def summary(doc, env):
+    return render.render(doc, env)[0]
+
+
+def attachment(payload):
+    return payload["attachments"][0]
+
+
+def lines(payload):
+    return attachment(payload)["text"].split("\n")
+
+
+def line(payload, prefix):
+    found = [item for item in lines(payload) if item.startswith(prefix)]
+    return found[0] if found else None
+
+
+class GreenRun(unittest.TestCase):
+    def setUp(self):
+        self.payload = summary(fixture("green"), base_env())
+        self.text = attachment(self.payload)["text"]
+
+    def test_slack_notify_layout(self):
+        self.assertEqual(lines(self.payload)[0], "⚙️ *PR Validation* succeeded in *example-service*")
+        self.assertTrue(lines(self.payload)[1].startswith("✅ *Jobs:*"), lines(self.payload)[1])
+        self.assertNotIn("*Author:*", self.text)
+        self.assertNotIn("Duration", self.text)
+        self.assertNotIn("*PR:*", self.text)
+        self.assertNotIn("View Workflow Run", self.text)
+        self.assertTrue(self.text.endswith("📌 *Branch:* `feat/api-things` | *Commit:* `077cbf7`"), self.text)
+        self.assertNotIn("feat(api): add things", self.text)
+        # A green run is three short lines.
+        self.assertEqual(self.text.count("\n"), 2)
+        self.assertEqual(attachment(self.payload)["color"], "good")
+
+    def test_buttons(self):
+        self.assertEqual(attachment(self.payload)["actions"], [
+            {"type": "button", "text": "🔍 View run", "url": RUN_URL},
+            {"type": "button", "text": "🔀 Open PR", "url": PR_URL},
+        ])
+
+    def test_actor_header_and_repository_footer(self):
+        # Avatar and bold name as the author header, linked to the profile.
+        # Slack draws a footer line under it either way, so it names the
+        # workflow.
+        att = attachment(self.payload)
+        self.assertEqual(att["author_name"], "dev")
+        self.assertEqual(att["author_icon"], "https://github.com/dev.png?size=32")
+        self.assertEqual(att["author_link"], "https://github.com/dev")
+        self.assertEqual(att["footer"], "Workflow: PR Validation")
+        self.assertEqual(set(self.payload), {"attachments"})
+        self.assertNotIn("dev", self.text)
+        self.assertNotIn("style", att["actions"][0])
+
+    def test_skipped_jobs_are_omitted(self):
+        self.assertNotIn("Runner Labels Check", self.text)
+        self.assertNotIn("No Go Changes", self.text)
+
+    def test_sender_and_caller_jobs_are_excluded(self):
+        self.assertNotIn("Slack Summary", self.text)
+        jobs = line(self.payload, "✅ *Jobs:*")
+        self.assertNotIn("Resolve tool versions", jobs)
+        self.assertNotIn("Lint the tagged", jobs)
+
+    def test_groups_by_first_segment_with_labels(self):
+        jobs = line(self.payload, "✅ *Jobs:*")
+        for expected in ["Metadata 9/9", "Analysis 11/11", "Security 6/6", "Lib Version 2/2",
+                         "Changes 1/1", "Permission Manifest Nudge 1/1"]:
+            self.assertIn(expected, jobs)
+
+    def test_no_failed_or_warnings_lines(self):
+        self.assertIsNone(line(self.payload, "💥"))
+        self.assertIsNone(line(self.payload, "⚠️"))
+        self.assertNotIn("attempt", self.text)
+        self.assertNotIn("verdict reused", self.text)
+
+    def test_fallback(self):
+        self.assertEqual(attachment(self.payload)["fallback"],
+                         "✅ PR Validation succeeded in example-service — PR #42: feat(api): add things")
+
+
+class FailureRun(unittest.TestCase):
+    def setUp(self):
+        self.payload = summary(fixture("failure"), base_env(VERDICT="failure", RUN_ATTEMPT="2", VERDICT_REUSED="true"))
+
+    def test_failed_lines_have_step_and_link_no_time(self):
+        text = lines(self.payload)
+        start = text.index("💥 *Failed:*")
+        self.assertRegex(
+            text[start + 1],
+            r"^❌ <https://github\.com/LerianStudio/example-service/actions/runs/1000/job/\d+\|Go Analysis \(pipeline\) / Tests \(app\)> — Run tests \(make\)$",
+        )
+        self.assertTrue(text[start + 2].endswith("|Go Analysis> — Aggregate Go Analysis result"), text[start + 2])
+
+    def test_cancelled_jobs_of_a_failed_run_are_listed(self):
+        doc = fixture("failure")
+        for job in doc["jobs"]:
+            if job["name"].endswith("Integration Tests (app)"):
+                job["conclusion"] = "cancelled"
+        payload = summary(doc, base_env(VERDICT="failure"))
+        self.assertRegex(attachment(payload)["text"], r"\n⚪ <[^>]+\|Go Analysis \(pipeline\) / Integration Tests \(app\)>")
+
+    def test_header_color_and_partial_groups(self):
+        self.assertEqual(lines(self.payload)[0], "⚙️ *PR Validation* failed in *example-service*")
+        self.assertEqual(attachment(self.payload)["color"], "danger")
+        self.assertIn("Analysis 8/10", line(self.payload, "❌ *Jobs:*"))
+
+    def test_attempt_and_reuse(self):
+        branch = line(self.payload, "📌 *Branch:*")
+        self.assertTrue(branch.endswith(" | attempt 2 | verdict reused"), branch)
+
+    def test_fallback_counts_failures(self):
+        self.assertTrue(attachment(self.payload)["fallback"].endswith("— 2 failed"))
+
+
+class CancelledRun(unittest.TestCase):
+    def test_cancelled_run_lists_its_cancelled_jobs_last(self):
+        # Summary lines first; the cancelled jobs, linked, last, so "Show
+        # more" folds them. No failure, so the list is "Cancelled".
+        payload = summary(fixture("cancelled"), base_env(VERDICT="cancelled"))
+        text = lines(payload)
+        self.assertEqual(text[0], "⚙️ *PR Validation* was cancelled in *example-service*")
+        self.assertTrue(text[1].startswith("⚪ *Jobs:*"))
+        self.assertTrue(text[2].startswith("📌 *Branch:*"))
+        self.assertEqual(text[3], "⚪ *Cancelled:*")
+        self.assertRegex(text[4], r"^⚪ <[^>]+\|Record verdict>( — .+)?$")
+        self.assertEqual(attachment(payload)["color"], "#808080")
+        self.assertIsNone(line(payload, "💥"))
+        self.assertFalse(attachment(payload)["fallback"].endswith("failed"))
+
+    def test_cancelled_run_still_lists_a_real_failure(self):
+        payload = summary(fixture("failure"), base_env(VERDICT="cancelled"))
+        self.assertEqual(attachment(payload)["color"], "#808080")
+        self.assertRegex(attachment(payload)["text"], r"\n❌ <[^>]+\|Go Analysis \(pipeline\) / Tests \(app\)> — Run tests \(make\)")
+        # No job was cancelled, so no failure is put down to a cancel.
+        self.assertIn("|Go Analysis> — Aggregate Go Analysis result", attachment(payload)["text"])
+        self.assertTrue(attachment(payload)["fallback"].endswith("— 2 failed"))
+
+    def test_real_failure_after_an_unrelated_cancel_is_listed(self):
+        # A job was cancelled (a timeout, say) at 12:40, before Tests (app)
+        # failed at 12:41: the real failure stays listed, timing aside. The
+        # Go Analysis gate, which only aggregates, stays out.
+        doc = fixture("failure")
+        doc["jobs"].append({
+            "id": 7000, "name": "validate / Security (pipeline) / security_scan", "status": "completed",
+            "conclusion": "cancelled", "completed_at": "2026-11-13T12:40:00Z",
+            "html_url": RUN_URL + "/job/7000", "steps": [],
+        })
+        payload = summary(doc, base_env(VERDICT="cancelled"))
+        text = attachment(payload)["text"]
+        self.assertRegex(text, r"\n❌ <[^>]+\|Go Analysis \(pipeline\) / Tests \(app\)>")
+        self.assertNotIn("|Go Analysis>", text)
+        self.assertNotIn("security_scan", text.split("*Jobs:*")[0])
+        self.assertTrue(line(payload, "❌ *Jobs:*"))
+        self.assertTrue(attachment(payload)["fallback"].endswith("— 1 failed"))
+
+    def test_gate_failing_before_the_cancel_is_kept(self):
+        # Lib Version checks inside its gate: the aggregation step is the only
+        # record of the real failure, and it ended before the cancel.
+        doc = fixture("cancelled")
+        doc["jobs"].append({
+            "id": 7002, "name": "validate / Lib Version", "status": "completed",
+            "conclusion": "failure", "completed_at": "2026-11-12T12:30:00Z",
+            "html_url": RUN_URL + "/job/7002",
+            "steps": [{"name": "Aggregate Lib Version result", "status": "completed", "conclusion": "failure", "number": 3}],
+        })
+        payload = summary(doc, base_env(VERDICT="cancelled"))
+        self.assertRegex(attachment(payload)["text"], r"\n❌ <[^>]+\|Lib Version> — Aggregate Lib Version result")
+
+    def test_results_job_failing_after_the_cancel_stays_out(self):
+        # pr-security-scan's Results job fails in "Aggregate results" once a
+        # scan was cancelled.
+        doc = fixture("cancelled")
+        doc["jobs"].append({
+            "id": 7003, "name": "validate / Security (pipeline) / Results", "status": "completed",
+            "conclusion": "failure", "completed_at": "2026-11-12T12:33:30Z",
+            "html_url": RUN_URL + "/job/7003",
+            "steps": [{"name": "Aggregate results", "status": "completed", "conclusion": "failure", "number": 2}],
+        })
+        payload = summary(doc, base_env(VERDICT="cancelled"))
+        self.assertIsNone(line(payload, "💥"))
+
+    def test_gates_are_listed_in_a_failed_run(self):
+        payload = summary(fixture("failure"), base_env(VERDICT="failure"))
+        self.assertIn("|Go Analysis> — Aggregate Go Analysis result", attachment(payload)["text"])
+
+    def test_superseded_run_with_failing_gates_reads_green(self):
+        # The only failure is a gate failed by a cancelled need: no list.
+        doc = fixture("cancelled")
+        doc["jobs"].append({
+            "id": 7001, "name": "validate / Go Analysis", "status": "completed",
+            "conclusion": "failure", "completed_at": "2026-11-12T12:33:10Z",
+            "html_url": RUN_URL + "/job/7001",
+            "steps": [{"name": "Aggregate Go Analysis result", "status": "completed", "conclusion": "failure", "number": 2}],
+        })
+        payload = summary(doc, base_env(VERDICT="cancelled"))
+        self.assertIsNone(line(payload, "💥"))
+        self.assertFalse(attachment(payload)["fallback"].endswith("failed"))
+
+
+class InProgressJobs(unittest.TestCase):
+    def test_jobs_not_completed_are_left_out(self):
+        doc = fixture("green")
+        for job in doc["jobs"]:
+            if job["name"] == "validate / Record verdict":
+                job["status"], job["conclusion"] = "in_progress", None
+        payload = summary(doc, base_env())
+        self.assertNotIn("Record verdict", attachment(payload)["text"])
+        self.assertIsNone(line(payload, "💥"))
+
+    def test_sender_found_by_name_when_runner_unknown(self):
+        payload = summary(fixture("green"), base_env(SELF_RUNNER=""))
+        self.assertNotIn("Resolve tool versions", attachment(payload)["text"])
+        self.assertNotIn("Slack Summary", attachment(payload)["text"])
+
+
+class Warnings(unittest.TestCase):
+    def test_advisory_failures_become_warnings(self):
+        payload = summary(
+            fixture("green"),
+            base_env(ADVISORY="PR metadata=failure\nPR size label=success\nAuto-label=skipped\nbogus\nSize=failure"),
+        )
+        self.assertEqual(line(payload, "⚠️"), "⚠️ *Warnings:* PR metadata, Size")
+
+    def test_no_warnings_when_all_passed(self):
+        payload = summary(fixture("green"), base_env(ADVISORY="PR size label=success"))
+        self.assertIsNone(line(payload, "⚠️"))
+
+
+class Escaping(unittest.TestCase):
+    def test_quotes_backticks_and_mrkdwn_controls(self):
+        title = 'fix: handle "quoted" `ticks` & <b>tags</b> | pipes'
+        payload = summary(fixture("green"), base_env(PR_TITLE=title))
+        self.assertIn('"quoted" `ticks` &amp; &lt;b&gt;tags&lt;/b&gt;', attachment(payload)["fallback"])
+        # The payload is plain JSON: the title round-trips without breaking it.
+        self.assertEqual(json.loads(json.dumps(payload)), payload)
+
+    def test_fallback_escapes_mentions_and_links(self):
+        payload = summary(fixture("green"), base_env(PR_TITLE="fix: <!channel> ping <@U123> <https://x|label>"))
+        self.assertIn("&lt;!channel&gt; ping &lt;@U123&gt; &lt;https://x|label&gt;", attachment(payload)["fallback"])
+        self.assertNotIn("<!channel>", json.dumps(payload))
+
+    def test_job_names_and_branch_are_escaped(self):
+        doc = fixture("failure")
+        for job in doc["jobs"]:
+            if job["name"].endswith("Tests (app)"):
+                job["name"] = "validate / Go Analysis (pipeline) / Tests <evil> & co"
+        payload = summary(doc, base_env(VERDICT="failure", BRANCH="feat/<!here>", ACTOR="a<b>&c"))
+        self.assertEqual(attachment(payload)["author_name"], "a&lt;b&gt;&amp;c")
+        self.assertIn("Tests &lt;evil&gt; &amp; co", attachment(payload)["text"])
+        self.assertIn("`feat/&lt;!here&gt;`", attachment(payload)["text"])
+
+
+class NoPullRequest(unittest.TestCase):
+    def test_run_without_pr(self):
+        payload = summary(fixture("green"), base_env(PR_NUMBER="", PR_TITLE="", PR_URL="", BRANCH="develop"))
+        self.assertTrue(lines(payload)[1].startswith("✅ *Jobs:*"), lines(payload)[1])
+        self.assertNotIn("PR #", json.dumps(payload))
+        self.assertEqual([b["text"] for b in attachment(payload)["actions"]], ["🔍 View run"])
+        self.assertIn("📌 *Branch:* `develop` | *Commit:*", attachment(payload)["text"])
+
+
+class GroupLabels(unittest.TestCase):
+    def test_caller_labels_merge_and_glob_patterns(self):
+        doc = {"jobs": [
+            {"id": 1, "name": "Credential Hygiene Tests", "status": "completed", "conclusion": "success"},
+            {"id": 2, "name": "Verdict Reuse Tests", "status": "completed", "conclusion": "success"},
+            {"id": 3, "name": "YAML Lint", "status": "completed", "conclusion": "success"},
+            {"id": 4, "name": "validation / Blocking Checks", "status": "completed", "conclusion": "success"},
+            {"id": 5, "name": "Slack Summary", "status": "in_progress", "conclusion": None, "runner_name": "runner-self"},
+        ]}
+        labels = json.dumps({"validation": "PR Validation", "* Tests": "Tests", "*": "Checks"})
+        payload = summary(doc, base_env(GROUP_LABELS=labels))
+        # Groups keep the order their first job appears in.
+        self.assertEqual(line(payload, "✅ *Jobs:*"), "✅ *Jobs:* Tests 2/2 · Checks 1/1 · PR Validation 1/1")
+        self.assertNotIn("Slack Summary", attachment(payload)["text"])
+
+
+class Limits(unittest.TestCase):
+    def many_failures(self, count, name_len=60):
+        doc = fixture("green")
+        for i in range(count):
+            doc["jobs"].append({
+                "id": 50000 + i,
+                "name": f"validate / Go Analysis (pipeline) / Tests ({'x' * name_len}{i})",
+                "status": "completed",
+                "conclusion": "failure",
+                "started_at": "2026-11-13T14:00:00Z",
+                "completed_at": "2026-11-13T14:01:30Z",
+                "html_url": f"{RUN_URL}/job/{50000 + i}",
+                "runner_name": f"r{i}",
+                "steps": [{"name": "Run tests", "status": "completed", "conclusion": "failure", "number": 3}],
+            })
+        return doc
+
+    def test_many_failures_truncate_with_more(self):
+        payload = summary(self.many_failures(200), base_env(VERDICT="failure"))
+        text = attachment(payload)["text"]
+        self.assertLessEqual(len(text), render.TEXT_LIMIT)
+        self.assertRegex(text, r"_\+\d+ more_")
+        # The summary lines lead, whole; the list comes last and ends the text.
+        lines_ = text.split("\n")
+        self.assertTrue(lines_[0].startswith("⚙️ *PR Validation* failed"))
+        self.assertTrue(lines_[1].startswith("❌ *Jobs:*"))
+        self.assertTrue(lines_[2].startswith("📌 *Branch:*"))
+        self.assertEqual(lines_[3], "💥 *Failed:*")
+        self.assertRegex(lines_[-1], r"^_\+\d+ more_$")
+        self.assertTrue(attachment(payload)["fallback"].endswith("— 200 failed"))
+
+    def test_few_failures_are_not_truncated(self):
+        payload = summary(self.many_failures(5), base_env(VERDICT="failure"))
+        self.assertNotIn("more_", attachment(payload)["text"])
+
+    def test_single_huge_job_name_is_clipped(self):
+        payload = summary(self.many_failures(1, name_len=10000), base_env(VERDICT="failure"))
+        self.assertLessEqual(len(attachment(payload)["text"]), render.TEXT_LIMIT)
+
+
+class Script(unittest.TestCase):
+    def test_cli_reads_env_and_prints_json(self):
+        env = dict(os.environ, **base_env())
+        env.pop("GITHUB_OUTPUT", None)
+        out = subprocess.run(
+            [sys.executable, str(HERE / "render.py"), str(HERE / "fixtures" / "jobs-green.json")],
+            env=env, check=True, capture_output=True, text=True,
+        ).stdout
+        self.assertEqual(json.loads(out)["attachments"][0]["color"], "good")
+
+    def test_no_actor_no_author_header(self):
+        payload = summary(fixture("green"), base_env(ACTOR=""))
+        self.assertEqual(set(payload), {"attachments"})
+        self.assertNotIn("author_name", attachment(payload))
+        self.assertNotIn("author_icon", attachment(payload))
+        self.assertNotIn("author_link", attachment(payload))
+
+
+class Composite(unittest.TestCase):
+    """The action never expands untrusted values inside `run:`."""
+
+    def test_no_expressions_in_run(self):
+        text = (HERE / "action.yml").read_text()
+        in_run, indent = False, 0
+        for raw in text.splitlines():
+            stripped = raw.lstrip()
+            if stripped.startswith("run:"):
+                in_run, indent = True, len(raw) - len(stripped)
+                self.assertNotIn("${{", stripped)
+                continue
+            if in_run:
+                if stripped and len(raw) - len(stripped) <= indent:
+                    in_run = False
+                else:
+                    self.assertNotIn("${{", raw, raw)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

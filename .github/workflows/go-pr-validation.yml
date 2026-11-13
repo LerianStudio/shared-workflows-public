@@ -102,7 +102,7 @@ on:
         type: boolean
         default: true
       enable_slack_notification:
-        description: 'Send the PR validation verdict to Slack. Set to false in repositories without SLACK_WEBHOOK_URL to skip the job entirely instead of running it just to skip internally.'
+        description: 'Send one Slack message per run with the merge verdict and every job that ran (src/notify/slack-run-summary). Set to false in repositories without SLACK_WEBHOOK_URL to skip the job entirely instead of running it just to skip internally.'
         type: boolean
         default: true
       labeler_config_path:
@@ -473,7 +473,8 @@ jobs:
       pr_title_scopes: ${{ inputs.pr_title_scopes }}
       require_scope: ${{ inputs.require_scope }}
       enable_auto_labeler: ${{ inputs.enable_auto_labeler }}
-      enable_slack_notification: ${{ inputs.enable_slack_notification }}
+      # The `notify` job below sends one message for the whole run.
+      enable_slack_notification: false
       labeler_config_path: ${{ inputs.labeler_config_path }}
       enforce_source_branches: ${{ inputs.enforce_source_branches }}
       allowed_source_branches: ${{ inputs.allowed_source_branches }}
@@ -527,7 +528,8 @@ jobs:
     if: inputs.run_go_analysis && needs.changes.outputs.code == 'true'
     uses: ./.github/workflows/go-pr-analysis.yml
     with:
-      enable_slack_notification: ${{ inputs.enable_slack_notification }}
+      # The `notify` job below sends one message for the whole run.
+      enable_slack_notification: false
       go_version: ${{ inputs.go_version }}
       golangci_lint_version: ${{ inputs.golangci_lint_version }}
       govulncheck_version: ${{ inputs.govulncheck_version }}
@@ -582,7 +584,8 @@ jobs:
     if: inputs.run_security && needs.changes.outputs.code == 'true'
     uses: ./.github/workflows/pr-security-scan.yml
     with:
-      enable_slack_notification: ${{ inputs.enable_slack_notification }}
+      # The `notify` job below sends one message for the whole run.
+      enable_slack_notification: false
       # The `changes` job above already classified this pull request; the scan
       # must not spend a second job and a second API call on the same verdict.
       enable_doc_gate: false
@@ -688,3 +691,42 @@ jobs:
           go-mod-path: ${{ inputs.lib_version_go_mod_path }}
           # Preview mode: no comment / no PR side effects when the umbrella runs dry.
           dry-run: ${{ inputs.dry_run }}
+
+  # ----------------- Slack Run Summary -----------------
+  # One message per run instead of one per child pipeline (PR Validation, Go PR
+  # Analysis and PR Security Scan each used to send their own; the umbrella
+  # turns theirs off above). The header carries the merge verdict over the same
+  # gates branch protection requires; the body lists every job that ran, read
+  # from the jobs API. A cancelled run was superseded by a newer one, which
+  # reports the head's real verdict. Not a verdict itself: continue-on-error.
+  # permission-manifest-nudge is in `needs` only so it has finished when the
+  # jobs are listed; it is no gate, so `status` ignores it when it alone failed.
+  notify:
+    name: Slack Summary
+    needs: [changes, metadata, go-analysis-gate, security-gate, lib-version-gate, permission-manifest-nudge]
+    if: always() && inputs.enable_slack_notification && github.event_name == 'pull_request' && github.event.pull_request.draft != true && !inputs.dry_run
+    runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Merge verdict
+        id: verdict
+        uses: LerianStudio/shared-workflows-public/src/validate/needs-verdict@v1
+        with:
+          needs: ${{ toJSON(needs) }}
+          label: PR verdict
+
+      - name: Slack run summary
+        continue-on-error: true
+        uses: LerianStudio/shared-workflows-public/src/notify/slack-run-summary@v1
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          github-token: ${{ github.token }}
+          # yamllint disable-line rule:line-length
+          status: ${{ (job.status == 'cancelled' || contains(needs.*.result, 'cancelled')) && 'cancelled' || ((steps.verdict.outputs.passed == 'true' || steps.verdict.outputs.failed-jobs == 'permission-manifest-nudge') && 'success' || 'failure') }}
+          job-name: Slack Summary
+          advisory-results: |
+            PR metadata=${{ needs.metadata.outputs.advisory_metadata_result || 'skipped' }}
+            PR size label=${{ needs.metadata.outputs.advisory_size_result || 'skipped' }}
+            Auto-label=${{ needs.metadata.outputs.advisory_label_result || 'skipped' }}

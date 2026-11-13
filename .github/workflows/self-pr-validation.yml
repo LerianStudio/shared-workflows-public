@@ -27,6 +27,8 @@ jobs:
       checks: read
     uses: ./.github/workflows/pr-validation.yml
     with:
+      # The `notify` job at the end sends one message for the whole run.
+      enable_slack_notification: false
       # Trunk-based: every branch opens its pull request straight into main, so
       # there is no promotion source to enforce.
       enforce_source_branches: false
@@ -651,3 +653,87 @@ jobs:
           readme-files: ${{ needs.changed-files.outputs.action_files }}
           composite-schema-result: ${{ needs.composite-schema.result }}
           composite-schema-files: ${{ needs.changed-files.outputs.composite_files }}
+
+  # ----------------- Slack Run Summary Tests -----------------
+  slack-run-summary-tests:
+    name: Slack Run Summary Tests
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run slack-run-summary renderer tests
+        run: python3 src/notify/slack-run-summary/test.py
+
+  # ----------------- Slack Run Summary -----------------
+  # One message for the whole run, the same one the PR umbrellas send: every
+  # job that ran, grouped, failures linked. Needs every job, so the verdict is
+  # the run's and nothing is still running when the jobs are listed.
+  notify:
+    name: Slack Summary
+    needs:
+      - validation
+      - changed-files
+      - branch-test-instructions
+      - breaking-change-guard-tests
+      - credential-hygiene
+      - integration-config-tests
+      - gitops-chart-tooling-tests
+      - pr-commit-signatures-tests
+      - helm-update-chart-tests
+      - trivy-install-tests
+      - non-doc-changes-tests
+      - lerian-lib-version-tests
+      - prerelease-check-tests
+      - workflow-secrets-contract-tests
+      - yamllint
+      - actionlint
+      - pinned-actions
+      - codeql-action-versions
+      - runner-labels
+      - runner-labels-tests
+      - workflow-secrets-contract
+      - markdown-link-check
+      - typos
+      - shellcheck
+      - readme-check
+      - composite-schema
+      - codeql
+      - lint-report
+      - slack-run-summary-tests
+    if: always() && github.event_name == 'pull_request' && github.event.pull_request.draft != true
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run verdict
+        id: verdict
+        uses: ./src/validate/needs-verdict
+        with:
+          needs: ${{ toJSON(needs) }}
+          label: PR verdict
+
+      - name: Slack run summary
+        continue-on-error: true
+        uses: ./src/notify/slack-run-summary
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          github-token: ${{ github.token }}
+          # yamllint disable-line rule:line-length
+          status: ${{ (job.status == 'cancelled' || contains(needs.*.result, 'cancelled')) && 'cancelled' || (steps.verdict.outputs.passed == 'true' && 'success' || 'failure') }}
+          job-name: Slack Summary
+          group-labels: '{"validation": "PR Validation", "Detect Changed Files": "Changes", "* Tests": "Tests", "*": "Checks"}'
+          advisory-results: |
+            PR metadata=${{ needs.validation.outputs.advisory_metadata_result || 'skipped' }}
+            PR size label=${{ needs.validation.outputs.advisory_size_result || 'skipped' }}
+            Auto-label=${{ needs.validation.outputs.advisory_label_result || 'skipped' }}

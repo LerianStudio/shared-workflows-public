@@ -196,6 +196,11 @@ The breaking change guard has no enable input, target-branch input, acknowledgem
 | `has_breaking_changes` | `true` / `false` | Whether the PR contains at least one breaking-change commit |
 | `breaking_change_approved` | `true` / `false` | Compatibility field name: whether the PR description contains the exact author acknowledgement. It records intentional awareness and does not grant maintainer permission. |
 | `breaking_change_result` | `success` / `failure` | Normalized guard result used by `Blocking Checks`, reports, and notifications |
+| `advisory_metadata_result` | `success` / `failure` / `skipped` | Outcome of the advisory PR metadata check. Advisory: never part of the verdict |
+| `advisory_size_result` | `success` / `failure` / `skipped` | Outcome of the advisory PR size labelling |
+| `advisory_label_result` | `success` / `failure` / `skipped` | Outcome of the advisory auto-labeler |
+
+The three `advisory_*` outputs exist because those steps are `continue-on-error`: their job reports success whatever they did. The PR umbrellas pass them to the Slack run summary, which lists a `failure` under Warnings.
 
 Outputs are closed by default. Missing, skipped, or cancelled guard state returns `has_breaking_changes: false`, `breaking_change_approved: false`, and `breaking_change_result: failure`. The `breaking_change_approved` name is retained only as a compatibility contract. Consumers must interpret `true` as author acknowledgement, not maintainer permission.
 
