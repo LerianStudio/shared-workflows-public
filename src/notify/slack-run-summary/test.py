@@ -55,7 +55,6 @@ def base_env(**extra):
         "PR_NUMBER": "42",
         "PR_TITLE": "feat(api): add things",
         "PR_URL": PR_URL,
-        "NOW": "2026-11-13T15:00:00Z",
     }
     env.update(extra)
     return env
@@ -84,19 +83,35 @@ class GreenRun(unittest.TestCase):
         self.text = attachment(self.payload)["text"]
 
     def test_slack_notify_layout(self):
-        self.assertEqual(lines(self.payload)[0], "✅ *PR Validation* succeeded in *example-service*")
+        self.assertEqual(lines(self.payload)[0], "⚙️ *PR Validation* succeeded in *example-service* · by *dev*")
         self.assertTrue(lines(self.payload)[1].startswith("✅ *Jobs:*"), lines(self.payload)[1])
         self.assertNotIn("*Author:*", self.text)
-        self.assertIn(f"📌 *Branch:* `feat/api-things` | *PR:* <{PR_URL}|#42> | *Commit:* `077cbf7` | *Duration:* ", self.text)
+        self.assertNotIn("Duration", self.text)
+        self.assertNotIn("*PR:*", self.text)
+        self.assertNotIn("View Workflow Run", self.text)
+        self.assertTrue(self.text.endswith("📌 *Branch:* `feat/api-things` | *Commit:* `077cbf7`"), self.text)
         self.assertNotIn("feat(api): add things", self.text)
-        self.assertTrue(self.text.endswith(f"<{RUN_URL}|🔗 View Workflow Run>"))
-        # Slack folds attachment text from 5 line breaks: a green run stays open.
-        self.assertLess(self.text.count("\n"), 5)
+        # A green run is three short lines.
+        self.assertEqual(self.text.count("\n"), 2)
         self.assertEqual(attachment(self.payload)["color"], "good")
-        self.assertNotIn("footer", attachment(self.payload))
-        self.assertEqual(attachment(self.payload)["mrkdwn_in"], ["text"])
-        self.assertEqual(attachment(self.payload)["author_name"], "dev")
-        self.assertEqual(attachment(self.payload)["author_icon"], "https://github.com/dev.png?size=32")
+
+    def test_buttons(self):
+        self.assertEqual(attachment(self.payload)["actions"], [
+            {"type": "button", "text": "🔍 View run", "url": RUN_URL, "style": "primary"},
+            {"type": "button", "text": "🔀 Open PR", "url": PR_URL},
+        ])
+
+    def test_view_run_turns_red_on_failure(self):
+        payload = summary(fixture("failure"), base_env(VERDICT="failure"))
+        self.assertEqual(attachment(payload)["actions"][0]["style"], "danger")
+
+    def test_actor_in_the_first_line(self):
+        # Bold text, not a link or author_* fields (Slack paints links blue and
+        # repeats a legacy author on the footer line); only the attachment.
+        self.assertTrue(lines(self.payload)[0].endswith(" · by *dev*"))
+        self.assertEqual(set(self.payload), {"attachments"})
+        for field in ("author_name", "author_icon", "author_link", "footer", "blocks"):
+            self.assertNotIn(field, attachment(self.payload))
 
     def test_skipped_jobs_are_omitted(self):
         self.assertNotIn("Runner Labels Check", self.text)
@@ -139,9 +154,9 @@ class FailureRun(unittest.TestCase):
         self.assertIn("|Go Analysis> — Aggregate Go Analysis result", text[start + 2])
 
     def test_header_color_and_partial_groups(self):
-        self.assertEqual(lines(self.payload)[0], "❌ *PR Validation* failed in *example-service*")
+        self.assertEqual(lines(self.payload)[0], "⚙️ *PR Validation* failed in *example-service* · by *dev*")
         self.assertEqual(attachment(self.payload)["color"], "danger")
-        self.assertIn("Analysis 8/10", line(self.payload, "📊 *Jobs:*"))
+        self.assertIn("Analysis 8/10", line(self.payload, "❌ *Jobs:*"))
 
     def test_attempt_and_reuse(self):
         branch = line(self.payload, "📌 *Branch:*")
@@ -154,7 +169,8 @@ class FailureRun(unittest.TestCase):
 class CancelledRun(unittest.TestCase):
     def test_cancelled_job_listed_with_its_own_mark(self):
         payload = summary(fixture("cancelled"), base_env(VERDICT="cancelled"))
-        self.assertEqual(lines(payload)[0], "⚪ *PR Validation* was cancelled in *example-service*")
+        self.assertEqual(lines(payload)[0], "⚙️ *PR Validation* was cancelled in *example-service* · by *dev*")
+        self.assertTrue(line(payload, "⚪ *Jobs:*"))
         self.assertEqual(attachment(payload)["color"], "#808080")
         self.assertIn("Record verdict", line(payload, "⚪ <"))
 
@@ -206,7 +222,8 @@ class Escaping(unittest.TestCase):
         for job in doc["jobs"]:
             if job["name"].endswith("Tests (app)"):
                 job["name"] = "validate / Go Analysis (pipeline) / Tests <evil> & co"
-        payload = summary(doc, base_env(VERDICT="failure", BRANCH="feat/<!here>"))
+        payload = summary(doc, base_env(VERDICT="failure", BRANCH="feat/<!here>", ACTOR="a<b>&c"))
+        self.assertIn("by *a&lt;b&gt;&amp;c*", attachment(payload)["text"])
         self.assertIn("Tests &lt;evil&gt; &amp; co", attachment(payload)["text"])
         self.assertIn("`feat/&lt;!here&gt;`", attachment(payload)["text"])
 
@@ -216,8 +233,8 @@ class NoPullRequest(unittest.TestCase):
         payload = summary(fixture("green"), base_env(PR_NUMBER="", PR_TITLE="", PR_URL="", BRANCH="develop"))
         self.assertTrue(lines(payload)[1].startswith("✅ *Jobs:*"), lines(payload)[1])
         self.assertNotIn("PR #", json.dumps(payload))
-        self.assertNotIn("*PR:*", attachment(payload)["text"])
-        self.assertIn("*Branch:* `develop` | *Commit:*", attachment(payload)["text"])
+        self.assertEqual([b["text"] for b in attachment(payload)["actions"]], ["🔍 View run"])
+        self.assertIn("📌 *Branch:* `develop` | *Commit:*", attachment(payload)["text"])
 
 
 class GroupLabels(unittest.TestCase):
@@ -259,8 +276,8 @@ class Limits(unittest.TestCase):
         self.assertLessEqual(len(text), render.TEXT_LIMIT)
         self.assertRegex(text, r"_\+\d+ more_")
         # Everything after the list survives the cut.
-        self.assertIn("📌 *Branch:*", text)
-        self.assertTrue(text.endswith("🔗 View Workflow Run>"))
+        self.assertIn("*Branch:*", text)
+        self.assertTrue(text.endswith("*Commit:* `077cbf7`"))
         self.assertTrue(attachment(payload)["fallback"].endswith("— 200 failed"))
 
     def test_few_failures_are_not_truncated(self):
@@ -281,6 +298,10 @@ class Script(unittest.TestCase):
             env=env, check=True, capture_output=True, text=True,
         ).stdout
         self.assertEqual(json.loads(out)["attachments"][0]["color"], "good")
+
+    def test_no_actor_no_by(self):
+        payload = summary(fixture("green"), base_env(ACTOR=""))
+        self.assertEqual(lines(payload)[0], "⚙️ *PR Validation* succeeded in *example-service*")
 
 
 class Composite(unittest.TestCase):

@@ -79,7 +79,8 @@ runs:
       run: |
         set -uo pipefail
         out="${RUNNER_TEMP}/slack-run-summary-jobs.json"
-        if gh api --paginate "repos/${REPO}/actions/runs/${RUN_ID}/attempts/${RUN_ATTEMPT}/jobs?per_page=100" \
+        # Bounded like the webhook call: a stalled page must not hold the run open.
+        if timeout 60 gh api --paginate "repos/${REPO}/actions/runs/${RUN_ID}/attempts/${RUN_ATTEMPT}/jobs?per_page=100" \
              | jq -s '{jobs: [.[].jobs[]]}' > "$out"; then
           echo "file=$out" >> "$GITHUB_OUTPUT"
         else

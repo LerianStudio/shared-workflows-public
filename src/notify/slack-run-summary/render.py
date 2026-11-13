@@ -18,17 +18,14 @@ reach a shell as code:
   VERDICT_REUSED  'true' when the gates reported a verdict of an earlier run
   ADVISORY        newline-separated `Name=result` lines; `failure` is a warning
   GROUP_LABELS    optional JSON object merged over DEFAULT_LABELS
-  NOW             optional ISO timestamp, for tests (defaults to the clock)
 """
 import fnmatch
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 
-# Bounds the message, not what Slack shows unfolded: Slack folds an
-# attachment's text behind "Show more" from 700 characters or 5 line breaks.
-# A green run stays under that; a failed one folds after its first lines.
+# Bounds the attachment text.
 TEXT_LIMIT = 3000
 MORE_RESERVE = 40  # room kept for "+N more"
 LINE_LIMIT = 1000  # one job line never takes the whole message
@@ -63,6 +60,8 @@ DEFAULT_LABELS = {
     "changes": "Changes",
     "Detect non-doc changes": "Changes",
 }
+
+WORKFLOW_MARK = "⚙️"
 
 STATUS = {
     "success": ("✅", "succeeded", "good"),
@@ -208,9 +207,14 @@ def render(jobs_doc, environ=None):
     run_url = get("RUN_URL")
     pr_number, pr_title, pr_url = get("PR_NUMBER"), get("PR_TITLE"), get("PR_URL")
 
-    # The layout of slack-notify's message, which the channel already reads:
-    # verdict line, then what ran, then author, branch and commit, then the run.
-    head = [f"{emoji} *{escape(workflow)}* {status_text} in *{escape(repo_name)}*"]
+    # The layout of slack-notify's message, which the channel already reads.
+    # The first line carries a fixed mark; the verdict shows in the colour bar
+    # and on the Jobs line.
+    head = [f"{WORKFLOW_MARK} *{escape(workflow)}* {status_text} in *{escape(repo_name)}*"]
+    # Plain bold text, not a link or the author_* fields: Slack paints every
+    # link blue, and repeats a legacy attachment's author on its footer line.
+    if get("ACTOR"):
+        head[0] += f" · by *{escape(get('ACTOR'))}*"
 
     failed = [j for j in jobs if j.get("conclusion") in FAILED_CONCLUSIONS]
     failed_lines = []
@@ -233,27 +237,25 @@ def render(jobs_doc, environ=None):
     jobs_line = ""
     if groups:
         parts = [f"{escape(name)} {ok}/{ran}" for name, (ok, ran) in groups.items()]
-        all_ok = all(ok == ran for ok, ran in groups.values())
-        jobs_line = clip(f"{'✅' if all_ok else '📊'} *Jobs:* " + " · ".join(parts), LINE_LIMIT)
+        conclusions = {j.get("conclusion") for j in failed}
+        if conclusions - {"cancelled"}:
+            mark = "❌"
+        elif conclusions or verdict == "cancelled":
+            mark = "⚪"
+        else:
+            mark = "✅"
+        jobs_line = clip(f"{mark} *Jobs:* " + " · ".join(parts), LINE_LIMIT)
 
-    starts = [parse_time(j.get("started_at")) for j in jobs if j.get("started_at")]
-    now = parse_time(get("NOW")) or datetime.now(timezone.utc)
-    where = f"📌 *Branch:* `{escape(clip(get('BRANCH'), 200))}` | " if get("BRANCH") else "📌 "
-    if pr_number:
-        where += (f"*PR:* <{pr_url}|#{pr_number}> | " if pr_url else f"*PR:* #{pr_number} | ")
+    where = "📌 "
+    if get("BRANCH"):
+        where += f"*Branch:* `{escape(clip(get('BRANCH'), 200))}` | "
     where += f"*Commit:* `{get('SHA')[:7]}`"
-    if starts:
-        where += f" | *Duration:* {duration((now - min(starts)).total_seconds())}"
     attempt = get("RUN_ATTEMPT", "1")
     if attempt.isdigit() and int(attempt) > 1:
         where += f" | attempt {attempt}"
     if get("VERDICT_REUSED") == "true":
         where += " | verdict reused"
-    # No Author line: the attachment's author header already shows the
-    # actor's name and avatar.
     tail = [where]
-    if run_url:
-        tail.append(f"<{run_url}|🔗 View Workflow Run>")
 
     middle = []
     if warnings:
@@ -269,27 +271,29 @@ def render(jobs_doc, environ=None):
         body += fit(failed_lines, TEXT_LIMIT - fixed)
     text = "\n".join(body + middle + tail)
 
-    # Notifications and screen readers show `fallback`; Slack parses it too.
+    # Notifications and screen readers show the fallback; Slack parses it too.
     fallback = f"{emoji} {workflow} {status_text} in {repo_name}"
     if pr_number:
         fallback += f" — PR #{pr_number}: {pr_title}"
     if failed_lines:
         fallback += f" — {len(failed_lines)} failed"
-    attachment = {
-        "color": color,
-        "fallback": escape(clip(fallback, 300)),
-        "text": text,
-        "mrkdwn_in": ["text"],
-    }
-    # The author header slack-notify's messages carry (rtCamp sets it).
-    actor = get("ACTOR")
-    if actor:
-        attachment.update({
-            "author_name": escape(actor),
-            "author_link": f"https://github.com/{actor}",
-            "author_icon": f"https://github.com/{actor}.png?size=32",
-        })
-    return {"attachments": [attachment]}, len(failed_lines)
+    fallback = escape(clip(fallback, 300))
+
+    # Link buttons; a url button needs no interactivity on the Slack app.
+    # View run is filled (primary, or danger when the run failed).
+    actions = []
+    if run_url:
+        actions.append({"type": "button", "text": "🔍 View run", "url": run_url,
+                        "style": "danger" if verdict == "failure" else "primary"})
+    if pr_url:
+        actions.append({"type": "button", "text": "🔀 Open PR", "url": pr_url})
+
+    # Only a legacy attachment draws the colour bar.
+    attachment = {"color": color, "fallback": fallback, "text": text, "mrkdwn_in": ["text"]}
+    if actions:
+        attachment["actions"] = actions
+    payload = {"attachments": [attachment]}
+    return payload, len(failed_lines)
 
 
 def main():
