@@ -34,7 +34,7 @@ src/validate/lerian-lib-version (composite action)
    1. Parse go.mod for github.com/LerianStudio/* direct deps
    2. Load .lerianstudiolibignore (if present)
    3. For each lib: GET /repos/LerianStudio/<repo>/releases (paged, stable only)
-   4. Compare current vs latest using semver (sort -V)
+   4. Compare current vs latest by semver precedence (a pre-release ranks below its release)
    4b. Apply the major-bump grace window (unpinned libs only)
    5. Build markdown report, write step summary
    6. Upsert sticky PR comment (via actions/github-script)

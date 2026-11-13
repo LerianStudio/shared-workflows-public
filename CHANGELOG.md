@@ -1,5 +1,36 @@
 # Shared-workflows-public Changelog
 
+## [1.8.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.8.0)
+
+Features:
+- Implement a single Slack summary notification for each PR validation run. (@bedatty)
+- Reorganize the run summary to list cancelled jobs last in a cancelled run. (@bedatty)
+- Adjust the run summary to display summary lines first and failed jobs last. (@bedatty)
+- Remove durations and omit job lists in cancelled run summaries. (@bedatty)
+- Include the workflow name in the footer of the run summary. (@bedatty)
+- Add a link to the run summary author’s profile. (@bedatty)
+- Introduce an author header and repository footer in the run summary. (@bedatty)
+- Lead the run summary with the actor's avatar and name. (@bedatty)
+- Finalize the run summary layout and apply Radagast fixes. (@bedatty)
+- Link the PR from the branch line in the run summary. (@bedatty)
+- Display the author line in Slack-notify messages. (@bedatty)
+- Render the run summary using Slack-notify's layout. (@bedatty)
+
+Fixes:
+- Attribute failures to cancellations only for late aggregation jobs. (@bedatty)
+- Differentiate between gate failures and real failures in cancelled run summaries. (@bedatty)
+- Exclude gates failed due to cancellations from cancelled run summaries. (@bedatty)
+- Ensure real failures remain listed in cancelled run summaries. (@bedatty)
+- Maintain an unfolded green run summary in Slack. (@bedatty)
+- Enhance the robustness of the Slack run summary. (@bedatty)
+
+Improvements:
+- Describe the rule for handling cancelled runs in the repository's gates documentation. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.7.5...v1.8.0)
+
+---
+
 ## [1.7.4](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.7.4)
 
 Fixes:
