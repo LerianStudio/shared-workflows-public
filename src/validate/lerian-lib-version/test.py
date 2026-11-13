@@ -247,6 +247,86 @@ class AdvisoryVerdictTests(unittest.TestCase):
         self.assertNotIn("OUTDATED_NON_BLOCKING", GO_MOD_SCRIPT)
 
 
+# ----------------- A pre-release ranks below its release -----------------
+
+# (version in go.mod, pin, current >= pin). The pin is the target, so these run
+# the real verdict without the releases API.
+PIN_VERDICT_CASES = (
+    ("v5.6.0-beta.4", "v5.6.0", False),
+    ("v5.6.0-rc.1", "v5.6.0", False),
+    ("v1.2.4-0.20261101120000-abcdef123456", "v1.2.4", False),
+    ("v5.6.0", "v5.6.0-beta.4", True),
+    ("v5.6.0", "v5.6.0", True),
+    ("v5.7.0-beta.1", "v5.6.0", True),
+)
+
+
+@unittest.skipUnless(BASH, "requires bash 4+ for the composite's associative arrays")
+class PreReleaseVerdictTests(unittest.TestCase):
+    def test_pinned_verdict(self):
+        for current, pin, at_or_above in PIN_VERDICT_CASES:
+            with self.subTest(current=current, pin=pin):
+                runner = ScriptRunner(self)
+                runner.write("go.mod", GO_MOD_OUTDATED.replace("v5.1.0", current))
+                runner.write(".lerianstudiolibignore", f"lib-commons/v5@{pin}\n")
+                result = runner.run(COMPARE_SCRIPT)
+                if at_or_above:
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("📌 Pinned", result.step_summary)
+                    self.assertEqual("0", _output_value(result.github_output, "outdated_count"))
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("Needs update — below pin", result.step_summary)
+                    self.assertEqual("1", _output_value(result.github_output, "outdated_count"))
+
+
+# (current, target, current >= target)
+VER_GE_CASES = (
+    ("v5.6.0", "v5.6.0", True),
+    ("v5.10.0", "v5.9.0", True),
+    ("v5.9.0", "v5.10.0", False),
+    # A pre-release is older than the release with the same number.
+    ("v5.6.0-beta.4", "v5.6.0", False),
+    ("v5.6.0-rc.1", "v5.6.0", False),
+    ("v5.6.0", "v5.6.0-beta.4", True),
+    # Different X.Y.Z: the pre-release suffix does not matter.
+    ("v5.7.0-beta.1", "v5.6.0", True),
+    ("v5.6.0-beta.4", "v5.6.1", False),
+    # Two pre-releases of the same version: numeric identifiers compare as numbers.
+    ("v5.6.0-beta.4", "v5.6.0-beta.4", True),
+    ("v5.6.0-beta.10", "v5.6.0-beta.4", True),
+    ("v5.6.0-beta.4", "v5.6.0-beta.10", False),
+    ("v5.6.0-rc.1", "v5.6.0-beta.4", True),
+    # Build metadata never ranks. Go writes +incompatible.
+    ("v2.0.0+incompatible", "v2.0.0", True),
+    ("v2.0.0-beta.1+incompatible", "v2.0.0", False),
+    # Go pseudo-versions are pre-releases of the version they are written against.
+    ("v1.2.4-0.20261101120000-abcdef123456", "v1.2.4", False),
+    ("v1.2.4-0.20261101120000-abcdef123456", "v1.2.3", True),
+    ("v0.0.0-20261101120000-abcdef123456", "v0.1.0", False),
+)
+
+
+@unittest.skipUnless(BASH, "requires bash to run the composite's ver_ge")
+class VersionCompareTests(unittest.TestCase):
+    """ver_ge follows semver precedence, which plain `sort -V` does not."""
+
+    def test_ver_ge(self):
+        function = re.search(r"^ver_ge\(\) \{\n.*?^\}$", COMPARE_SCRIPT, re.MULTILINE | re.DOTALL)
+        self.assertIsNotNone(function, "ver_ge not found in the compare step")
+        script = (
+            f"set -euo pipefail\n{function.group(0)}\n"
+            'if ver_ge "$1" "$2"; then echo ge; else echo lt; fi'
+        )
+        for current, target, expected in VER_GE_CASES:
+            with self.subTest(current=current, target=target):
+                result = subprocess.run(
+                    [BASH, "-c", script, "ver_ge", current, target],
+                    capture_output=True, text=True,
+                )
+                self.assertEqual("ge" if expected else "lt", result.stdout.strip(), result.stderr)
+
+
 # ----------------- Matching rule (umbrella workflow) -----------------
 
 EXPECTED_CONDITION = (
