@@ -282,22 +282,20 @@ def render(jobs_doc, environ=None):
     if pr_url:
         actions.append({"type": "button", "text": "🔀 Open PR", "url": pr_url})
 
-    # Only a legacy attachment draws the colour bar, and a legacy attachment
-    # repeats its author_* fields on its footer line. So the actor's avatar
-    # and name lead as a message-level context block: bold text, not a link,
-    # which Slack would paint blue.
+    # Only a legacy attachment draws the colour bar. The actor leads as its
+    # author header (avatar and bold name). Slack always draws a footer line
+    # under an attachment with an author, repeating the author when there is
+    # no footer, so the footer carries the repository instead.
     attachment = {"color": color, "fallback": fallback, "text": text, "mrkdwn_in": ["text"]}
+    actor = get("ACTOR")
+    if actor:
+        attachment["author_name"] = escape(actor)
+        attachment["author_icon"] = f"https://github.com/{actor}.png?size=32"
+    if repo:
+        attachment["footer"] = escape(repo)
     if actions:
         attachment["actions"] = actions
     payload = {"attachments": [attachment]}
-    actor = get("ACTOR")
-    if actor:
-        # With blocks, a top-level `text` is the notification text only.
-        payload["text"] = fallback
-        payload["blocks"] = [{"type": "context", "elements": [
-            {"type": "image", "image_url": f"https://github.com/{actor}.png?size=32", "alt_text": escape(actor)},
-            {"type": "mrkdwn", "text": f"*{escape(actor)}*"},
-        ]}]
     return payload, len(failed_lines)
 
 

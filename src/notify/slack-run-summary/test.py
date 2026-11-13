@@ -101,18 +101,17 @@ class GreenRun(unittest.TestCase):
             {"type": "button", "text": "🔀 Open PR", "url": PR_URL},
         ])
 
-    def test_actor_leads_in_a_context_block(self):
-        # Avatar and bold name, no link (Slack paints links blue), outside the
-        # attachment (a legacy author_* comes back on the footer line).
-        context = self.payload["blocks"][0]
-        self.assertEqual(context["type"], "context")
-        self.assertEqual(context["elements"][0], {"type": "image", "image_url": "https://github.com/dev.png?size=32", "alt_text": "dev"})
-        self.assertEqual(context["elements"][1], {"type": "mrkdwn", "text": "*dev*"})
-        self.assertEqual(self.payload["text"], attachment(self.payload)["fallback"])
-        for field in ("author_name", "author_icon", "author_link", "footer", "blocks"):
-            self.assertNotIn(field, attachment(self.payload))
-        self.assertNotIn("by *dev*", self.text)
-        self.assertNotIn("style", attachment(self.payload)["actions"][0])
+    def test_actor_header_and_repository_footer(self):
+        # Avatar and bold name as the author header, no link. Slack draws a
+        # footer line under it either way, so it names the repository.
+        att = attachment(self.payload)
+        self.assertEqual(att["author_name"], "dev")
+        self.assertEqual(att["author_icon"], "https://github.com/dev.png?size=32")
+        self.assertNotIn("author_link", att)
+        self.assertEqual(att["footer"], "LerianStudio/example-service")
+        self.assertEqual(set(self.payload), {"attachments"})
+        self.assertNotIn("dev", self.text)
+        self.assertNotIn("style", att["actions"][0])
 
     def test_skipped_jobs_are_omitted(self):
         self.assertNotIn("Runner Labels Check", self.text)
@@ -224,7 +223,7 @@ class Escaping(unittest.TestCase):
             if job["name"].endswith("Tests (app)"):
                 job["name"] = "validate / Go Analysis (pipeline) / Tests <evil> & co"
         payload = summary(doc, base_env(VERDICT="failure", BRANCH="feat/<!here>", ACTOR="a<b>&c"))
-        self.assertEqual(payload["blocks"][0]["elements"][1]["text"], "*a&lt;b&gt;&amp;c*")
+        self.assertEqual(attachment(payload)["author_name"], "a&lt;b&gt;&amp;c")
         self.assertIn("Tests &lt;evil&gt; &amp; co", attachment(payload)["text"])
         self.assertIn("`feat/&lt;!here&gt;`", attachment(payload)["text"])
 
@@ -300,10 +299,11 @@ class Script(unittest.TestCase):
         ).stdout
         self.assertEqual(json.loads(out)["attachments"][0]["color"], "good")
 
-    def test_no_actor_no_context_block(self):
+    def test_no_actor_no_author_header(self):
         payload = summary(fixture("green"), base_env(ACTOR=""))
-        # No blocks, so no top-level text either: it would show above the bar.
         self.assertEqual(set(payload), {"attachments"})
+        self.assertNotIn("author_name", attachment(payload))
+        self.assertNotIn("author_icon", attachment(payload))
 
 
 class Composite(unittest.TestCase):

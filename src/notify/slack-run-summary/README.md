@@ -10,7 +10,7 @@ Sends **one** Slack message for a whole workflow run: every job that ran, read f
 The message keeps the look of `slack-notify`, the one the channel already reads, posted straight to the webhook:
 
 ```
-[avatar] *dev*                                                     ← context block, no link
+┃ [avatar] *dev*                                                   ← author header, no link
 ┃ ⚙️ *PR Validation* failed in *example-service*
 ┃ 💥 *Failed:*
 ┃ • Go Analysis (pipeline) / Tests (app) — Run tests (make) · 2m 15s   ← link to the job
@@ -18,11 +18,12 @@ The message keeps the look of `slack-notify`, the one the channel already reads,
 ┃ ⚠️ *Warnings:* PR metadata
 ┃ ❌ *Jobs:* Changes 1/1 · Metadata 9/9 · Security 6/6 · Analysis 8/10 · Lib Version 2/2
 ┃ 📌 *Branch:* `feat/api-routes` | *Commit:* `077cbf7`
+┃ [avatar] LerianStudio/example-service                             ← footer
 ┃ [🔍 View run] [🔀 Open PR]
 ```
 
 - The **colour bar** is green, red, or grey for a superseded run; only a legacy attachment draws it.
-- The **actor**'s avatar and name lead as a message-level `context` block, the name in bold and not a link (Slack paints links blue). Not the attachment's `author_*` fields, which Slack repeats on the footer line.
+- The **actor**'s avatar and bold name lead as the attachment's author header, without a link. Slack always draws a footer line under an attachment with an author, and repeats the author there when the footer is empty, so the **footer** names the repository.
 - The first line carries a fixed `⚙️`; the verdict is the bar and the **Jobs** line: `✅` all passed, `❌` a job failed, `⚪` cancelled.
 - **Failed** — one line per job that ended `failure`, `cancelled` or `timed_out`: its name, the first failing step, its duration, linked to the job log.
 - **Warnings** — advisory checks that failed without failing a gate (`advisory-results`).
@@ -124,6 +125,9 @@ permissions:
       "mrkdwn_in": [
         "text"
       ],
+      "author_name": "dev",
+      "author_icon": "https://github.com/dev.png?size=32",
+      "footer": "LerianStudio/example-service",
       "actions": [
         {
           "type": "button",
@@ -134,23 +138,6 @@ permissions:
           "type": "button",
           "text": "🔀 Open PR",
           "url": "https://github.com/LerianStudio/example-service/pull/42"
-        }
-      ]
-    }
-  ],
-  "text": "❌ PR Validation failed in example-service — PR #42: feat(api): add provider routes — 2 failed",
-  "blocks": [
-    {
-      "type": "context",
-      "elements": [
-        {
-          "type": "image",
-          "image_url": "https://github.com/dev.png?size=32",
-          "alt_text": "dev"
-        },
-        {
-          "type": "mrkdwn",
-          "text": "*dev*"
         }
       ]
     }
