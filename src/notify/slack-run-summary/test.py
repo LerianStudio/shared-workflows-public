@@ -145,14 +145,22 @@ class FailureRun(unittest.TestCase):
     def setUp(self):
         self.payload = summary(fixture("failure"), base_env(VERDICT="failure", RUN_ATTEMPT="2", VERDICT_REUSED="true"))
 
-    def test_failed_lines_have_step_duration_and_link(self):
+    def test_failed_lines_have_step_and_link_no_time(self):
         text = lines(self.payload)
         start = text.index("💥 *Failed:*")
         self.assertRegex(
             text[start + 1],
-            r"^• <https://github\.com/LerianStudio/example-service/actions/runs/1000/job/\d+\|Go Analysis \(pipeline\) / Tests \(app\)> — Run tests \(make\) · \d+m \d+s$",
+            r"^❌ <https://github\.com/LerianStudio/example-service/actions/runs/1000/job/\d+\|Go Analysis \(pipeline\) / Tests \(app\)> — Run tests \(make\)$",
         )
-        self.assertIn("|Go Analysis> — Aggregate Go Analysis result", text[start + 2])
+        self.assertTrue(text[start + 2].endswith("|Go Analysis> — Aggregate Go Analysis result"), text[start + 2])
+
+    def test_cancelled_jobs_of_a_failed_run_are_listed(self):
+        doc = fixture("failure")
+        for job in doc["jobs"]:
+            if job["name"].endswith("Integration Tests (app)"):
+                job["conclusion"] = "cancelled"
+        payload = summary(doc, base_env(VERDICT="failure"))
+        self.assertRegex(attachment(payload)["text"], r"\n⚪ <[^>]+\|Go Analysis \(pipeline\) / Integration Tests \(app\)>")
 
     def test_header_color_and_partial_groups(self):
         self.assertEqual(lines(self.payload)[0], "⚙️ *PR Validation* failed in *example-service*")
@@ -168,12 +176,15 @@ class FailureRun(unittest.TestCase):
 
 
 class CancelledRun(unittest.TestCase):
-    def test_cancelled_job_listed_with_its_own_mark(self):
+    def test_cancelled_run_reads_like_a_green_one(self):
+        # Superseded by a newer run: no job list, just the counts.
         payload = summary(fixture("cancelled"), base_env(VERDICT="cancelled"))
         self.assertEqual(lines(payload)[0], "⚙️ *PR Validation* was cancelled in *example-service*")
         self.assertTrue(line(payload, "⚪ *Jobs:*"))
         self.assertEqual(attachment(payload)["color"], "#808080")
-        self.assertIn("Record verdict", line(payload, "⚪ <"))
+        self.assertIsNone(line(payload, "💥"))
+        self.assertNotIn("Record verdict", attachment(payload)["text"].split("*Jobs:*")[0])
+        self.assertEqual(len(lines(payload)), 3)
 
 
 class InProgressJobs(unittest.TestCase):

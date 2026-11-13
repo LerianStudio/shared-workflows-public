@@ -13,8 +13,8 @@ The message keeps the look of `slack-notify`, the one the channel already reads,
 ┃ [avatar] *dev*                                                   ← author header, links to the profile
 ┃ ⚙️ *PR Validation* failed in *example-service*
 ┃ 💥 *Failed:*
-┃ • Go Analysis (pipeline) / Tests (app) — Run tests (make) · 2m 15s   ← link to the job
-┃ • Go Analysis — Aggregate Go Analysis result · 8s
+┃ ❌ Go Analysis (pipeline) / Tests (app) — Run tests (make)   ← link to the job
+┃ ❌ Go Analysis — Aggregate Go Analysis result
 ┃ ⚠️ *Warnings:* PR metadata
 ┃ ❌ *Jobs:* Changes 1/1 · Metadata 9/9 · Security 6/6 · Analysis 8/10 · Lib Version 2/2
 ┃ 📌 *Branch:* `feat/api-routes` | *Commit:* `077cbf7`
@@ -25,7 +25,7 @@ The message keeps the look of `slack-notify`, the one the channel already reads,
 - The **colour bar** is green, red, or grey for a superseded run; only a legacy attachment draws it.
 - The **actor**'s avatar and bold name lead as the attachment's author header, linked to their GitHub profile. Slack always draws a footer line under an attachment with an author, and repeats the author there when the footer is empty, so the **footer** names the workflow (`Workflow: <name>`), as `slack-notify`'s did.
 - The first line carries a fixed `⚙️`; the verdict is the bar and the **Jobs** line: `✅` all passed, `❌` a job failed, `⚪` cancelled.
-- **Failed** — one line per job that ended `failure`, `cancelled` or `timed_out`: its name, the first failing step, its duration, linked to the job log.
+- **Failed** — on a failed run, one line per job that ended `failure` or `timed_out` (❌) or `cancelled` (⚪): its name, linked to the job log, and the first step that failed. A cancelled run, superseded by a newer one, has no list and reads like a green one.
 - **Warnings** — advisory checks that failed without failing a gate (`advisory-results`).
 - **Jobs** — `succeeded/ran` per group.
 - The branch line adds `attempt N` on a re-run and `verdict reused` when the gates reported an earlier run's verdict.
@@ -121,7 +121,7 @@ permissions:
     {
       "color": "danger",
       "fallback": "❌ PR Validation failed in example-service — PR #42: feat(api): add provider routes — 2 failed",
-      "text": "⚙️ *PR Validation* failed in *example-service*\n💥 *Failed:*\n• <https://github.com/LerianStudio/example-service/actions/runs/1000/job/2030|Go Analysis (pipeline) / Tests (app)> — Run tests (make) · 2m 15s\n• <https://github.com/LerianStudio/example-service/actions/runs/1000/job/2042|Go Analysis> — Aggregate Go Analysis result · 8s\n⚠️ *Warnings:* PR metadata\n❌ *Jobs:* Changes 1/1 · Metadata 9/9 · Permission Manifest Nudge 1/1 · Security 6/6 · Analysis 8/10 · Lib Version 2/2 · Record verdict 1/1\n📌 *Branch:* `feat/api-routes` | *Commit:* `077cbf7`",
+      "text": "⚙️ *PR Validation* failed in *example-service*\n💥 *Failed:*\n❌ <https://github.com/LerianStudio/example-service/actions/runs/1000/job/2030|Go Analysis (pipeline) / Tests (app)> — Run tests (make)\n❌ <https://github.com/LerianStudio/example-service/actions/runs/1000/job/2042|Go Analysis> — Aggregate Go Analysis result\n⚠️ *Warnings:* PR metadata\n❌ *Jobs:* Changes 1/1 · Metadata 9/9 · Permission Manifest Nudge 1/1 · Security 6/6 · Analysis 8/10 · Lib Version 2/2 · Record verdict 1/1\n📌 *Branch:* `feat/api-routes` | *Commit:* `077cbf7`",
       "mrkdwn_in": [
         "text"
       ],

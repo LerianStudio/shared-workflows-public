@@ -23,7 +23,6 @@ import fnmatch
 import json
 import os
 import sys
-from datetime import datetime
 
 # Bounds the attachment text.
 TEXT_LIMIT = 3000
@@ -73,32 +72,6 @@ STATUS = {
 def escape(text):
     """Slack mrkdwn control characters; everything else is literal."""
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
-def parse_time(value):
-    if not value:
-        return None
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
-
-
-def duration(seconds):
-    if seconds is None:
-        return ""
-    seconds = max(0, int(seconds))
-    hours, rest = divmod(seconds, 3600)
-    minutes, secs = divmod(rest, 60)
-    if hours:
-        return f"{hours}h {minutes}m"
-    if minutes:
-        return f"{minutes}m {secs}s"
-    return f"{secs}s"
-
-
-def job_seconds(job):
-    start, end = parse_time(job.get("started_at")), parse_time(job.get("completed_at"))
-    if not start or not end:
-        return None
-    return (end - start).total_seconds()
 
 
 def find_self(jobs, runner, job_name):
@@ -213,14 +186,16 @@ def render(jobs_doc, environ=None):
     head = [f"{WORKFLOW_MARK} *{escape(workflow)}* {status_text} in *{escape(repo_name)}*"]
 
     failed = [j for j in jobs if j.get("conclusion") in FAILED_CONCLUSIONS]
+    # A superseded (cancelled) run reads like a green one: no job list. A
+    # failed run lists its failed (❌) and cancelled (⚪) jobs, each linked to
+    # its log, with the first step that failed.
     failed_lines = []
-    for job in failed:
+    for job in failed if verdict != "cancelled" else []:
         step = first_failed_step(job)
-        mark = "⚪" if job.get("conclusion") == "cancelled" else "•"
+        mark = "⚪" if job.get("conclusion") == "cancelled" else "❌"
         name = escape(clip(job["short_name"], 300))
         text = f"<{job['html_url']}|{name}>" if job.get("html_url") else name
-        detail = " · ".join(part for part in [escape(clip(step, 200)), duration(job_seconds(job))] if part)
-        failed_lines.append(clip(f"{mark} {text}" + (f" — {detail}" if detail else ""), LINE_LIMIT))
+        failed_lines.append(clip(f"{mark} {text}" + (f" — {escape(clip(step, 200))}" if step else ""), LINE_LIMIT))
 
     warnings = advisory_warnings(get("ADVISORY"))
 
