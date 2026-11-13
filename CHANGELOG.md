@@ -1,5 +1,15 @@
 # Shared-workflows-public Changelog
 
+## [1.7.4](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.7.4)
+
+Fixes:
+- Remove the retired CodeRabbit gate and its associated inputs. (@bedatty, @fredcamaral)
+- Address review findings related to the CodeRabbit gate. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.7.3...v1.7.4)
+
+---
+
 ## [1.7.3](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.7.3)
 
 Fixes:
