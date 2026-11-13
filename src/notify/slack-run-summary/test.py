@@ -176,15 +176,19 @@ class FailureRun(unittest.TestCase):
 
 
 class CancelledRun(unittest.TestCase):
-    def test_cancelled_run_reads_like_a_green_one(self):
-        # Superseded by a newer run: no job list, just the counts.
+    def test_cancelled_run_lists_its_cancelled_jobs_last(self):
+        # Summary lines first; the cancelled jobs, linked, last, so "Show
+        # more" folds them. No failure, so the list is "Cancelled".
         payload = summary(fixture("cancelled"), base_env(VERDICT="cancelled"))
-        self.assertEqual(lines(payload)[0], "⚙️ *PR Validation* was cancelled in *example-service*")
-        self.assertTrue(line(payload, "⚪ *Jobs:*"))
+        text = lines(payload)
+        self.assertEqual(text[0], "⚙️ *PR Validation* was cancelled in *example-service*")
+        self.assertTrue(text[1].startswith("⚪ *Jobs:*"))
+        self.assertTrue(text[2].startswith("📌 *Branch:*"))
+        self.assertEqual(text[3], "⚪ *Cancelled:*")
+        self.assertRegex(text[4], r"^⚪ <[^>]+\|Record verdict>( — .+)?$")
         self.assertEqual(attachment(payload)["color"], "#808080")
         self.assertIsNone(line(payload, "💥"))
-        self.assertNotIn("Record verdict", attachment(payload)["text"].split("*Jobs:*")[0])
-        self.assertEqual(len(lines(payload)), 3)
+        self.assertFalse(attachment(payload)["fallback"].endswith("failed"))
 
     def test_cancelled_run_still_lists_a_real_failure(self):
         payload = summary(fixture("failure"), base_env(VERDICT="cancelled"))

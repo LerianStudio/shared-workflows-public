@@ -198,20 +198,19 @@ def render(jobs_doc, environ=None):
     head = [f"{WORKFLOW_MARK} *{escape(workflow)}* {status_text} in *{escape(repo_name)}*"]
 
     failed = [j for j in jobs if j.get("conclusion") in FAILED_CONCLUSIONS]
-    # A failed run lists its failed (❌) and cancelled (⚪) jobs, each linked to
-    # its log, with the first step that failed. A cancelled run leaves out its
-    # cancelled jobs, and the failures the cancel caused: an aggregating job
-    # (only its aggregation step failed) that finished after the first
-    # cancelled job, as a gate does when a need was cancelled. Neither test
-    # alone tells them apart: a real failure can end after an unrelated cancel,
-    # and a caller's gate may run its own check, so its aggregation step is the
-    # real failure. A superseded run reads like a green one.
+    # The run lists its failed (❌) and cancelled (⚪) jobs, each linked to its
+    # log, with the first step that failed. A cancelled run leaves out the
+    # failures the cancel caused: an aggregating job (only its aggregation
+    # step failed) that finished after the first cancelled job, as a gate does
+    # when a need was cancelled. Neither test alone tells them apart: a real
+    # failure can end after an unrelated cancel, and a caller's gate may run
+    # its own check, so its aggregation step is the real failure.
     if verdict == "cancelled":
         cut = min((j.get("completed_at") or "" for j in failed if j.get("conclusion") == "cancelled"), default="")
         failed = [
             j for j in failed
-            if j.get("conclusion") != "cancelled"
-            and not (is_gate_failure(j) and cut and (j.get("completed_at") or cut) >= cut)
+            if not (j.get("conclusion") != "cancelled" and is_gate_failure(j)
+                    and cut and (j.get("completed_at") or cut) >= cut)
         ]
     failed_lines = []
     for job in failed:
@@ -258,21 +257,23 @@ def render(jobs_doc, environ=None):
     if warnings:
         middle.append(clip("⚠️ *Warnings:* " + ", ".join(escape(w) for w in warnings), LINE_LIMIT))
 
-    # The summary lines lead and the failed list comes last, so Slack's
+    # The summary lines lead and the job list comes last, so Slack's
     # "Show more" folds the list and never the summary. The list takes
-    # whatever the rest leaves of the text budget.
-    summary_lines = head + middle + tail
-    text = "\n".join(summary_lines)
+    # whatever the rest leaves of the text budget. It is "Failed" when a job
+    # failed, "Cancelled" when every listed job was cancelled.
+    real_failures = sum(1 for j in failed if j.get("conclusion") != "cancelled")
+    title = "💥 *Failed:*" if real_failures else "⚪ *Cancelled:*"
+    text = "\n".join(head + middle + tail)
     if failed_lines:
-        fixed = len(text) + len("💥 *Failed:*") + 4
-        text += "\n" + "\n".join(["💥 *Failed:*"] + fit(failed_lines, TEXT_LIMIT - fixed))
+        fixed = len(text) + len(title) + 4
+        text += "\n" + "\n".join([title] + fit(failed_lines, TEXT_LIMIT - fixed))
 
     # Notifications and screen readers show the fallback; Slack parses it too.
     fallback = f"{emoji} {workflow} {status_text} in {repo_name}"
     if pr_number:
         fallback += f" — PR #{pr_number}: {pr_title}"
-    if failed_lines:
-        fallback += f" — {len(failed_lines)} failed"
+    if real_failures:
+        fallback += f" — {real_failures} failed"
     fallback = escape(clip(fallback, 300))
 
     # Link buttons; a url button needs no interactivity on the Slack app.
@@ -296,7 +297,7 @@ def render(jobs_doc, environ=None):
     if actions:
         attachment["actions"] = actions
     payload = {"attachments": [attachment]}
-    return payload, len(failed_lines)
+    return payload, real_failures
 
 
 def main():
