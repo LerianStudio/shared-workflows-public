@@ -210,9 +210,6 @@ def render(jobs_doc, environ=None):
     # The layout of slack-notify's message, which the channel already reads:
     # verdict line, then what ran, then author, branch and commit, then the run.
     head = [f"{emoji} *{escape(workflow)}* {status_text} in *{escape(repo_name)}*"]
-    if pr_number:
-        headline = escape(clip(f"PR #{pr_number}: {pr_title}" if pr_title else f"PR #{pr_number}", 200))
-        head.append(f"📌 <{pr_url}|{headline}>" if pr_url else f"📌 {headline}")
 
     failed = [j for j in jobs if j.get("conclusion") in FAILED_CONCLUSIONS]
     failed_lines = []
@@ -241,6 +238,8 @@ def render(jobs_doc, environ=None):
     starts = [parse_time(j.get("started_at")) for j in jobs if j.get("started_at")]
     now = parse_time(get("NOW")) or datetime.now(timezone.utc)
     where = f"📌 *Branch:* `{escape(clip(get('BRANCH'), 200))}` | " if get("BRANCH") else "📌 "
+    if pr_number:
+        where += (f"*PR:* <{pr_url}|#{pr_number}> | " if pr_url else f"*PR:* #{pr_number} | ")
     where += f"*Commit:* `{get('SHA')[:7]}`"
     if starts:
         where += f" | *Duration:* {duration((now - min(starts)).total_seconds())}"

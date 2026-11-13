@@ -85,9 +85,10 @@ class GreenRun(unittest.TestCase):
 
     def test_slack_notify_layout(self):
         self.assertEqual(lines(self.payload)[0], "✅ *PR Validation* succeeded in *example-service*")
-        self.assertEqual(lines(self.payload)[1], f"📌 <{PR_URL}|PR #42: feat(api): add things>")
+        self.assertTrue(lines(self.payload)[1].startswith("✅ *Jobs:*"), lines(self.payload)[1])
         self.assertIn("👤 *Author:* dev", self.text)
-        self.assertIn("📌 *Branch:* `feat/api-things` | *Commit:* `077cbf7` | *Duration:* ", self.text)
+        self.assertIn(f"📌 *Branch:* `feat/api-things` | *PR:* <{PR_URL}|#42> | *Commit:* `077cbf7` | *Duration:* ", self.text)
+        self.assertNotIn("feat(api): add things", self.text)
         self.assertTrue(self.text.endswith(f"<{RUN_URL}|🔗 View Workflow Run>"))
         self.assertEqual(attachment(self.payload)["color"], "good")
         self.assertEqual(attachment(self.payload)["footer"], "Workflow: PR Validation")
@@ -189,7 +190,7 @@ class Escaping(unittest.TestCase):
     def test_quotes_backticks_and_mrkdwn_controls(self):
         title = 'fix: handle "quoted" `ticks` & <b>tags</b> | pipes'
         payload = summary(fixture("green"), base_env(PR_TITLE=title))
-        self.assertIn('"quoted" `ticks` &amp; &lt;b&gt;tags&lt;/b&gt;', lines(payload)[1])
+        self.assertIn('"quoted" `ticks` &amp; &lt;b&gt;tags&lt;/b&gt;', attachment(payload)["fallback"])
         # The payload is plain JSON: the title round-trips without breaking it.
         self.assertEqual(json.loads(json.dumps(payload)), payload)
 
@@ -213,7 +214,8 @@ class NoPullRequest(unittest.TestCase):
         payload = summary(fixture("green"), base_env(PR_NUMBER="", PR_TITLE="", PR_URL="", BRANCH="develop"))
         self.assertTrue(lines(payload)[1].startswith("✅ *Jobs:*"), lines(payload)[1])
         self.assertNotIn("PR #", json.dumps(payload))
-        self.assertIn("*Branch:* `develop`", attachment(payload)["text"])
+        self.assertNotIn("*PR:*", attachment(payload)["text"])
+        self.assertIn("*Branch:* `develop` | *Commit:*", attachment(payload)["text"])
 
 
 class GroupLabels(unittest.TestCase):
