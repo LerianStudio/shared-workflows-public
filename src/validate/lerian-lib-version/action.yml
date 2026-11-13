@@ -381,10 +381,18 @@ runs:
           echo "${latest}"
         }
 
-        # semver compare: returns 0 if $1 >= $2, 1 otherwise
+        # semver compare: returns 0 if $1 >= $2, 1 otherwise.
+        # Plain `sort -V` is not enough: it puts 5.6.0 before 5.6.0-beta.4, but in semver a
+        # pre-release is older than the release with the same X.Y.Z. That case is decided
+        # here; `sort -V` only orders different X.Y.Z, or two pre-releases of the same one.
         ver_ge() {
           local a="${1#v}" b="${2#v}"
-          [[ "${a}" == "${b}" ]] && return 0
+          a="${a%%+*}"; b="${b%%+*}"                  # build metadata never ranks (Go writes +incompatible)
+          local a_core="${a%%-*}" b_core="${b%%-*}"   # X.Y.Z without the pre-release suffix
+          if [[ "${a_core}" == "${b_core}" ]]; then
+            [[ "${a}" == "${a_core}" ]] && return 0   # $1 is the release itself
+            [[ "${b}" == "${b_core}" ]] && return 1   # $2 is the release, $1 a pre-release of it
+          fi
           local first
           first=$(printf '%s\n%s\n' "${a}" "${b}" | sort -V | head -n1)
           [[ "${first}" == "${b}" ]]
