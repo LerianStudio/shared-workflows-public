@@ -249,7 +249,9 @@ def render(jobs_doc, environ=None):
         where += f" | attempt {attempt}"
     if get("VERDICT_REUSED") == "true":
         where += " | verdict reused"
-    tail = [f"👤 *Author:* {escape(get('ACTOR'))}", where]
+    # No Author line: the attachment's author header already shows the
+    # actor's name and avatar.
+    tail = [where]
     if run_url:
         tail.append(f"<{run_url}|🔗 View Workflow Run>")
 
@@ -277,10 +279,9 @@ def render(jobs_doc, environ=None):
         "color": color,
         "fallback": escape(clip(fallback, 300)),
         "text": text,
-        "footer": f"Workflow: {escape(workflow)}",
         "mrkdwn_in": ["text"],
     }
-    # The "From <author>" line slack-notify's messages carry (rtCamp sets it).
+    # The author header slack-notify's messages carry (rtCamp sets it).
     actor = get("ACTOR")
     if actor:
         attachment.update({

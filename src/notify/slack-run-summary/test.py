@@ -86,14 +86,14 @@ class GreenRun(unittest.TestCase):
     def test_slack_notify_layout(self):
         self.assertEqual(lines(self.payload)[0], "✅ *PR Validation* succeeded in *example-service*")
         self.assertTrue(lines(self.payload)[1].startswith("✅ *Jobs:*"), lines(self.payload)[1])
-        self.assertIn("👤 *Author:* dev", self.text)
+        self.assertNotIn("*Author:*", self.text)
         self.assertIn(f"📌 *Branch:* `feat/api-things` | *PR:* <{PR_URL}|#42> | *Commit:* `077cbf7` | *Duration:* ", self.text)
         self.assertNotIn("feat(api): add things", self.text)
         self.assertTrue(self.text.endswith(f"<{RUN_URL}|🔗 View Workflow Run>"))
         # Slack folds attachment text from 5 line breaks: a green run stays open.
         self.assertLess(self.text.count("\n"), 5)
         self.assertEqual(attachment(self.payload)["color"], "good")
-        self.assertEqual(attachment(self.payload)["footer"], "Workflow: PR Validation")
+        self.assertNotIn("footer", attachment(self.payload))
         self.assertEqual(attachment(self.payload)["mrkdwn_in"], ["text"])
         self.assertEqual(attachment(self.payload)["author_name"], "dev")
         self.assertEqual(attachment(self.payload)["author_icon"], "https://github.com/dev.png?size=32")
@@ -259,7 +259,7 @@ class Limits(unittest.TestCase):
         self.assertLessEqual(len(text), render.TEXT_LIMIT)
         self.assertRegex(text, r"_\+\d+ more_")
         # Everything after the list survives the cut.
-        self.assertIn("👤 *Author:* dev", text)
+        self.assertIn("📌 *Branch:*", text)
         self.assertTrue(text.endswith("🔗 View Workflow Run>"))
         self.assertTrue(attachment(payload)["fallback"].endswith("— 200 failed"))
 
