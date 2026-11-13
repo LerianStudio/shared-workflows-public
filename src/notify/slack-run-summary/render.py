@@ -280,6 +280,14 @@ def render(jobs_doc, environ=None):
         "footer": f"Workflow: {escape(workflow)}",
         "mrkdwn_in": ["text"],
     }
+    # The "From <author>" line slack-notify's messages carry (rtCamp sets it).
+    actor = get("ACTOR")
+    if actor:
+        attachment.update({
+            "author_name": escape(actor),
+            "author_link": f"https://github.com/{actor}",
+            "author_icon": f"https://github.com/{actor}.png?size=32",
+        })
     return {"attachments": [attachment]}, len(failed_lines)
 
 

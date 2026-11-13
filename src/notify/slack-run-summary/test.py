@@ -92,6 +92,8 @@ class GreenRun(unittest.TestCase):
         self.assertEqual(attachment(self.payload)["color"], "good")
         self.assertEqual(attachment(self.payload)["footer"], "Workflow: PR Validation")
         self.assertEqual(attachment(self.payload)["mrkdwn_in"], ["text"])
+        self.assertEqual(attachment(self.payload)["author_name"], "dev")
+        self.assertEqual(attachment(self.payload)["author_icon"], "https://github.com/dev.png?size=32")
 
     def test_skipped_jobs_are_omitted(self):
         self.assertNotIn("Runner Labels Check", self.text)

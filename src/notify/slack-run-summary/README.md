@@ -122,7 +122,10 @@ permissions:
       "footer": "Workflow: PR Validation",
       "mrkdwn_in": [
         "text"
-      ]
+      ],
+      "author_name": "dev",
+      "author_link": "https://github.com/dev",
+      "author_icon": "https://github.com/dev.png?size=32"
     }
   ]
 }
