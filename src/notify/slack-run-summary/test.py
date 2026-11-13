@@ -119,6 +119,11 @@ class GreenRun(unittest.TestCase):
     def test_fallback_text(self):
         self.assertIn("PR #42", self.payload["text"])
 
+    def test_fallback_text_escapes_mentions_and_links(self):
+        payload = summary(fixture("green"), base_env(PR_TITLE="fix: <!channel> ping <@U123> <https://x|label>"))
+        self.assertIn("&lt;!channel&gt; ping &lt;@U123&gt; &lt;https://x|label&gt;", payload["text"])
+        self.assertNotIn("<!channel>", payload["text"])
+
 
 class FailureRun(unittest.TestCase):
     def setUp(self):

@@ -281,7 +281,8 @@ def render(jobs_doc, environ=None):
 
     assert len(blocks) <= MAX_BLOCKS, len(blocks)
 
-    fallback = f"{EMOJI[verdict]} {headline} — {repo}"
+    # Slack parses `text` as mrkdwn too: a raw title could carry <!channel>.
+    fallback = f"{EMOJI[verdict]} {escape(headline)} — {escape(repo)}"
     if failed_lines:
         fallback += f" — {len(failed_lines)} failed"
     return {"text": clip(fallback, SECTION_LIMIT), "blocks": blocks}, len(failed_lines)

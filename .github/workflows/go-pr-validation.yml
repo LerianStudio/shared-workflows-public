@@ -699,9 +699,11 @@ jobs:
   # gates branch protection requires; the body lists every job that ran, read
   # from the jobs API. A cancelled run was superseded by a newer one, which
   # reports the head's real verdict. Not a verdict itself: continue-on-error.
+  # permission-manifest-nudge is in `needs` only so it has finished when the
+  # jobs are listed; it is no gate, so `status` ignores it when it alone failed.
   notify:
     name: Slack Summary
-    needs: [changes, metadata, go-analysis-gate, security-gate, lib-version-gate]
+    needs: [changes, metadata, go-analysis-gate, security-gate, lib-version-gate, permission-manifest-nudge]
     if: always() && inputs.enable_slack_notification && github.event_name == 'pull_request' && github.event.pull_request.draft != true && !inputs.dry_run
     runs-on: ${{ (github.event.repository.visibility == 'public' && vars.PUBLIC_RUNNERS) || (github.event.repository.visibility != 'public' && vars.LIGHT_RUNNERS) || vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
@@ -722,7 +724,7 @@ jobs:
           webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
           github-token: ${{ github.token }}
           # yamllint disable-line rule:line-length
-          status: ${{ (job.status == 'cancelled' || contains(needs.*.result, 'cancelled')) && 'cancelled' || (steps.verdict.outputs.passed == 'true' && 'success' || 'failure') }}
+          status: ${{ (job.status == 'cancelled' || contains(needs.*.result, 'cancelled')) && 'cancelled' || ((steps.verdict.outputs.passed == 'true' || steps.verdict.outputs.failed-jobs == 'permission-manifest-nudge') && 'success' || 'failure') }}
           job-name: Slack Summary
           advisory-results: |
             PR metadata=${{ needs.metadata.outputs.advisory_metadata_result || 'skipped' }}

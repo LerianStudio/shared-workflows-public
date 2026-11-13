@@ -129,7 +129,8 @@ runs:
         PAYLOAD: ${{ steps.render.outputs.payload }}
       run: |
         set -uo pipefail
-        code=$(curl -sS -o "${RUNNER_TEMP}/slack-run-summary-response" -w '%{http_code}' \
+        # Bounded: an endpoint that never answers must not hold the run open.
+        code=$(curl -sS --connect-timeout 10 --max-time 30 -o "${RUNNER_TEMP}/slack-run-summary-response" -w '%{http_code}' \
           -X POST -H 'Content-Type: application/json' --data-binary "@${PAYLOAD}" "$SLACK_URL") || code=000
         if [ "$code" = "200" ]; then
           echo "sent=true" >> "$GITHUB_OUTPUT"
