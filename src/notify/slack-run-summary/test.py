@@ -104,12 +104,12 @@ class GreenRun(unittest.TestCase):
     def test_actor_header_and_repository_footer(self):
         # Avatar and bold name as the author header, linked to the profile.
         # Slack draws a footer line under it either way, so it names the
-        # repository.
+        # workflow.
         att = attachment(self.payload)
         self.assertEqual(att["author_name"], "dev")
         self.assertEqual(att["author_icon"], "https://github.com/dev.png?size=32")
         self.assertEqual(att["author_link"], "https://github.com/dev")
-        self.assertEqual(att["footer"], "LerianStudio/example-service")
+        self.assertEqual(att["footer"], "Workflow: PR Validation")
         self.assertEqual(set(self.payload), {"attachments"})
         self.assertNotIn("dev", self.text)
         self.assertNotIn("style", att["actions"][0])
