@@ -53,6 +53,16 @@ jobs:
     workflow-name: 'My Workflow'
 ```
 
+### Multi-line custom message
+
+`custom-message`, `failed-jobs` and `workflow-name` are sent as literal text: backslash sequences such as `\n` are not expanded. For a line break, put a real one in the value, for example with a YAML block scalar:
+
+```yaml
+    custom-message: |
+      Deployed to staging.
+      Smoke tests pending.
+```
+
 ## Permissions required
 
 No special permissions required — notification is sent via webhook.
