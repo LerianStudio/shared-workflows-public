@@ -22,6 +22,7 @@ reach a shell as code:
 import fnmatch
 import json
 import os
+import re
 import sys
 
 # Bounds the attachment text.
@@ -134,6 +135,15 @@ def first_failed_step(job):
     return ""
 
 
+GATE_STEP = re.compile(r"^Aggregate .+ result$")
+
+
+def is_gate_failure(job):
+    """True when every failed step is a result-gate aggregation step."""
+    failed_steps = [s.get("name", "") for s in job.get("steps") or [] if s.get("conclusion") in FAILED_CONCLUSIONS]
+    return bool(failed_steps) and all(GATE_STEP.match(name) for name in failed_steps)
+
+
 def clip(text, limit):
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
@@ -187,15 +197,13 @@ def render(jobs_doc, environ=None):
 
     failed = [j for j in jobs if j.get("conclusion") in FAILED_CONCLUSIONS]
     # A failed run lists its failed (❌) and cancelled (⚪) jobs, each linked to
-    # its log, with the first step that failed. A cancelled run lists only the
-    # jobs that had failed before the cancel, so a superseded run reads like a
-    # green one: its cancelled jobs, and the always() gates that fail after
-    # them only because a need was cancelled, finish at or after the first
-    # cancelled job and stay out.
+    # its log, with the first step that failed. A cancelled run leaves out its
+    # cancelled jobs and its gates, the jobs whose only failed step is the
+    # result-gate aggregation ("Aggregate <X> result"): a gate fails there
+    # when a need was cancelled, and when the cause is real the job that
+    # failed is listed on its own. A superseded run reads like a green one.
     if verdict == "cancelled":
-        cut = min((j.get("completed_at") or "" for j in failed if j.get("conclusion") == "cancelled"), default="")
-        failed = [j for j in failed if j.get("conclusion") != "cancelled"
-                  and (not cut or (j.get("completed_at") or cut) < cut)]
+        failed = [j for j in failed if j.get("conclusion") != "cancelled" and not is_gate_failure(j)]
     failed_lines = []
     for job in failed:
         step = first_failed_step(job)
