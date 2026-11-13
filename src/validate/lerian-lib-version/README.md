@@ -140,6 +140,7 @@ Covers the `outdated-non-blocking` advisory path: the blocking and advisory verd
 - The action uses pure Bash + `actions/github-script` — no extra runtime is required on the runner.
 - Repo names are derived from the module path by stripping `github.com/LerianStudio/` and any trailing `/vN` major-version suffix.
 - Latest stable resolution paginates up to 100 releases and excludes drafts and pre-releases (`-beta`, `-rc`).
+- Versions are compared by semver precedence. A pre-release (`v5.6.0-beta.4`, `v5.6.0-rc.1`, a Go pseudo-version) is older than the release with the same `X.Y.Z`, so a lib on one is outdated once that release exists, and is below a pin on that release. A pre-release of a newer `X.Y.Z` than the latest stable stays current. Build metadata such as `+incompatible` is ignored.
 - Latest-release lookups are cached per repo within a single run to minimise API calls.
 - The major-bump grace window measures release age from `published_at` and auto-expires: once the release is at least `major-bump-grace-days` old, the lib falls back to `Outdated`. It applies to API-resolved (unpinned) libs only. Because a `/vN` module is pinned to its major by the import path, the window effectively covers `v0`/`v1` modules and libs that publish a higher major without a `/vN` suffix.
 - Repo-name resolution assumes one repo per module. Modules whose repo name differs from the path segment are not currently supported.
