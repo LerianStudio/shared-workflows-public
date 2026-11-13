@@ -253,18 +253,19 @@ def render(jobs_doc, environ=None):
     tail = [where]
 
     middle = []
-    if warnings:
-        middle.append(clip("⚠️ *Warnings:* " + ", ".join(escape(w) for w in warnings), LINE_LIMIT))
     if jobs_line:
         middle.append(jobs_line)
+    if warnings:
+        middle.append(clip("⚠️ *Warnings:* " + ", ".join(escape(w) for w in warnings), LINE_LIMIT))
 
-    # The failed list takes whatever the rest leaves of the text budget.
-    fixed = len("\n".join(head + middle + tail)) + len("💥 *Failed:*") + 4
-    body = list(head)
+    # The summary lines lead and the failed list comes last, so Slack's
+    # "Show more" folds the list and never the summary. The list takes
+    # whatever the rest leaves of the text budget.
+    summary_lines = head + middle + tail
+    text = "\n".join(summary_lines)
     if failed_lines:
-        body.append("💥 *Failed:*")
-        body += fit(failed_lines, TEXT_LIMIT - fixed)
-    text = "\n".join(body + middle + tail)
+        fixed = len(text) + len("💥 *Failed:*") + 4
+        text += "\n" + "\n".join(["💥 *Failed:*"] + fit(failed_lines, TEXT_LIMIT - fixed))
 
     # Notifications and screen readers show the fallback; Slack parses it too.
     fallback = f"{emoji} {workflow} {status_text} in {repo_name}"

@@ -356,9 +356,13 @@ class Limits(unittest.TestCase):
         text = attachment(payload)["text"]
         self.assertLessEqual(len(text), render.TEXT_LIMIT)
         self.assertRegex(text, r"_\+\d+ more_")
-        # Everything after the list survives the cut.
-        self.assertIn("*Branch:*", text)
-        self.assertTrue(text.endswith("*Commit:* `077cbf7`"))
+        # The summary lines lead, whole; the list comes last and ends the text.
+        lines_ = text.split("\n")
+        self.assertTrue(lines_[0].startswith("⚙️ *PR Validation* failed"))
+        self.assertTrue(lines_[1].startswith("❌ *Jobs:*"))
+        self.assertTrue(lines_[2].startswith("📌 *Branch:*"))
+        self.assertEqual(lines_[3], "💥 *Failed:*")
+        self.assertRegex(lines_[-1], r"^_\+\d+ more_$")
         self.assertTrue(attachment(payload)["fallback"].endswith("— 200 failed"))
 
     def test_few_failures_are_not_truncated(self):

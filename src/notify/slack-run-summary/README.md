@@ -12,12 +12,12 @@ The message keeps the look of `slack-notify`, the one the channel already reads,
 ```
 ┃ [avatar] *dev*                                                   ← author header, links to the profile
 ┃ ⚙️ *PR Validation* failed in *example-service*
-┃ 💥 *Failed:*
+┃ ❌ *Jobs:* Changes 1/1 · Metadata 9/9 · Security 6/6 · Analysis 8/10 · Lib Version 2/2
+┃ ⚠️ *Warnings:* PR metadata
+┃ 📌 *Branch:* `feat/api-routes` | *Commit:* `077cbf7`
+┃ 💥 *Failed:*                                                      ← last: "Show more" folds it
 ┃ ❌ Go Analysis (pipeline) / Tests (app) — Run tests (make)   ← link to the job
 ┃ ❌ Go Analysis — Aggregate Go Analysis result
-┃ ⚠️ *Warnings:* PR metadata
-┃ ❌ *Jobs:* Changes 1/1 · Metadata 9/9 · Security 6/6 · Analysis 8/10 · Lib Version 2/2
-┃ 📌 *Branch:* `feat/api-routes` | *Commit:* `077cbf7`
 ┃ [avatar] Workflow: PR Validation                                  ← footer
 ┃ [🔍 View run] [🔀 Open PR]
 ```
@@ -33,7 +33,7 @@ The message keeps the look of `slack-notify`, the one the channel already reads,
 
 Skipped jobs, jobs not yet completed and the job sending the message are left out. A caller wraps the umbrella in a job of its own, so the API names its jobs `validate / PR Metadata / Blocking Checks`; the action finds that prefix from its own job (its runner, or `job-name`), keeps only the jobs under it, and groups by the next segment. Built-in group labels: `PR Metadata` → Metadata; `Go/Frontend/Python Analysis` → Analysis; `Security`, the secret scans → Security; `Lib Version` → Lib Version; `Socket` → Socket; `Detect non-doc changes` → Changes. Any other group keeps its own name.
 
-A green run is three short lines. The text is bounded at 3000 characters: a failed list that does not fit ends with `+N more`, and the lines after it are always kept.
+A green run is three short lines. The summary lines lead and the failed list comes last, so Slack's "Show more" (from 700 characters or 5 line breaks) folds the list and never the summary. The text is bounded at 3000 characters: a failed list that does not fit ends with `+N more`.
 
 The action never fails its step on Slack's account: a refused message is a `::warning`, a missing webhook skips silently. The verdict is the caller's (`status`); the listed jobs never change it.
 
@@ -121,7 +121,7 @@ permissions:
     {
       "color": "danger",
       "fallback": "❌ PR Validation failed in example-service — PR #42: feat(api): add provider routes — 2 failed",
-      "text": "⚙️ *PR Validation* failed in *example-service*\n💥 *Failed:*\n❌ <https://github.com/LerianStudio/example-service/actions/runs/1000/job/2030|Go Analysis (pipeline) / Tests (app)> — Run tests (make)\n❌ <https://github.com/LerianStudio/example-service/actions/runs/1000/job/2042|Go Analysis> — Aggregate Go Analysis result\n⚠️ *Warnings:* PR metadata\n❌ *Jobs:* Changes 1/1 · Metadata 9/9 · Permission Manifest Nudge 1/1 · Security 6/6 · Analysis 8/10 · Lib Version 2/2 · Record verdict 1/1\n📌 *Branch:* `feat/api-routes` | *Commit:* `077cbf7`",
+      "text": "⚙️ *PR Validation* failed in *example-service*\n❌ *Jobs:* Changes 1/1 · Metadata 9/9 · Permission Manifest Nudge 1/1 · Security 6/6 · Analysis 8/10 · Lib Version 2/2 · Record verdict 1/1\n⚠️ *Warnings:* PR metadata\n📌 *Branch:* `feat/api-routes` | *Commit:* `077cbf7`\n💥 *Failed:*\n❌ <https://github.com/LerianStudio/example-service/actions/runs/1000/job/2030|Go Analysis (pipeline) / Tests (app)> — Run tests (make)\n❌ <https://github.com/LerianStudio/example-service/actions/runs/1000/job/2042|Go Analysis> — Aggregate Go Analysis result",
       "mrkdwn_in": [
         "text"
       ],
