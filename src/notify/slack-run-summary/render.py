@@ -204,8 +204,8 @@ def render(jobs_doc, environ=None):
     # (only its aggregation step failed) that finished after the first
     # cancelled job, as a gate does when a need was cancelled. Neither test
     # alone tells them apart: a real failure can end after an unrelated cancel,
-    # and some gates (Lib Version, a reused verdict) carry the real failure in
-    # their aggregation step. A superseded run reads like a green one.
+    # and a caller's gate may run its own check, so its aggregation step is the
+    # real failure. A superseded run reads like a green one.
     if verdict == "cancelled":
         cut = min((j.get("completed_at") or "" for j in failed if j.get("conclusion") == "cancelled"), default="")
         failed = [
