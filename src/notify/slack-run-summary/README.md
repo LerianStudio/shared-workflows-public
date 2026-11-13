@@ -10,7 +10,8 @@ Sends **one** Slack message for a whole workflow run: every job that ran, read f
 The message keeps the look of `slack-notify`, the one the channel already reads, posted straight to the webhook:
 
 ```
-┃ ⚙️ *PR Validation* failed in *example-service* · by *dev*
+[avatar] *dev*                                                     ← context block, no link
+┃ ⚙️ *PR Validation* failed in *example-service*
 ┃ 💥 *Failed:*
 ┃ • Go Analysis (pipeline) / Tests (app) — Run tests (make) · 2m 15s   ← link to the job
 ┃ • Go Analysis — Aggregate Go Analysis result · 8s
@@ -20,14 +21,14 @@ The message keeps the look of `slack-notify`, the one the channel already reads,
 ┃ [🔍 View run] [🔀 Open PR]
 ```
 
-- The **colour bar** is green, red, or grey for a superseded run; only a legacy attachment draws it, so the message is one attachment.
-- The **actor** is bold text on the first line. Not a link, which Slack paints blue, and not the attachment's `author_*` fields, which Slack repeats on the footer line.
+- The **colour bar** is green, red, or grey for a superseded run; only a legacy attachment draws it.
+- The **actor**'s avatar and name lead as a message-level `context` block, the name in bold and not a link (Slack paints links blue). Not the attachment's `author_*` fields, which Slack repeats on the footer line.
 - The first line carries a fixed `⚙️`; the verdict is the bar and the **Jobs** line: `✅` all passed, `❌` a job failed, `⚪` cancelled.
 - **Failed** — one line per job that ended `failure`, `cancelled` or `timed_out`: its name, the first failing step, its duration, linked to the job log.
 - **Warnings** — advisory checks that failed without failing a gate (`advisory-results`).
 - **Jobs** — `succeeded/ran` per group.
 - The branch line adds `attempt N` on a re-run and `verdict reused` when the gates reported an earlier run's verdict.
-- **Buttons** — View run (filled: green, red when the run failed) and Open PR on a pull request; link buttons, which need no interactivity on the Slack app.
+- **Buttons** — View run, and Open PR on a pull request; link buttons, which need no interactivity on the Slack app.
 
 Skipped jobs, jobs not yet completed and the job sending the message are left out. A caller wraps the umbrella in a job of its own, so the API names its jobs `validate / PR Metadata / Blocking Checks`; the action finds that prefix from its own job (its runner, or `job-name`), keeps only the jobs under it, and groups by the next segment. Built-in group labels: `PR Metadata` → Metadata; `Go/Frontend/Python Analysis` → Analysis; `Security`, the secret scans → Security; `Lib Version` → Lib Version; `Socket` → Socket; `Detect non-doc changes` → Changes. Any other group keeps its own name.
 
@@ -119,7 +120,7 @@ permissions:
     {
       "color": "danger",
       "fallback": "❌ PR Validation failed in example-service — PR #42: feat(api): add provider routes — 2 failed",
-      "text": "⚙️ *PR Validation* failed in *example-service* · by *dev*\n💥 *Failed:*\n• <https://github.com/LerianStudio/example-service/actions/runs/1000/job/2030|Go Analysis (pipeline) / Tests (app)> — Run tests (make) · 2m 15s\n• <https://github.com/LerianStudio/example-service/actions/runs/1000/job/2042|Go Analysis> — Aggregate Go Analysis result · 8s\n⚠️ *Warnings:* PR metadata\n❌ *Jobs:* Changes 1/1 · Metadata 9/9 · Permission Manifest Nudge 1/1 · Security 6/6 · Analysis 8/10 · Lib Version 2/2 · Record verdict 1/1\n📌 *Branch:* `feat/api-routes` | *Commit:* `077cbf7`",
+      "text": "⚙️ *PR Validation* failed in *example-service*\n💥 *Failed:*\n• <https://github.com/LerianStudio/example-service/actions/runs/1000/job/2030|Go Analysis (pipeline) / Tests (app)> — Run tests (make) · 2m 15s\n• <https://github.com/LerianStudio/example-service/actions/runs/1000/job/2042|Go Analysis> — Aggregate Go Analysis result · 8s\n⚠️ *Warnings:* PR metadata\n❌ *Jobs:* Changes 1/1 · Metadata 9/9 · Permission Manifest Nudge 1/1 · Security 6/6 · Analysis 8/10 · Lib Version 2/2 · Record verdict 1/1\n📌 *Branch:* `feat/api-routes` | *Commit:* `077cbf7`",
       "mrkdwn_in": [
         "text"
       ],
@@ -127,13 +128,29 @@ permissions:
         {
           "type": "button",
           "text": "🔍 View run",
-          "url": "https://github.com/LerianStudio/example-service/actions/runs/1000",
-          "style": "danger"
+          "url": "https://github.com/LerianStudio/example-service/actions/runs/1000"
         },
         {
           "type": "button",
           "text": "🔀 Open PR",
           "url": "https://github.com/LerianStudio/example-service/pull/42"
+        }
+      ]
+    }
+  ],
+  "text": "❌ PR Validation failed in example-service — PR #42: feat(api): add provider routes — 2 failed",
+  "blocks": [
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "image",
+          "image_url": "https://github.com/dev.png?size=32",
+          "alt_text": "dev"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*dev*"
         }
       ]
     }

@@ -211,10 +211,6 @@ def render(jobs_doc, environ=None):
     # The first line carries a fixed mark; the verdict shows in the colour bar
     # and on the Jobs line.
     head = [f"{WORKFLOW_MARK} *{escape(workflow)}* {status_text} in *{escape(repo_name)}*"]
-    # Plain bold text, not a link or the author_* fields: Slack paints every
-    # link blue, and repeats a legacy attachment's author on its footer line.
-    if get("ACTOR"):
-        head[0] += f" · by *{escape(get('ACTOR'))}*"
 
     failed = [j for j in jobs if j.get("conclusion") in FAILED_CONCLUSIONS]
     failed_lines = []
@@ -280,19 +276,28 @@ def render(jobs_doc, environ=None):
     fallback = escape(clip(fallback, 300))
 
     # Link buttons; a url button needs no interactivity on the Slack app.
-    # View run is filled (primary, or danger when the run failed).
     actions = []
     if run_url:
-        actions.append({"type": "button", "text": "🔍 View run", "url": run_url,
-                        "style": "danger" if verdict == "failure" else "primary"})
+        actions.append({"type": "button", "text": "🔍 View run", "url": run_url})
     if pr_url:
         actions.append({"type": "button", "text": "🔀 Open PR", "url": pr_url})
 
-    # Only a legacy attachment draws the colour bar.
+    # Only a legacy attachment draws the colour bar, and a legacy attachment
+    # repeats its author_* fields on its footer line. So the actor's avatar
+    # and name lead as a message-level context block: bold text, not a link,
+    # which Slack would paint blue.
     attachment = {"color": color, "fallback": fallback, "text": text, "mrkdwn_in": ["text"]}
     if actions:
         attachment["actions"] = actions
     payload = {"attachments": [attachment]}
+    actor = get("ACTOR")
+    if actor:
+        # With blocks, a top-level `text` is the notification text only.
+        payload["text"] = fallback
+        payload["blocks"] = [{"type": "context", "elements": [
+            {"type": "image", "image_url": f"https://github.com/{actor}.png?size=32", "alt_text": escape(actor)},
+            {"type": "mrkdwn", "text": f"*{escape(actor)}*"},
+        ]}]
     return payload, len(failed_lines)
 
 

@@ -83,7 +83,7 @@ class GreenRun(unittest.TestCase):
         self.text = attachment(self.payload)["text"]
 
     def test_slack_notify_layout(self):
-        self.assertEqual(lines(self.payload)[0], "⚙️ *PR Validation* succeeded in *example-service* · by *dev*")
+        self.assertEqual(lines(self.payload)[0], "⚙️ *PR Validation* succeeded in *example-service*")
         self.assertTrue(lines(self.payload)[1].startswith("✅ *Jobs:*"), lines(self.payload)[1])
         self.assertNotIn("*Author:*", self.text)
         self.assertNotIn("Duration", self.text)
@@ -97,21 +97,22 @@ class GreenRun(unittest.TestCase):
 
     def test_buttons(self):
         self.assertEqual(attachment(self.payload)["actions"], [
-            {"type": "button", "text": "🔍 View run", "url": RUN_URL, "style": "primary"},
+            {"type": "button", "text": "🔍 View run", "url": RUN_URL},
             {"type": "button", "text": "🔀 Open PR", "url": PR_URL},
         ])
 
-    def test_view_run_turns_red_on_failure(self):
-        payload = summary(fixture("failure"), base_env(VERDICT="failure"))
-        self.assertEqual(attachment(payload)["actions"][0]["style"], "danger")
-
-    def test_actor_in_the_first_line(self):
-        # Bold text, not a link or author_* fields (Slack paints links blue and
-        # repeats a legacy author on the footer line); only the attachment.
-        self.assertTrue(lines(self.payload)[0].endswith(" · by *dev*"))
-        self.assertEqual(set(self.payload), {"attachments"})
+    def test_actor_leads_in_a_context_block(self):
+        # Avatar and bold name, no link (Slack paints links blue), outside the
+        # attachment (a legacy author_* comes back on the footer line).
+        context = self.payload["blocks"][0]
+        self.assertEqual(context["type"], "context")
+        self.assertEqual(context["elements"][0], {"type": "image", "image_url": "https://github.com/dev.png?size=32", "alt_text": "dev"})
+        self.assertEqual(context["elements"][1], {"type": "mrkdwn", "text": "*dev*"})
+        self.assertEqual(self.payload["text"], attachment(self.payload)["fallback"])
         for field in ("author_name", "author_icon", "author_link", "footer", "blocks"):
             self.assertNotIn(field, attachment(self.payload))
+        self.assertNotIn("by *dev*", self.text)
+        self.assertNotIn("style", attachment(self.payload)["actions"][0])
 
     def test_skipped_jobs_are_omitted(self):
         self.assertNotIn("Runner Labels Check", self.text)
@@ -154,7 +155,7 @@ class FailureRun(unittest.TestCase):
         self.assertIn("|Go Analysis> — Aggregate Go Analysis result", text[start + 2])
 
     def test_header_color_and_partial_groups(self):
-        self.assertEqual(lines(self.payload)[0], "⚙️ *PR Validation* failed in *example-service* · by *dev*")
+        self.assertEqual(lines(self.payload)[0], "⚙️ *PR Validation* failed in *example-service*")
         self.assertEqual(attachment(self.payload)["color"], "danger")
         self.assertIn("Analysis 8/10", line(self.payload, "❌ *Jobs:*"))
 
@@ -169,7 +170,7 @@ class FailureRun(unittest.TestCase):
 class CancelledRun(unittest.TestCase):
     def test_cancelled_job_listed_with_its_own_mark(self):
         payload = summary(fixture("cancelled"), base_env(VERDICT="cancelled"))
-        self.assertEqual(lines(payload)[0], "⚙️ *PR Validation* was cancelled in *example-service* · by *dev*")
+        self.assertEqual(lines(payload)[0], "⚙️ *PR Validation* was cancelled in *example-service*")
         self.assertTrue(line(payload, "⚪ *Jobs:*"))
         self.assertEqual(attachment(payload)["color"], "#808080")
         self.assertIn("Record verdict", line(payload, "⚪ <"))
@@ -223,7 +224,7 @@ class Escaping(unittest.TestCase):
             if job["name"].endswith("Tests (app)"):
                 job["name"] = "validate / Go Analysis (pipeline) / Tests <evil> & co"
         payload = summary(doc, base_env(VERDICT="failure", BRANCH="feat/<!here>", ACTOR="a<b>&c"))
-        self.assertIn("by *a&lt;b&gt;&amp;c*", attachment(payload)["text"])
+        self.assertEqual(payload["blocks"][0]["elements"][1]["text"], "*a&lt;b&gt;&amp;c*")
         self.assertIn("Tests &lt;evil&gt; &amp; co", attachment(payload)["text"])
         self.assertIn("`feat/&lt;!here&gt;`", attachment(payload)["text"])
 
@@ -299,9 +300,10 @@ class Script(unittest.TestCase):
         ).stdout
         self.assertEqual(json.loads(out)["attachments"][0]["color"], "good")
 
-    def test_no_actor_no_by(self):
+    def test_no_actor_no_context_block(self):
         payload = summary(fixture("green"), base_env(ACTOR=""))
-        self.assertEqual(lines(payload)[0], "⚙️ *PR Validation* succeeded in *example-service*")
+        # No blocks, so no top-level text either: it would show above the bar.
+        self.assertEqual(set(payload), {"attachments"})
 
 
 class Composite(unittest.TestCase):
