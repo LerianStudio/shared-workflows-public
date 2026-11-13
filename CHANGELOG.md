@@ -1,5 +1,14 @@
 # Shared-workflows-public Changelog
 
+## [1.8.1](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.8.1)
+
+Fixes:
+- Adjusted the version ranking logic to ensure a pre-release is ranked below its corresponding release. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.8.0...v1.8.1)
+
+---
+
 ## [1.8.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.8.0)
 
 Features:
