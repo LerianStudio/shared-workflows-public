@@ -1,0 +1,139 @@
+name: Slack Run Summary
+description: Sends one Slack Block Kit message summarising every job a workflow run executed, grouped, with failures linked to their job.
+
+inputs:
+  webhook-url:
+    description: 'Slack incoming webhook URL. Empty skips the notification silently.'
+    required: true
+  github-token:
+    description: 'Token that can list the jobs of this run (actions: read)'
+    required: false
+    default: ${{ github.token }}
+  status:
+    description: 'Verdict shown in the header: success, failure or cancelled. Computed by the caller over its gates; jobs listed below never change it.'
+    required: true
+  job-name:
+    description: 'Display name of the job running this action, used with the runner name to leave it out of its own summary and to find the umbrella prefix'
+    required: false
+    default: 'Slack Summary'
+  advisory-results:
+    description: 'Newline-separated `Name=result` lines of advisory checks; each `failure` is listed under Warnings'
+    required: false
+    default: ''
+  verdict-reused:
+    description: "'true' when the gates reported the verdict of an earlier run on the same commit"
+    required: false
+    default: 'false'
+  group-labels:
+    description: 'JSON object mapping a first job-name segment to a group label, merged over the built-in map'
+    required: false
+    default: ''
+  dry-run:
+    description: 'Print the rendered message instead of sending it'
+    required: false
+    default: 'false'
+
+outputs:
+  sent:
+    description: "Whether the message was accepted by Slack (true/false)"
+    value: ${{ steps.send.outputs.sent || 'false' }}
+  failed-count:
+    description: 'Number of jobs listed under Failed'
+    value: ${{ steps.render.outputs.failed-count }}
+
+runs:
+  using: composite
+  steps:
+    # Every value reaches the shell through `env:`: the PR title, the branch and
+    # the job names are text someone else chose, and the webhook sits in the
+    # same steps.
+    # ----------------- Webhook Check -----------------
+    - name: Check if Slack webhook is configured
+      id: check-webhook
+      shell: bash
+      env:
+        SLACK_URL: ${{ inputs.webhook-url }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: |
+        if [ -z "$SLACK_URL" ] && [ "$DRY_RUN" != "true" ]; then
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    # ----------------- List Jobs -----------------
+    # The attempt, not the run: a re-run lists only the jobs it ran again.
+    - name: List the jobs of this run attempt
+      id: jobs
+      if: steps.check-webhook.outputs.skip != 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        RUN_ID: ${{ github.run_id }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
+      run: |
+        set -uo pipefail
+        out="${RUNNER_TEMP}/slack-run-summary-jobs.json"
+        if gh api --paginate "repos/${REPO}/actions/runs/${RUN_ID}/attempts/${RUN_ATTEMPT}/jobs?per_page=100" \
+             | jq -s '{jobs: [.[].jobs[]]}' > "$out"; then
+          echo "file=$out" >> "$GITHUB_OUTPUT"
+        else
+          echo "::warning::Could not list the jobs of this run; skipping the Slack summary."
+        fi
+
+    # ----------------- Render -----------------
+    - name: Render the summary
+      id: render
+      if: steps.jobs.outputs.file != ''
+      shell: bash
+      env:
+        JOBS_FILE: ${{ steps.jobs.outputs.file }}
+        VERDICT: ${{ inputs.status }}
+        SELF_RUNNER: ${{ runner.name }}
+        SELF_JOB_NAME: ${{ inputs.job-name }}
+        REPO: ${{ github.repository }}
+        ACTOR: ${{ github.actor }}
+        SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_TITLE: ${{ github.event.pull_request.title }}
+        PR_URL: ${{ github.event.pull_request.html_url }}
+        VERDICT_REUSED: ${{ inputs.verdict-reused }}
+        ADVISORY: ${{ inputs.advisory-results }}
+        GROUP_LABELS: ${{ inputs.group-labels }}
+      run: |
+        set -euo pipefail
+        payload="${RUNNER_TEMP}/slack-run-summary-payload.json"
+        python3 "$GITHUB_ACTION_PATH/render.py" "$JOBS_FILE" > "$payload"
+        echo "payload=$payload" >> "$GITHUB_OUTPUT"
+
+    - name: Preview the summary (dry run)
+      if: inputs.dry-run == 'true' && steps.render.outputs.payload != ''
+      shell: bash
+      env:
+        PAYLOAD: ${{ steps.render.outputs.payload }}
+      run: |
+        echo "Dry run: the message below is not sent."
+        jq . "$PAYLOAD"
+
+    # ----------------- Send -----------------
+    # Not a verdict: a refused message is a warning, never a failed step.
+    - name: Send the summary
+      id: send
+      if: inputs.dry-run != 'true' && steps.render.outputs.payload != ''
+      shell: bash
+      env:
+        SLACK_URL: ${{ inputs.webhook-url }}
+        PAYLOAD: ${{ steps.render.outputs.payload }}
+      run: |
+        set -uo pipefail
+        code=$(curl -sS -o "${RUNNER_TEMP}/slack-run-summary-response" -w '%{http_code}' \
+          -X POST -H 'Content-Type: application/json' --data-binary "@${PAYLOAD}" "$SLACK_URL") || code=000
+        if [ "$code" = "200" ]; then
+          echo "sent=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "sent=false" >> "$GITHUB_OUTPUT"
+          echo "::warning::Slack refused the run summary (HTTP ${code}): $(head -c 200 "${RUNNER_TEMP}/slack-run-summary-response" 2>/dev/null)"
+        fi

@@ -57,7 +57,7 @@ This distinguishes the two skips that used to look identical: a pipeline the cal
 | `pr_title_scopes` | Allowed scopes (pipe-separated, empty = any) | string | `''` |
 | `require_scope` | Require scope in PR title | boolean | `false` |
 | `enable_auto_labeler` | Auto-label by changed files | boolean | `true` |
-| `enable_slack_notification` | Send the validation verdict to Slack. Set to `false` in repos without `SLACK_WEBHOOK_URL` so the job is skipped entirely instead of running just to skip internally | boolean | `true` |
+| `enable_slack_notification` | Send one Slack message per run (job `Slack Summary`, [`slack-run-summary`](../src/notify/slack-run-summary/README.md)): the merge verdict over the required gates, every job that ran grouped by pipeline, failed jobs linked with their failing step, advisory warnings. The nested pipelines no longer send their own. Set to `false` in repos without `SLACK_WEBHOOK_URL` so the job is skipped entirely instead of running just to skip internally | boolean | `true` |
 | `labeler_config_path` | Path to labeler config | string | `.github/labeler.yml` |
 | `enforce_source_branches` | Enforce source branches into protected branches | boolean | `true` |
 | `allowed_source_branches` | Allowed source branches (pipe-separated, `*` prefix) | string | `hotfix/*\|release-candidate` |
@@ -222,7 +222,7 @@ The matrix above is enforced by [`src/validate/lerian-lib-version/test.py`](../s
 | Secret | Description | Consumed by | Required |
 |--------|-------------|-------------|----------|
 | `MANAGE_TOKEN` | Token for private Go module access and PR operations | every job | No |
-| `SLACK_WEBHOOK_URL` | Slack webhook for pipeline notifications | metadata, Go analysis, security | No |
+| `SLACK_WEBHOOK_URL` | Slack webhook for the run summary | metadata, Go analysis, security | No |
 | `LERIAN_LIB_READ_TOKEN` | Read token for private Lerian libs in the lib version check (falls back to `GITHUB_TOKEN`) | lib version check | No |
 | `DOCKER_USERNAME` | Docker Hub user for authenticated image pulls, which raises the anonymous rate limit | security scan | No |
 | `DOCKERHUB_IMAGE_PULL_TOKEN` | Docker Hub token paired with `DOCKER_USERNAME` | security scan | No |
