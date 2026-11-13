@@ -102,12 +102,13 @@ class GreenRun(unittest.TestCase):
         ])
 
     def test_actor_header_and_repository_footer(self):
-        # Avatar and bold name as the author header, no link. Slack draws a
-        # footer line under it either way, so it names the repository.
+        # Avatar and bold name as the author header, linked to the profile.
+        # Slack draws a footer line under it either way, so it names the
+        # repository.
         att = attachment(self.payload)
         self.assertEqual(att["author_name"], "dev")
         self.assertEqual(att["author_icon"], "https://github.com/dev.png?size=32")
-        self.assertNotIn("author_link", att)
+        self.assertEqual(att["author_link"], "https://github.com/dev")
         self.assertEqual(att["footer"], "LerianStudio/example-service")
         self.assertEqual(set(self.payload), {"attachments"})
         self.assertNotIn("dev", self.text)
@@ -304,6 +305,7 @@ class Script(unittest.TestCase):
         self.assertEqual(set(payload), {"attachments"})
         self.assertNotIn("author_name", attachment(payload))
         self.assertNotIn("author_icon", attachment(payload))
+        self.assertNotIn("author_link", attachment(payload))
 
 
 class Composite(unittest.TestCase):

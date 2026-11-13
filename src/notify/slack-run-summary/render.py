@@ -283,13 +283,14 @@ def render(jobs_doc, environ=None):
         actions.append({"type": "button", "text": "🔀 Open PR", "url": pr_url})
 
     # Only a legacy attachment draws the colour bar. The actor leads as its
-    # author header (avatar and bold name). Slack always draws a footer line
+    # author header (avatar and bold name, linked to the profile). Slack always draws a footer line
     # under an attachment with an author, repeating the author when there is
     # no footer, so the footer carries the repository instead.
     attachment = {"color": color, "fallback": fallback, "text": text, "mrkdwn_in": ["text"]}
     actor = get("ACTOR")
     if actor:
         attachment["author_name"] = escape(actor)
+        attachment["author_link"] = f"https://github.com/{actor}"
         attachment["author_icon"] = f"https://github.com/{actor}.png?size=32"
     if repo:
         attachment["footer"] = escape(repo)
