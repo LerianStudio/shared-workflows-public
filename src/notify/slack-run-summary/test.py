@@ -192,6 +192,35 @@ class CancelledRun(unittest.TestCase):
         self.assertRegex(attachment(payload)["text"], r"\n❌ <[^>]+\|Go Analysis \(pipeline\) / Tests \(app\)> — Run tests \(make\)")
         self.assertTrue(attachment(payload)["fallback"].endswith("— 2 failed"))
 
+    def test_gates_failing_after_the_cancel_stay_out(self):
+        # Tests (app) failed at 12:41; a job was cancelled at 12:45; the
+        # Go Analysis gate failed at 12:48 only because a need was cancelled.
+        doc = fixture("failure")
+        doc["jobs"].append({
+            "id": 7000, "name": "validate / Security (pipeline) / security_scan", "status": "completed",
+            "conclusion": "cancelled", "completed_at": "2026-11-13T12:45:00Z",
+            "html_url": RUN_URL + "/job/7000", "steps": [],
+        })
+        payload = summary(doc, base_env(VERDICT="cancelled"))
+        text = attachment(payload)["text"]
+        self.assertRegex(text, r"\n❌ <[^>]+\|Go Analysis \(pipeline\) / Tests \(app\)>")
+        self.assertNotIn("|Go Analysis>", text)
+        self.assertNotIn("security_scan", text.split("*Jobs:*")[0])
+        self.assertTrue(attachment(payload)["fallback"].endswith("— 1 failed"))
+
+    def test_superseded_run_with_failing_gates_reads_green(self):
+        # Only failures after the cancel: no list at all.
+        doc = fixture("cancelled")
+        doc["jobs"].append({
+            "id": 7001, "name": "validate / Go Analysis", "status": "completed",
+            "conclusion": "failure", "completed_at": "2026-11-12T12:33:10Z",
+            "html_url": RUN_URL + "/job/7001",
+            "steps": [{"name": "Aggregate Go Analysis result", "status": "completed", "conclusion": "failure", "number": 2}],
+        })
+        payload = summary(doc, base_env(VERDICT="cancelled"))
+        self.assertIsNone(line(payload, "💥"))
+        self.assertFalse(attachment(payload)["fallback"].endswith("failed"))
+
 
 class InProgressJobs(unittest.TestCase):
     def test_jobs_not_completed_are_left_out(self):

@@ -187,11 +187,15 @@ def render(jobs_doc, environ=None):
 
     failed = [j for j in jobs if j.get("conclusion") in FAILED_CONCLUSIONS]
     # A failed run lists its failed (❌) and cancelled (⚪) jobs, each linked to
-    # its log, with the first step that failed. A cancelled run leaves its
-    # cancelled jobs out, so a superseded run reads like a green one, but still
-    # lists a job that had failed before the cancel.
+    # its log, with the first step that failed. A cancelled run lists only the
+    # jobs that had failed before the cancel, so a superseded run reads like a
+    # green one: its cancelled jobs, and the always() gates that fail after
+    # them only because a need was cancelled, finish at or after the first
+    # cancelled job and stay out.
     if verdict == "cancelled":
-        failed = [j for j in failed if j.get("conclusion") != "cancelled"]
+        cut = min((j.get("completed_at") or "" for j in failed if j.get("conclusion") == "cancelled"), default="")
+        failed = [j for j in failed if j.get("conclusion") != "cancelled"
+                  and (not cut or (j.get("completed_at") or cut) < cut)]
     failed_lines = []
     for job in failed:
         step = first_failed_step(job)
