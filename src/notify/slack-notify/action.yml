@@ -65,7 +65,9 @@ runs:
           *)
             COLOR="warning"
             EMOJI="⚠️"
-            STATUS_TEXT="completed with status: $STATUS"
+            # One line: GITHUB_OUTPUT is line-based, so a newline in an
+            # unexpected status would start a new output.
+            STATUS_TEXT="completed with status: ${STATUS//[$'\r\n']/ }"
             ;;
         esac
 
@@ -106,25 +108,32 @@ runs:
           BRANCH="$REF"
         fi
 
+        # Real newlines and printf '%s', not "\n" and `echo -e`: echo -e also
+        # interprets backslashes in the values (a `\c` in a custom message cut
+        # the rest of it, closing delimiter included).
+        NL=$'\n'
         MESSAGE="$EMOJI *$WORKFLOW* $STATUS_TEXT in *$REPO_NAME*"
 
         if [ "$STATUS" = "failure" ] && [ -n "$FAILED_JOBS" ]; then
-          MESSAGE="$MESSAGE\n💥 *Failed jobs:* $FAILED_JOBS"
+          MESSAGE="$MESSAGE${NL}💥 *Failed jobs:* $FAILED_JOBS"
         fi
 
-        MESSAGE="$MESSAGE\n👤 *Author:* $ACTOR"
-        MESSAGE="$MESSAGE\n📌 *Branch:* \`$BRANCH\` | *Commit:* \`$SHORT_SHA\`"
+        MESSAGE="$MESSAGE${NL}👤 *Author:* $ACTOR"
+        MESSAGE="$MESSAGE${NL}📌 *Branch:* \`$BRANCH\` | *Commit:* \`$SHORT_SHA\`"
 
         if [ -n "$CUSTOM_MESSAGE" ]; then
-          MESSAGE="$MESSAGE\n\n$CUSTOM_MESSAGE"
+          MESSAGE="$MESSAGE${NL}${NL}$CUSTOM_MESSAGE"
         fi
 
-        MESSAGE="$MESSAGE\n\n<$RUN_URL|🔗 View Workflow Run>"
+        MESSAGE="$MESSAGE${NL}${NL}<$RUN_URL|🔗 View Workflow Run>"
 
+        # A random delimiter: with a fixed one, a line equal to it in a custom
+        # message would end the value early and turn the next lines into outputs.
+        DELIMITER="SLACK_MESSAGE_$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
         {
-          echo "message<<EOF"
-          echo -e "$MESSAGE"
-          echo "EOF"
+          printf 'message<<%s\n' "$DELIMITER"
+          printf '%s\n' "$MESSAGE"
+          printf '%s\n' "$DELIMITER"
         } >> "$GITHUB_OUTPUT"
 
     # ----------------- Send Notification -----------------
