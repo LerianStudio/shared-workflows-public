@@ -23,7 +23,7 @@ Fails on a runner that org variables alone cannot move. Changing `GENERAL_RUNNER
 | A runner input passed under `with:` | `runner_type: …`, `test_runner_type: ${{ vars.LARGE_RUNNERS }}` | ❌ error — deprecated and ignored, remove it |
 | An input declaration | `build_runner_type:` with `default: ''` below, or `build_runner_type: {type: string, default: ''}` | ✅ not under `with:` |
 
-Variables may be written `vars.X` or `vars['X']`, with spaces inside the brackets and in any letter case. An array passes when one top-level member is exactly `self-hosted`; the other members may be anything, a `${{ matrix.* }}` label included. A `self-hosted` inside a quoted expression is not a member. Only single-line values are read; a `runs-on:` whose value starts on the next line is not checked.
+Variables may be written `vars.X` or `vars['X']`, with spaces inside the brackets and in any letter case. An array passes when one top-level member is exactly `self-hosted`; the other members may be anything, a `${{ matrix.* }}` label included. A `self-hosted` inside a quoted expression is not a member, and inside double quotes a backslash escapes the next character, so `\"` does not end the member. Only single-line values are read; a `runs-on:` whose value starts on the next line is not checked.
 
 `test.sh` runs `check.sh` against fixtures for each case above; `self-pr-validation` runs it on every PR.
 
