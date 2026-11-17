@@ -1,5 +1,15 @@
 # Shared-workflows-public Changelog
 
+## [1.8.4](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.8.4)
+
+Fixes:
+
+- Honor backslash escapes in runner-labels array members to ensure proper handling of escape sequences. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.8.3...v1.8.4)
+
+---
+
 ## [1.8.3](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.8.3)
 
 Improvements:
