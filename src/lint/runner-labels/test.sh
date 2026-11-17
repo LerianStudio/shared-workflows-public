@@ -70,6 +70,8 @@ expect multiline-runs-on 0 '    runs-on:
 expect block-scalar-runs-on 0 "    runs-on: >-
       \${{ vars.GENERAL_RUNNERS || vars.FALLBACK_RUNNERS }}"
 expect quoted-self-hosted-array 0 "    runs-on: ['self-hosted', 'linux']"
+expect escaped-quote-smuggles-self-hosted 1 '    runs-on: ["blacksmith-4vcpu-ubuntu-2404\", self-hosted, \"x"]'
+expect escaped-backslash-before-quote 0 '    runs-on: ["a\\", self-hosted]'
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures case(s) failed"

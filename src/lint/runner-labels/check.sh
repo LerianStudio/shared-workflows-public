@@ -33,14 +33,17 @@ private_re="^\\([[:space:]]*github\\.event\\.repository\\.visibility[[:space:]]*
 # An inline array passes when one top-level member is exactly `self-hosted`: GitHub
 # then picks only a self-hosted runner, whatever the other members are (a
 # `${{ matrix.* }}` label included). Members are split on commas outside quotes,
-# so `self-hosted` inside a quoted expression is not a member.
+# so `self-hosted` inside a quoted expression is not a member. Inside double quotes
+# a backslash escapes the next character, as in YAML: `\"` does not close the member.
 array_problem() {
   local inner=${1#[} member="" quote="" char i
   local -a members=()
   inner=${inner%]}
   for ((i = 0; i < ${#inner}; i++)); do
     char=${inner:i:1}
-    if [ -n "$quote" ]; then
+    if [ "$quote" = '"' ] && [ "$char" = "\\" ]; then
+      member+=${inner:i:2}; i=$((i + 1)); continue
+    elif [ -n "$quote" ]; then
       [ "$char" = "$quote" ] && quote=""
     elif [ "$char" = '"' ] || [ "$char" = "'" ]; then
       quote=$char

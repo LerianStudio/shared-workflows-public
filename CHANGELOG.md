@@ -1,5 +1,17 @@
 # Shared-workflows-public Changelog
 
+## [1.8.3](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.8.3)
+
+Improvements:
+
+- Bump the `github-security` group across one directory with four updates. (@bedatty)
+- Update `mikefarah/yq` from `4.54.1` to `4.54.3` in the utilities group across one directory. (@bedatty)
+- Upgrade `docker/login-action` from `4.7.0` to `4.8.0` in the docker group across one directory. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.8.2...v1.8.3)
+
+---
+
 ## [1.8.2](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.8.2)
 
 Fixes:
