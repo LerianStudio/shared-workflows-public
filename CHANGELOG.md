@@ -1,5 +1,17 @@
 # Shared-workflows-public Changelog
 
+## [1.8.2](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.8.2)
+
+Fixes:
+- Ensure the Slack notification message text remains literal and add tests to verify this behavior. (@bedatty)
+
+Improvements:
+- Document that the values for Slack notifications are treated as literal text. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.8.1...v1.8.2)
+
+---
+
 ## [1.8.1](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.8.1)
 
 Fixes:
