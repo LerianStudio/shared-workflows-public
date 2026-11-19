@@ -460,6 +460,8 @@ jobs:
           UPDATED_COMPONENTS=""
           # "<component>=<values key>" for every component whose key is missing from values.yaml
           MISSING_KEYS=()
+          # The payload components with env_vars cut down to what this run added to the chart
+          CHART_COMPONENTS="[]"
 
           # Function to check if a variable is sensitive (should go to secrets)
           is_sensitive_var() {
@@ -493,11 +495,56 @@ jobs:
           # Get chart name from Chart.yaml for template references
           CHART_TEMPLATE_NAME=$(yq '.name' "${CHART_FILE}")
 
+          # Templates of the library charts this chart depends on that live next to it
+          # (lerian-common renders the health preset's SHUTDOWN_DRAIN_DELAY, for example).
+          LIBRARY_TEMPLATE_DIRS=()
+          while IFS= read -r dep; do
+            [ -n "$dep" ] || continue
+            for dep_chart in "${CHARTS_PATH}"/*/Chart.yaml; do
+              [ -f "$dep_chart" ] || continue
+              if [ "$(yq -r '.name' "$dep_chart")" = "$dep" ] && [ -d "$(dirname "$dep_chart")/templates" ]; then
+                LIBRARY_TEMPLATE_DIRS+=("$(dirname "$dep_chart")/templates")
+              fi
+            done
+          done < <(yq -r '(.dependencies // [])[].name' "${CHART_FILE}")
+
+          # True when the chart already renders env var $1 for the component under values
+          # key $2: a ConfigMap or Secret key, a container env entry or a helper, in the
+          # component's templates, the chart's top-level templates (_helpers.tpl) or a
+          # sibling library chart. The payload lists what is new to the app release, not
+          # to the chart; rendering it again duplicated a ConfigMap key strict YAML
+          # rejects, or contradicted a value the chart sets (LerianStudio/helm#3283).
+          chart_renders_var() {
+            local key="$1" component_dir="${TEMPLATES_BASE}/$2"
+            local paths=()
+            [ -d "$component_dir" ] && paths+=("$component_dir")
+            mapfile -t -O "${#paths[@]}" paths < <(find "${TEMPLATES_BASE}" -maxdepth 1 -type f)
+            paths+=("${LIBRARY_TEMPLATE_DIRS[@]}")
+            [ "${#paths[@]}" -gt 0 ] || return 1
+            grep -rqE "(^|[^A-Za-z0-9_])${key}([^A-Za-z0-9_]|$)" "${paths[@]}"
+          }
+
           # Function to create secret template if it doesn't exist
           # $1 = values_key (for directory/file path and .Values references)
           create_secret_template() {
             local values_key="$1"
             local secret_file="${TEMPLATES_BASE}/${values_key}/secret.yaml"
+
+            # A chart that keeps the component's Secret in secrets.yaml gets the var there by
+            # hand; a second Secret template would collide with it.
+            if [ -f "${TEMPLATES_BASE}/${values_key}/secrets.yaml" ]; then
+              echo "::warning::${TEMPLATES_BASE}/${values_key}/secrets.yaml already holds this component's Secret; not creating ${secret_file}"
+              return 0
+            fi
+            # The generated template includes <chart name>.fullname and .labels; a chart whose
+            # helpers are named otherwise (midaz-helm defines midaz-ledger.fullname) would
+            # fail every render.
+            for helper in fullname labels; do
+              if ! grep -rqF "define \"${CHART_TEMPLATE_NAME}.${helper}\"" "${TEMPLATES_BASE}"; then
+                echo "::warning::${CHART} does not define ${CHART_TEMPLATE_NAME}.${helper}; not creating ${secret_file}"
+                return 0
+              fi
+            done
 
             if [ ! -f "$secret_file" ]; then
               echo "  Creating secret template: $secret_file"
@@ -590,7 +637,9 @@ jobs:
               HIGHEST_VERSION=$(printf '%s\n%s' "$HIGHEST_VERSION" "$COMP_VERSION" | sort -V | tail -n1)
             fi
 
-            # Add new environment variables if any
+            # Add new environment variables if any. NEW_ENV_VARS keeps only the ones the
+            # chart does not render yet: they alone reach the PR table, title and Slack card.
+            NEW_ENV_VARS="{}"
             if [ "$COMP_ENV_VARS" != "{}" ] && [ "$COMP_ENV_VARS" != "null" ]; then
               # Template paths use VALUES_KEY (directory structure matches values.yaml keys)
               # Values references also use VALUES_KEY (values.yaml structure)
@@ -599,6 +648,12 @@ jobs:
 
               while IFS='=' read -r key value; do
                 if [ -n "$key" ]; then
+                  if chart_renders_var "$key" "$VALUES_KEY"; then
+                    echo "  Skipping ${key}: the chart already renders it"
+                    continue
+                  fi
+                  NEW_ENV_VARS=$(jq -c --arg k "$key" --arg v "$value" '. + {($k): $v}' <<< "$NEW_ENV_VARS")
+
                   # Escape values for safe sed insertion
                   escaped_value=$(escape_sed "$value")
 
@@ -628,6 +683,7 @@ jobs:
                 fi
               done < <(echo "$COMP_ENV_VARS" | jq -r 'to_entries[] | "\(.key)=\(.value)"')
             fi
+            CHART_COMPONENTS=$(jq -c --argjson row "$row" --argjson env "$NEW_ENV_VARS" '. + [$row + {env_vars: $env}]' <<< "$CHART_COMPONENTS")
 
             # Build updated components list for commit message
             if [ -n "$UPDATED_COMPONENTS" ]; then
@@ -646,6 +702,12 @@ jobs:
             echo "::error::${SUMMARY}"
             exit 1
           fi
+
+          # Later steps read the env vars from here (PR table, title, commit type, Slack
+          # card): report what reached the chart, not every var the app release introduced.
+          printf '%s\n' "${CHART_COMPONENTS}" > /tmp/components.json
+          HAS_NEW_ENV_VARS=$(jq -r 'any(.[]; .env_vars != {})' <<< "${CHART_COMPONENTS}")
+          echo "has_new_env_vars=${HAS_NEW_ENV_VARS}" >> "$GITHUB_OUTPUT"
 
           # A mainline payload must never roll the chart back (e.g. a maintenance tag
           # dispatched without is_legacy_patch). Legacy patches target their own line, and
@@ -704,7 +766,7 @@ jobs:
         env:
           CHART: ${{ steps.payload.outputs.chart }}
           UPDATED_COMPONENTS: ${{ steps.process.outputs.updated_components }}
-          HAS_NEW_ENV_VARS: ${{ steps.payload.outputs.has_new_env_vars }}
+          HAS_NEW_ENV_VARS: ${{ steps.process.outputs.has_new_env_vars }}
           IS_LEGACY: ${{ steps.base.outputs.is_legacy }}
         run: |
 
@@ -762,7 +824,7 @@ jobs:
           CHART: ${{ steps.payload.outputs.chart }}
           BRANCH_NAME: ${{ steps.payload.outputs.branch_name }}
           BASE_BRANCH: ${{ steps.base.outputs.resolved_base }}
-          HAS_NEW_ENV_VARS: ${{ steps.payload.outputs.has_new_env_vars }}
+          HAS_NEW_ENV_VARS: ${{ steps.process.outputs.has_new_env_vars }}
           UPDATED_COMPONENTS: ${{ steps.process.outputs.updated_components }}
           SOURCE_REF: ${{ steps.payload.outputs.source_ref }}
           SOURCE_BRANCH: ${{ steps.payload.outputs.source_branch }}
@@ -915,7 +977,7 @@ jobs:
         if: ${{ inputs.slack_notification && steps.commit.outputs.has_changes == 'true' }}
         env:
           CHART: ${{ steps.payload.outputs.chart }}
-          HAS_NEW_ENV_VARS: ${{ steps.payload.outputs.has_new_env_vars }}
+          HAS_NEW_ENV_VARS: ${{ steps.process.outputs.has_new_env_vars }}
           SOURCE_REF: ${{ steps.payload.outputs.source_ref }}
           SOURCE_REPO: ${{ steps.payload.outputs.source_repo }}
           SOURCE_ACTOR: ${{ steps.payload.outputs.source_actor }}
