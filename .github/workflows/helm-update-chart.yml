@@ -508,20 +508,81 @@ jobs:
             done
           done < <(yq -r '(.dependencies // [])[].name' "${CHART_FILE}")
 
-          # True when the chart already renders env var $1 for the component under values
-          # key $2: a ConfigMap or Secret key, a container env entry or a helper, in the
-          # component's templates, the chart's top-level templates (_helpers.tpl) or a
-          # sibling library chart. The payload lists what is new to the app release, not
-          # to the chart; rendering it again duplicated a ConfigMap key strict YAML
-          # rejects, or contradicted a value the chart sets (LerianStudio/helm#3283).
+          # Template text without comments: {{/* ... */}} blocks and YAML "#" lines.
+          strip_comments() {
+            awk '
+              c { if (index($0, "*/")) c = 0; next }
+              /\{\{-?[[:space:]]*\/\*/ { if (!index($0, "*/")) c = 1; next }
+              /^[[:space:]]*#/ { next }
+              { print }
+            ' "$@"
+          }
+
+          # Names passed to include/template in the text on stdin.
+          included_names() {
+            grep -oE '(include|template) "[^"]+"' | sed -E 's/^[a-z]+ "(.*)"$/\1/' | sort -u || true
+          }
+
+          # "<name>\t<line>" for every line of every named template the chart or a sibling
+          # library chart defines. A body runs to the next define; over-reaching only
+          # widens what a component that includes the helper is credited with.
+          HELPER_INDEX=$(mktemp)
+          while IFS= read -r -d '' tpl; do
+            strip_comments "$tpl" | awk '
+              match($0, /define "[^"]+"/) { name = substr($0, RSTART + 8, RLENGTH - 9); $0 = substr($0, RSTART + RLENGTH) }
+              name != "" { print name "\t" $0 }'
+          done < <(find "${TEMPLATES_BASE}" "${LIBRARY_TEMPLATE_DIRS[@]}" -type f -print0) > "${HELPER_INDEX}"
+
+          # Named templates reachable from the files given: what they include, and what
+          # those include in turn.
+          component_helpers() {
+            local -A seen=()
+            local -a queue
+            local name
+            mapfile -t queue < <(strip_comments "$@" | included_names)
+            while [ "${#queue[@]}" -gt 0 ]; do
+              name="${queue[0]}"
+              queue=("${queue[@]:1}")
+              [ -n "$name" ] && [ -z "${seen[$name]:-}" ] || continue
+              seen[$name]=1
+              echo "$name"
+              mapfile -t -O "${#queue[@]}" queue < <(awk -v n="$name" \
+                '{ t = index($0, "\t"); if (substr($0, 1, t - 1) == n) print substr($0, t + 1) }' \
+                "${HELPER_INDEX}" | included_names)
+            done
+          }
+
+          # Writes to COMPONENT_RENDERED what the component under values key $1 renders:
+          # its templates/<values_key>/ files (the chart's top-level manifests when it has
+          # no such dir) plus the body of every named template they reach, comments dropped.
+          # A helper the component never includes does not count, so a var that only a
+          # library chart knows about is still added and flagged.
+          COMPONENT_RENDERED=$(mktemp)
+          COMPONENT_HELPERS=$(mktemp)
+          load_component_render() {
+            local dir="${TEMPLATES_BASE}/$1"
+            local files=()
+            if [ -d "$dir" ]; then
+              mapfile -t files < <(find "$dir" -type f)
+            else
+              mapfile -t files < <(find "${TEMPLATES_BASE}" -maxdepth 1 -type f ! -name '_*')
+            fi
+            : > "${COMPONENT_RENDERED}"
+            [ "${#files[@]}" -gt 0 ] || return 0
+            strip_comments "${files[@]}" > "${COMPONENT_RENDERED}"
+            component_helpers "${COMPONENT_RENDERED}" > "${COMPONENT_HELPERS}"
+            awk 'NR == FNR { want[$0] = 1; next }
+              { t = index($0, "\t"); if (substr($0, 1, t - 1) in want) print substr($0, t + 1) }' \
+              "${COMPONENT_HELPERS}" "${HELPER_INDEX}" >> "${COMPONENT_RENDERED}"
+          }
+
+          # True when the component loaded by load_component_render already renders env
+          # var $1: a ConfigMap or Secret key, a container env entry, or a helper it
+          # includes. The payload lists what is new to the app release, not to the chart;
+          # rendering it again duplicated a ConfigMap key strict YAML rejects, or
+          # contradicted a value the chart sets (LerianStudio/helm#3283).
           chart_renders_var() {
-            local key="$1" component_dir="${TEMPLATES_BASE}/$2"
-            local paths=()
-            [ -d "$component_dir" ] && paths+=("$component_dir")
-            mapfile -t -O "${#paths[@]}" paths < <(find "${TEMPLATES_BASE}" -maxdepth 1 -type f)
-            paths+=("${LIBRARY_TEMPLATE_DIRS[@]}")
-            [ "${#paths[@]}" -gt 0 ] || return 1
-            grep -rqE "(^|[^A-Za-z0-9_])${key}([^A-Za-z0-9_]|$)" "${paths[@]}"
+            grep -qE "(^|[^A-Za-z0-9_])$1([^A-Za-z0-9_]|$)" "${COMPONENT_RENDERED}"
           }
 
           # Function to create secret template if it doesn't exist
@@ -645,10 +706,11 @@ jobs:
               # Values references also use VALUES_KEY (values.yaml structure)
               CONFIGMAP_FILE="${TEMPLATES_BASE}/${VALUES_KEY}/configmap.yaml"
               SECRET_FILE="${TEMPLATES_BASE}/${VALUES_KEY}/secret.yaml"
+              load_component_render "$VALUES_KEY"
 
               while IFS='=' read -r key value; do
                 if [ -n "$key" ]; then
-                  if chart_renders_var "$key" "$VALUES_KEY"; then
+                  if chart_renders_var "$key"; then
                     echo "  Skipping ${key}: the chart already renders it"
                     continue
                   fi

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Runs the "Process all components" step of helm-update-chart.yml as written against
 # fixture charts and asserts that only env vars the chart does not render yet are added
-# and reported (LerianStudio/helm#3283): a var already in the component's templates, in
-# _helpers.tpl or in a sibling library chart is skipped and left out of the components
-# file later steps build the PR table, title and Slack card from. Also asserts that no
+# and reported (LerianStudio/helm#3283): a var already in the component's templates, or
+# in a named template they include (transitively, from _helpers.tpl or a sibling library
+# chart), is skipped and left out of the components file later steps build the PR table,
+# title and Slack card from. A var only a helper the component never includes knows about,
+# or only a comment mentions, is still added and reported. Also asserts that no
 # secret.yaml is generated next to a secrets.yaml or for a chart whose helpers are named
 # otherwise, while a chart with neither still gets one. Requires bash, jq and mikefarah/yq v4.
 set -euo pipefail
@@ -37,7 +39,9 @@ env_keys() { jq -r --arg n "$1" '.[] | select(.name == $n) | .env_vars | keys | 
 output() { grep -E "^$1=" "${WORK}/github_output" | tail -n1 | cut -d= -f2-; }
 
 # A chart shaped like midaz: helpers named after the components, not the chart; the
-# ledger keeps its Secret in secrets.yaml; the health preset lives in a library chart.
+# ledger keeps its Secret in secrets.yaml; the health preset lives in a library chart
+# the tracer reaches through a chart helper. lerian-common also defines a rate-limit
+# helper midaz never includes.
 midaz_chart() {
   rm -rf "${WORK}/charts"
   local dir="${WORK}/charts/midaz" lib="${WORK}/charts/lerian-common"
@@ -57,33 +61,53 @@ midaz_chart() {
     '{{- define "midaz.licenseFileEnv" -}}' \
     '- name: LICENSE_FILE_PATH' \
     '  value: /etc/lerian/license/license' \
+    '{{- end }}' \
+    '{{- define "midaz-tracer.health" -}}' \
+    '{{- include "lerian-common.health" . -}}' \
     '{{- end }}' > "${dir}/templates/_helpers.tpl"
   printf '%s\n' \
     'data:' \
     '  OTEL_TRUST_INBOUND_TRACE_CONTEXT: {{ .Values.ledger.configmap.OTEL_TRUST_INBOUND_TRACE_CONTEXT | default "false" | quote }}' \
+    '  # COMMENTED_ONLY_VAR is planned for 4.6' \
+    '  {{- /* LEGACY_ONLY_VAR was dropped in 4.0 */}}' \
     '  # Extra Env Vars' > "${dir}/templates/ledger/configmap.yaml"
+  printf '%s\n' \
+    'env:' \
+    '  {{- include "midaz.licenseFileEnv" .Values.ledger | nindent 2 }}' > "${dir}/templates/ledger/deployment.yaml"
   printf '%s\n' \
     'data:' \
     '  LICENSE_KEY: {{ .Values.ledger.secrets.LICENSE_KEY | b64enc | quote }}' > "${dir}/templates/ledger/secrets.yaml"
   printf '%s\n' 'data:' '  # Extra Env Vars' > "${dir}/templates/tracer/configmap.yaml"
+  printf '%s\n' 'env:' '  {{- include "midaz-tracer.health" . | nindent 2 }}' > "${dir}/templates/tracer/deployment.yaml"
   printf '%s\n' 'apiVersion: v2' 'name: lerian-common-helm' 'type: library' 'version: 2.7.0' > "${lib}/Chart.yaml"
-  # shellcheck disable=SC2016  # a Helm template, not a shell expansion
-  printf '%s\n' '{{- $env := list (dict "name" "SHUTDOWN_DRAIN_DELAY" "value" "15s") -}}' > "${lib}/templates/_health.tpl"
+  printf '%s\n' \
+    '{{- define "lerian-common.health" -}}' \
+    '- name: SHUTDOWN_DRAIN_DELAY' \
+    '  value: 15s' \
+    '{{- end }}' > "${lib}/templates/_health.tpl"
+  printf '%s\n' \
+    '{{- define "lerian-common.rateLimit.env" -}}' \
+    '- name: RATE_LIMIT_ENABLED' \
+    '  value: "true"' \
+    '{{- end }}' > "${lib}/templates/_ratelimit.tpl"
 }
 LEDGER="${WORK}/charts/midaz/templates/ledger"
 TRACER="${WORK}/charts/midaz/templates/tracer"
 
-# 1. The midaz 4.5.0 payload: four vars the chart already renders, three new ones.
+# 1. The midaz 4.5.0 payload (four vars the chart already renders, three new ones), plus
+#    vars only a comment or a helper midaz never includes mentions.
 midaz_chart
 run_step midaz '[
   {"name":"midaz-ledger","version":"4.5.0","values_key":"ledger","env_vars":{
     "LICENSE_KEY":"","LICENSE_FILE_PATH":"","OTEL_TRUST_INBOUND_TRACE_CONTEXT":"false",
-    "STREAMING_TENANT_KAFKA":"false","WEBHOOK_SIGNING_TOKEN":""}},
+    "STREAMING_TENANT_KAFKA":"false","WEBHOOK_SIGNING_TOKEN":"",
+    "COMMENTED_ONLY_VAR":"a","LEGACY_ONLY_VAR":"b"}},
   {"name":"midaz-tracer","version":"4.5.0","values_key":"tracer","env_vars":{
-    "SHUTDOWN_DRAIN_DELAY":"0","OTEL_TRUST_INBOUND_TRACE_CONTEXT":"false","STREAMING_TENANT_KAFKA":"false"}}
+    "SHUTDOWN_DRAIN_DELAY":"0","OTEL_TRUST_INBOUND_TRACE_CONTEXT":"false","STREAMING_TENANT_KAFKA":"false",
+    "RATE_LIMIT_ENABLED":"false"}}
 ]'
 if [[ ${RC} -eq 0 ]]; then pass "midaz payload passes"; else flunk "midaz payload passes (exit ${RC}): ${OUT}"; fi
-for key in OTEL_TRUST_INBOUND_TRACE_CONTEXT STREAMING_TENANT_KAFKA; do
+for key in OTEL_TRUST_INBOUND_TRACE_CONTEXT STREAMING_TENANT_KAFKA COMMENTED_ONLY_VAR LEGACY_ONLY_VAR; do
   n=$(count_key "${key}" "${LEDGER}/configmap.yaml")
   if [[ ${n} -eq 1 ]]; then pass "ledger ConfigMap renders ${key} once"; else flunk "ledger ConfigMap renders ${key} once (got ${n})"; fi
 done
@@ -92,12 +116,12 @@ for key in LICENSE_FILE_PATH LICENSE_KEY; do
   if [[ ${n} -eq 0 ]]; then pass "${key} not copied into the ledger ConfigMap"; else flunk "${key} not copied into the ledger ConfigMap (got ${n})"; fi
 done
 # A var another component already renders is still new to this one.
-for key in OTEL_TRUST_INBOUND_TRACE_CONTEXT STREAMING_TENANT_KAFKA; do
+for key in OTEL_TRUST_INBOUND_TRACE_CONTEXT STREAMING_TENANT_KAFKA RATE_LIMIT_ENABLED; do
   n=$(count_key "${key}" "${TRACER}/configmap.yaml")
   if [[ ${n} -eq 1 ]]; then pass "tracer ConfigMap gets ${key}"; else flunk "tracer ConfigMap gets ${key} (got ${n})"; fi
 done
 n=$(count_key SHUTDOWN_DRAIN_DELAY "${TRACER}/configmap.yaml")
-if [[ ${n} -eq 0 ]]; then pass "library-rendered SHUTDOWN_DRAIN_DELAY skipped"; else flunk "library-rendered SHUTDOWN_DRAIN_DELAY skipped (got ${n})"; fi
+if [[ ${n} -eq 0 ]]; then pass "SHUTDOWN_DRAIN_DELAY from an included library helper skipped"; else flunk "SHUTDOWN_DRAIN_DELAY from an included library helper skipped (got ${n})"; fi
 if [[ ! -e ${LEDGER}/secret.yaml ]]; then pass "no secret.yaml next to secrets.yaml"; else flunk "no secret.yaml next to secrets.yaml"; fi
 if grep -qF "secrets.yaml already holds this component's Secret" <<< "${OUT}"; then
   pass "warns that the new secret var needs secrets.yaml"
@@ -105,9 +129,9 @@ else
   flunk "warns that the new secret var needs secrets.yaml"
 fi
 got=$(env_keys midaz-ledger)
-if [[ ${got} == "STREAMING_TENANT_KAFKA,WEBHOOK_SIGNING_TOKEN" ]]; then pass "ledger reports only its new vars"; else flunk "ledger reports only its new vars (got ${got})"; fi
+if [[ ${got} == "COMMENTED_ONLY_VAR,LEGACY_ONLY_VAR,STREAMING_TENANT_KAFKA,WEBHOOK_SIGNING_TOKEN" ]]; then pass "ledger reports only its new vars"; else flunk "ledger reports only its new vars (got ${got})"; fi
 got=$(env_keys midaz-tracer)
-if [[ ${got} == "OTEL_TRUST_INBOUND_TRACE_CONTEXT,STREAMING_TENANT_KAFKA" ]]; then pass "tracer reports only its new vars"; else flunk "tracer reports only its new vars (got ${got})"; fi
+if [[ ${got} == "OTEL_TRUST_INBOUND_TRACE_CONTEXT,RATE_LIMIT_ENABLED,STREAMING_TENANT_KAFKA" ]]; then pass "tracer reports only its new vars"; else flunk "tracer reports only its new vars (got ${got})"; fi
 got=$(output has_new_env_vars)
 if [[ ${got} == "true" ]]; then pass "has_new_env_vars=true"; else flunk "has_new_env_vars=true (got ${got})"; fi
 
