@@ -508,13 +508,33 @@ jobs:
             done
           done < <(yq -r '(.dependencies // [])[].name' "${CHART_FILE}")
 
-          # Template text without comments: {{/* ... */}} blocks and YAML "#" lines.
+          # Template text without comments: each {{/* ... */}} span (only the span, so a key,
+          # include or define before or after it on the same line is kept) and YAML "#" lines.
           strip_comments() {
             awk '
-              c { if (index($0, "*/")) c = 0; next }
-              /\{\{-?[[:space:]]*\/\*/ { if (!index($0, "*/")) c = 1; next }
-              /^[[:space:]]*#/ { next }
-              { print }
+              {
+                line = $0
+                out = ""
+                while (1) {
+                  if (c) {
+                    e = index(line, "*/")
+                    if (!e) { line = ""; break }
+                    line = substr(line, e + 2)
+                    sub(/^[[:space:]]*-?[}][}]/, "", line)
+                    c = 0
+                    continue
+                  }
+                  if (match(line, /[{][{]-?[[:space:]]*\/[*]/)) {
+                    out = out substr(line, 1, RSTART - 1)
+                    line = substr(line, RSTART + RLENGTH)
+                    c = 1
+                    continue
+                  }
+                  out = out line
+                  break
+                }
+                if (out !~ /^[[:space:]]*#/) print out
+              }
             ' "$@"
           }
 

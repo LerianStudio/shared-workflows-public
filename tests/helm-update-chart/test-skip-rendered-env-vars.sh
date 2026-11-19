@@ -62,12 +62,13 @@ midaz_chart() {
     '- name: LICENSE_FILE_PATH' \
     '  value: /etc/lerian/license/license' \
     '{{- end }}' \
-    '{{- define "midaz-tracer.health" -}}' \
+    '{{- define "midaz-tracer.health" -}}{{- /* preset or 4.4 layout */ -}}' \
     '{{- include "lerian-common.health" . -}}' \
     '{{- end }}' > "${dir}/templates/_helpers.tpl"
   printf '%s\n' \
     'data:' \
     '  OTEL_TRUST_INBOUND_TRACE_CONTEXT: {{ .Values.ledger.configmap.OTEL_TRUST_INBOUND_TRACE_CONTEXT | default "false" | quote }}' \
+    '  INLINE_COMMENTED_KEY: {{ .Values.ledger.configmap.INLINE_COMMENTED_KEY | quote }} {{- /* kept for 4.4 */}}' \
     '  # COMMENTED_ONLY_VAR is planned for 4.6' \
     '  {{- /* LEGACY_ONLY_VAR was dropped in 4.0 */}}' \
     '  # Extra Env Vars' > "${dir}/templates/ledger/configmap.yaml"
@@ -101,7 +102,7 @@ run_step midaz '[
   {"name":"midaz-ledger","version":"4.5.0","values_key":"ledger","env_vars":{
     "LICENSE_KEY":"","LICENSE_FILE_PATH":"","OTEL_TRUST_INBOUND_TRACE_CONTEXT":"false",
     "STREAMING_TENANT_KAFKA":"false","WEBHOOK_SIGNING_TOKEN":"",
-    "COMMENTED_ONLY_VAR":"a","LEGACY_ONLY_VAR":"b"}},
+    "COMMENTED_ONLY_VAR":"a","LEGACY_ONLY_VAR":"b","INLINE_COMMENTED_KEY":"c"}},
   {"name":"midaz-tracer","version":"4.5.0","values_key":"tracer","env_vars":{
     "SHUTDOWN_DRAIN_DELAY":"0","OTEL_TRUST_INBOUND_TRACE_CONTEXT":"false","STREAMING_TENANT_KAFKA":"false",
     "RATE_LIMIT_ENABLED":"false"}}
@@ -111,6 +112,8 @@ for key in OTEL_TRUST_INBOUND_TRACE_CONTEXT STREAMING_TENANT_KAFKA COMMENTED_ONL
   n=$(count_key "${key}" "${LEDGER}/configmap.yaml")
   if [[ ${n} -eq 1 ]]; then pass "ledger ConfigMap renders ${key} once"; else flunk "ledger ConfigMap renders ${key} once (got ${n})"; fi
 done
+n=$(count_key INLINE_COMMENTED_KEY "${LEDGER}/configmap.yaml")
+if [[ ${n} -eq 1 ]]; then pass "key before an inline comment still credited"; else flunk "key before an inline comment still credited (got ${n})"; fi
 for key in LICENSE_FILE_PATH LICENSE_KEY; do
   n=$(count_key "${key}" "${LEDGER}/configmap.yaml")
   if [[ ${n} -eq 0 ]]; then pass "${key} not copied into the ledger ConfigMap"; else flunk "${key} not copied into the ledger ConfigMap (got ${n})"; fi
