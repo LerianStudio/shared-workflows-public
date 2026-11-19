@@ -543,7 +543,9 @@ jobs:
             while [ "${#queue[@]}" -gt 0 ]; do
               name="${queue[0]}"
               queue=("${queue[@]:1}")
-              [ -n "$name" ] && [ -z "${seen[$name]:-}" ] || continue
+              if [ -z "$name" ] || [ -n "${seen[$name]:-}" ]; then
+                continue
+              fi
               seen[$name]=1
               echo "$name"
               mapfile -t -O "${#queue[@]}" queue < <(awk -v n="$name" \
