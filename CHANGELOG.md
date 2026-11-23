@@ -1,5 +1,25 @@
 # Shared-workflows-public Changelog
 
+## [1.8.5](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.8.5)
+
+Fixes:
+- Pin the `codeql` composites to `v4.39.3` to enhance security. (@bedatty)
+- Pin the `codeql-init` and `codeql-analyze` composites to `v4.39.3` for improved security. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.8.4...v1.8.5)
+
+---
+
+## [1.8.4](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.8.4)
+
+Fixes:
+
+- Honor backslash escapes in runner-labels array members to ensure proper handling of escape sequences. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.8.3...v1.8.4)
+
+---
+
 ## [1.8.3](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.8.3)
 
 Improvements:
