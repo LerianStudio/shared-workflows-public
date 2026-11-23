@@ -13,15 +13,15 @@ Because a vulnerability here can affect **every repository** that references the
 
 ## Supported Versions
 
-We actively maintain and patch the following refs:
+Callers pin a tier channel. Security fixes ship as a new release and reach each tier through promotion. The composite actions a workflow calls are not channelled yet and arrive with the newest release; see [What tiers do not solve yet](docs/tiers.md#what-tiers-do-not-solve-yet).
 
 | Ref | Status |
 |---|---|
-| `@main` | Supported — production releases |
-| `@vX.Y.Z` (latest minor) | Supported |
-| `@vX.Y.Z` (older tags) | Not actively patched — upgrade to latest |
+| `@tier-0`, `@tier-1`, `@tier-2` | Supported — the only refs callers should pin. Each receives patches through tier promotion; see [Tier channels](docs/tiers.md) |
+| `@vX.Y.Z` (any tag) | Release artifact consumed by the promotion pipeline, not a supported pin for callers. A tag is never patched in place |
+| `@main` | Where development happens; never meant to be pinned by a caller |
 
-We strongly recommend always pinning callers to the latest stable tag rather than `@main` for production workloads.
+Callers must pin a tier channel and never a version tag or `@main` directly. Pinning either removes the caller from the promotion and rollback safety net this repository provides.
 
 ## Reporting a Vulnerability
 
@@ -70,7 +70,7 @@ This repository applies the following controls to protect callers:
 - **`pr-security-scan.yml`** runs Trivy and secret scanning on every PR.
 - **`go-security.yml`** provides Gosec, govulncheck, Nancy, TruffleHog, license checks, and SBOM generation for Go projects.
 - **CODEOWNERS** ensures all changes to security-sensitive workflows require explicit review from `@LerianStudio/devops-team`.
-- **Semantic versioning** with GPG-signed tags ensures callers can pin to verified, immutable refs.
+- **Semantic versioning** with GPG-signed tags backs every release; callers consume it through tier channels (see below), never by pinning a tag directly.
 - **Branch protection** on `main` prevents direct pushes.
 
 ## Supply Chain Security Recommendations for Callers
