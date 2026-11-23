@@ -13,7 +13,7 @@ Because a vulnerability here can affect **every repository** that references the
 
 ## Supported Versions
 
-Callers pin a tier channel. Security fixes ship as a new release and reach each tier through promotion; no other ref receives them.
+Callers pin a tier channel. Security fixes ship as a new release and reach each tier through promotion. The composite actions a workflow calls are not channelled yet and arrive with the newest release; see [What tiers do not solve yet](docs/tiers.md#what-tiers-do-not-solve-yet).
 
 | Ref | Status |
 |---|---|
