@@ -49,37 +49,23 @@ Every pull request into `main` is merged with a **merge commit**: semantic-relea
 
 ## Step-by-Step Contribution Flow
 
-This repository is public. The contribution flow differs slightly depending on whether you are a **Lerian team member** (write access) or an **external contributor** (no write access).
+This repository is public, but only collaborators can open pull requests. The flow depends on whether you are a **Lerian team member** (write access) or an **external contributor**.
+
+> **External contributors — propose the change in an issue.** Pull requests are limited to collaborators of this repository, so a pull request from a fork cannot be opened. Instead:
+>
+> 1. Open an issue with the matching [template](https://github.com/LerianStudio/shared-workflows-public/issues/new/choose) (Bug Report, Feature Request or Documentation).
+> 2. Describe the change and, if you already have it, paste the patch (`git diff` output) in the issue body.
+> 3. A maintainer reviews the proposal and, if accepted, opens the pull request linked to your issue.
+>
+> The steps below are the pull request process maintainers follow.
 
 ### 1. Set up your working branch
-
-**Lerian team members — branch directly:**
 
 ```bash
 git checkout main
 git pull origin main
 git checkout -b feature/your-feature-name
 ```
-
-**External contributors — fork first:**
-
-```bash
-# 1. Fork the repo on GitHub (click "Fork" on the repo page)
-# 2. Clone your fork
-git clone https://github.com/<your-username>/shared-workflows-public.git
-cd shared-workflows-public
-
-# 3. Add the upstream remote
-git remote add upstream https://github.com/LerianStudio/shared-workflows-public.git
-
-# 4. Branch from upstream/main
-git fetch upstream
-git checkout -b feature/your-feature-name upstream/main
-```
-
-When opening the PR, target the `main` branch of the **upstream** (`LerianStudio`) repository.
-
-> A fork's branch does not exist in this repository, so callers cannot pin it for testing. A maintainer can push the branch upstream when an end-to-end run is needed.
 
 ### 2. Make your changes
 
