@@ -189,5 +189,5 @@ All YAML snippets use ` ```yaml ` code blocks, all commands use ` ```bash ` code
 
 ## Related
 
-- [gptchangelog](gptchangelog.md) — AI-powered CHANGELOG.md generation after release
+- [release-notes](release-notes.md) — AI-generated release notes and CHANGELOG.md after release
 - [helm-upgrade-doc composite](../src/docs/helm-upgrade-doc/README.md) — Composite action reference

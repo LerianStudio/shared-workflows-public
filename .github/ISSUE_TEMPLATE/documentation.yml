@@ -46,7 +46,7 @@ body:
         - "Go workflows (ci, security, release, pr-analysis)"
         - "TypeScript workflows (ci, release, frontend-pr-analysis)"
         - "Infrastructure workflows (gitops-update, build, helm-update-chart, dispatch-helm)"
-        - "Release & Versioning workflows (release, self-release, gptchangelog)"
+        - "Release & Versioning workflows (release, self-release, release-notes)"
         - "Security workflows (go-security, pr-security-scan)"
         - "Utility workflows (changed-paths, pr-validation, slack-notify, api-dog-e2e-tests)"
         - "Inline workflow comments / descriptions"
