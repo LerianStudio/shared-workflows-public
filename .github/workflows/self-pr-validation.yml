@@ -349,9 +349,9 @@ jobs:
       - name: Run non-doc-changes classification tests
         run: python3 src/config/non-doc-changes/test.py
 
-  # ----------------- GPT Changelog Tests -----------------
-  gptchangelog-tests:
-    name: GPT Changelog Tests
+  # ----------------- Release Notes Tests -----------------
+  release-notes-tests:
+    name: Release Notes Tests
     runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
     permissions:
       contents: read
@@ -362,7 +362,7 @@ jobs:
           persist-credentials: false
 
       - name: Run pull request context and check tests
-        run: python3 src/changelog/gptchangelog/test.py
+        run: python3 src/changelog/release-notes/test.py
 
   # ----------------- Lerian Lib Version Advisory Tests -----------------
   lerian-lib-version-tests:
@@ -716,7 +716,7 @@ jobs:
       - helm-update-chart-tests
       - trivy-install-tests
       - non-doc-changes-tests
-      - gptchangelog-tests
+      - release-notes-tests
       - lerian-lib-version-tests
       - prerelease-check-tests
       - workflow-secrets-contract-tests
