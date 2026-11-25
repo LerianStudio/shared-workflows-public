@@ -349,6 +349,21 @@ jobs:
       - name: Run non-doc-changes classification tests
         run: python3 src/config/non-doc-changes/test.py
 
+  # ----------------- GPT Changelog Tests -----------------
+  gptchangelog-tests:
+    name: GPT Changelog Tests
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run pull request context and check tests
+        run: python3 src/changelog/gptchangelog/test.py
+
   # ----------------- Lerian Lib Version Advisory Tests -----------------
   lerian-lib-version-tests:
     name: Lerian Lib Version Advisory Tests
@@ -701,6 +716,7 @@ jobs:
       - helm-update-chart-tests
       - trivy-install-tests
       - non-doc-changes-tests
+      - gptchangelog-tests
       - lerian-lib-version-tests
       - prerelease-check-tests
       - workflow-secrets-contract-tests

@@ -36,9 +36,26 @@ inputs:
     required: false
     default: ''
   openai-model:
-    description: Model to use for changelog generation (OpenRouter format)
+    description: |
+      Model to use for changelog generation (OpenRouter format). Empty uses
+      anthropic/claude-sonnet-5.5. The reusable workflows pass the CHANGELOG_MODEL
+      organization (or repository) variable when their caller sets no model.
     required: false
-    default: 'openai/gpt-4o'
+    default: ''
+  use-pr-context:
+    description: |
+      Build the notes from the pull requests in the range (title, Release note or
+      Description section, Breaking Changes section) instead of commit subjects only,
+      and append any feat/fix pull request the model leaves out. 'false' restores the
+      subject-only prompt.
+    required: false
+    default: 'true'
+  max-context-tokens:
+    description: |
+      Upper bound, in tokens, for the change list sent to the model. Past it, chore/ci/docs
+      pull requests go title-only first, then every body is cut shorter.
+    required: false
+    default: '80000'
   bot-ignore-list:
     description: |
       Additional space-separated GitHub login substrings to treat as bots and exclude from the changelog.
@@ -301,10 +318,15 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         MATRIX: ${{ steps.set-matrix.outputs.matrix }}
         OPENAI_MODEL: ${{ inputs.openai-model }}
+        USE_PR_CONTEXT: ${{ inputs.use-pr-context }}
+        MAX_CONTEXT_TOKENS: ${{ inputs.max-context-tokens }}
         REPO_URL: https://github.com/${{ github.repository }}
         BOT_IGNORE_LIST: ${{ inputs.bot-ignore-list }}
       run: |
         git fetch --tags --force
+
+        OPENAI_MODEL="${OPENAI_MODEL:-anthropic/claude-sonnet-5.5}"
+        echo "🤖 Model: $OPENAI_MODEL (pull request context: $USE_PR_CONTEXT)"
 
         echo "📦 Processing apps from matrix: $MATRIX"
         : > /tmp/apps_updated.txt
@@ -343,7 +365,11 @@ runs:
             continue
           fi
 
-          PREV_TAG=$(git tag --merged HEAD --sort=-version:refname | grep "$TAG_GREP_PATTERN" | grep -v -e "-beta" -e "-rc" -e "-alpha" -e "-dev" -e "-snapshot" | sed -n '2p')
+          # The previous version is the highest stable tag the new one descends from. The
+          # second tag merged into HEAD is not always that: a line merged in after the new
+          # tag was cut (a hotfix brought back, say) can sort between them without being
+          # part of this release's history, and the range would then invent or hide changes.
+          PREV_TAG=$(git tag --merged "$LAST_TAG" --sort=-version:refname | grep "$TAG_GREP_PATTERN" | grep -v -e "-beta" -e "-rc" -e "-alpha" -e "-dev" -e "-snapshot" | grep -vxF "$LAST_TAG" | head -1 || true)
 
           if [ -n "$PREV_TAG" ]; then
             SINCE="$PREV_TAG"
@@ -408,6 +434,7 @@ runs:
           # Bots and [skip ci] commits are excluded entirely so GPT only sees
           # meaningful human-authored changes.
           COMMITS_ANNOTATED=""
+          : > /tmp/commits.txt
           SKIPPED_BOTS=0
           SKIPPED_SKIP_CI=0
           while IFS=$'\x1f' read -r SHA SHORT_HASH SUBJECT; do
@@ -461,6 +488,7 @@ runs:
             else
               COMMITS_ANNOTATED+="${SHORT_HASH} ${SUBJECT}"$'\n'
             fi
+            printf '%s\x1f%s\x1f%s\x1f%s\n' "$SHA" "$SHORT_HASH" "$SUBJECT" "$LOGIN" >> /tmp/commits.txt
           done <<< "$GIT_LOG_DATA"
           echo "📝 Commits after filtering (skipped bots: $SKIPPED_BOTS, skipped skip-ci: $SKIPPED_SKIP_CI):"$'\n'"${COMMITS_ANNOTATED}"
 
@@ -469,30 +497,46 @@ runs:
             continue
           fi
 
-          PROMPT="Generate a changelog for ${APP_NAME} ONLY. Each commit below includes the author handle in brackets. Commits: ${COMMITS_ANNOTATED} --- STRICT RULES: 1) NEVER mention other components - only ${APP_NAME}. 2) Use bullet points under section headers only — do NOT repeat the commit type prefix (feat:, fix:, etc.) inside each bullet; the section header already conveys the category. 3) Group entries under plain section headers: 'Features:', 'Fixes:', 'Improvements:' (skip empty sections). Each bullet is plain prose describing WHAT changed, not the raw commit message. 4) No markdown headers (no #). 5) Include ALL meaningful commits — do not omit any entry. Group two or more closely-related commits into a single bullet only when they describe the exact same change; otherwise keep them separate. 6) For each bullet point add the GitHub handle(s) of the author(s) in parentheses at the end, indented on the same line, e.g. 'Ensure normalize_to_filter is a boolean in extra_build. (@bedatty)'. If a bullet combines multiple commits, list all unique handles. Omit handles only when none were detected. 7) ALWAYS wrap version references in backticks - this includes tag names (\`v1\`, \`v1.28.8\`, \`v2.0.0-beta.1\`), action refs (\`@v1\`, \`@v1.28.8\`), and any semver-like token. Never emit a bare version."
+          # A failed pull request lookup falls back to the subject-only prompt rather than
+          # leaving the release without notes.
+          if [[ "$USE_PR_CONTEXT" == "true" ]] \
+            && python3 "$GITHUB_ACTION_PATH/pr_context.py" context /tmp/commits.txt /tmp/context.txt /tmp/prs.json; then
+            CONTEXT=$(cat /tmp/context.txt)
+            PROMPT="Write the release notes of ${APP_NAME} ${LAST_TAG} for the people who use the product, from the changes below, in English. Each pull request comes with its title, its author in brackets, and the release note and breaking text its author wrote; commits without a pull request come with their subject. Changes: ${CONTEXT} --- STRICT RULES: 1) Describe ${APP_NAME} only; never mention other components. 2) Classify each change by its effect on a user, not by its commit prefix: a fix that lets something through that the previous version refused on purpose is a feature; a feature that only changes defaults or existing behavior is a behavior change. 3) Use these plain section headers, in this order, skipping empty ones: 'Breaking changes / action required:', 'Features:', 'Behavior changes:', 'Fixes:', 'Security:', 'Maintenance:'. Breaking changes and anything an operator or client must act on go first and say what to do. 4) 'Maintenance:' is one single bullet that sums up chore, CI, build, test, docs and dependency work in one sentence, naming dependency versions. 5) Each other bullet is one or two sentences of plain prose about WHAT changed for the user (the pull request holds the detail) and ends with the pull request number(s) and author handle(s) in parentheses, e.g. 'Reports retried with the same idempotency key now replay the original response for 7 days. (#1036, @bedatty)'. Commits without a pull request carry only the handle. 6) Every feat and fix pull request must appear in a bullet; combine two pull requests only when they describe the same change. 7) Never invent names: routes, environment variables, error codes, events, fields and versions are quoted exactly as the changes give them, in backticks; when the changes do not name something, describe it without a name. 8) No markdown headers (no #). 9) ALWAYS wrap version references in backticks (\`v1.28.8\`, \`@v1\`, \`v2.0.0-beta.1\`); never emit a bare version."
+          else
+            if [[ "$USE_PR_CONTEXT" == "true" ]]; then
+              echo "::warning title=gptchangelog::${LAST_TAG}: could not read the pull requests; the notes come from commit subjects."
+            fi
+            echo '[]' > /tmp/prs.json
+            PROMPT="Generate a changelog for ${APP_NAME} ONLY. Each commit below includes the author handle in brackets. Commits: ${COMMITS_ANNOTATED} --- STRICT RULES: 1) NEVER mention other components - only ${APP_NAME}. 2) Use bullet points under section headers only — do NOT repeat the commit type prefix (feat:, fix:, etc.) inside each bullet; the section header already conveys the category. 3) Group entries under plain section headers: 'Features:', 'Fixes:', 'Improvements:' (skip empty sections). Each bullet is plain prose describing WHAT changed, not the raw commit message. 4) No markdown headers (no #). 5) Include ALL meaningful commits — do not omit any entry. Group two or more closely-related commits into a single bullet only when they describe the exact same change; otherwise keep them separate. 6) For each bullet point add the GitHub handle(s) of the author(s) in parentheses at the end, indented on the same line, e.g. 'Ensure normalize_to_filter is a boolean in extra_build. (@bedatty)'. If a bullet combines multiple commits, list all unique handles. Omit handles only when none were detected. 7) ALWAYS wrap version references in backticks - this includes tag names (\`v1\`, \`v1.28.8\`, \`v2.0.0-beta.1\`), action refs (\`@v1\`, \`@v1.28.8\`), and any semver-like token. Never emit a bare version."
+          fi
 
-          REQUEST_BODY=$(jq -n \
+          # Through files: with pull request context the prompt can pass the 128 KiB a
+          # single command-line argument may hold, so neither jq nor curl gets it as one.
+          printf '%s' "$PROMPT" > /tmp/prompt.txt
+          jq -n \
             --arg model "$OPENAI_MODEL" \
-            --arg prompt "$PROMPT" \
+            --rawfile prompt /tmp/prompt.txt \
             '{
               model: $model,
               messages: [{role: "user", content: $prompt}],
               temperature: 0.3,
-              max_tokens: 2000
-            }')
+              max_tokens: 4096
+            }' > /tmp/request.json
 
           MAX_ATTEMPTS=3
           BACKOFF=(10 30)
           HTTP_CODE="000"
           for _attempt in 1 2 3; do
-            HTTP_CODE=$(curl -s -w "%{http_code}" --max-time 60 --connect-timeout 10 \
+            # A long change list takes the model more than a minute to write up.
+            HTTP_CODE=$(curl -s -w "%{http_code}" --max-time 180 --connect-timeout 10 \
               -o /tmp/api_response.json \
               https://openrouter.ai/api/v1/chat/completions \
               -H "Content-Type: application/json" \
               -H "Authorization: Bearer $OPENROUTER_API_KEY" \
               -H "HTTP-Referer: https://github.com/${GITHUB_REPOSITORY}" \
               -H "X-Title: GPT Changelog" \
-              -d "$REQUEST_BODY") || HTTP_CODE="000"
+              --data-binary @/tmp/request.json) || HTTP_CODE="000"
 
             if [[ "$HTTP_CODE" =~ ^[0-9]+$ ]] && [ "$HTTP_CODE" -lt 400 ]; then
               break
@@ -522,6 +566,9 @@ runs:
           fi
 
           CONTENT=$(jq -r '.choices[0].message.content // empty' /tmp/api_response.json)
+          if [[ "$(jq -r '.choices[0].finish_reason // empty' /tmp/api_response.json)" == "length" ]]; then
+            echo "::warning title=gptchangelog::${LAST_TAG}: the model hit max_tokens; the notes may end mid-list."
+          fi
           rm -f /tmp/api_response.json
 
           if [ -z "$CONTENT" ]; then
@@ -530,6 +577,14 @@ runs:
           fi
 
           CONTENT=$(echo "$CONTENT" | sed '/^```/d')
+
+          # Deterministic checks on the answer: a feat/fix pull request the model left out
+          # is appended by title, and a backticked name the code at the tag does not
+          # contain becomes a warning. Neither fails the release.
+          printf '%s\n' "$CONTENT" > /tmp/content.txt
+          if python3 "$GITHUB_ACTION_PATH/pr_context.py" check /tmp/content.txt /tmp/prs.json "$LAST_TAG" /tmp/content.checked.txt; then
+            CONTENT=$(cat /tmp/content.checked.txt)
+          fi
 
           if [ -n "$PREV_TAG" ]; then
             COMPARE_LINK="[Compare changes](${REPO_URL}/compare/${PREV_TAG}...${LAST_TAG})"

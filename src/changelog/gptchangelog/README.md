@@ -11,6 +11,8 @@ A tag is eligible when its commit lives on the default branch **or** on a mainte
 
 Bot commits (any login ending in `[bot]` plus the entries in `bot-ignore-list`) and `[skip ci]` commits (semantic-release version bumps, changelog backmerges, etc.) are filtered out before the GPT prompt is built, ensuring the changelog only reflects meaningful human-authored changes.
 
+With `use-pr-context: 'true'` (the default), each remaining commit is resolved to its pull request, and the model reads every pull request once: title, author, `Release note` section (or `Description`), and `Breaking Changes` unless it says `None`. Promotion pull requests are never a source. Notes are classified by effect (breaking first, then features, behavior changes, fixes, security, one maintenance line), and every bullet cites its pull request. After generation, [`pr_context.py`](pr_context.py) appends any `feat`/`fix` pull request the model left out and warns about backticked names the code at the tag does not contain. The previous version is the highest stable tag the new tag descends from. See [docs/gptchangelog.md](../../../docs/gptchangelog.md#pull-request-context).
+
 A hand-written `## [Unreleased]` section at the top of an existing `CHANGELOG.md` is folded into the new release: its lines land under the release heading, above the generated notes, and the `[Unreleased]` heading is dropped.
 
 ## Inputs
@@ -26,7 +28,9 @@ A hand-written `## [Unreleased]` section at the top of an existing `CHANGELOG.md
 | `filter-paths` | Newline-separated path prefixes for monorepo support. Empty = single-app mode. | no | `''` |
 | `stable-releases-only` | Skip beta/rc/alpha tags | no | `'true'` |
 | `release-branch` | Branch whose tags get a changelog. Empty derives it from the run: the branch that triggered the release, falling back to searching which branch contains the tag commit for tag-triggered runs. Set it only for layouts neither step can infer. | no | `''` |
-| `openai-model` | Model to use (OpenRouter format) | no | `'openai/gpt-4o'` |
+| `openai-model` | Model to use (OpenRouter format). Empty uses `anthropic/claude-sonnet-5.5`; the reusable workflows pass the `CHANGELOG_MODEL` variable | no | `''` |
+| `use-pr-context` | Build the notes from the pull requests in the range. `'false'` restores the subject-only prompt | no | `'true'` |
+| `max-context-tokens` | Upper bound, in tokens, for the change list sent to the model | no | `'80000'` |
 | `bot-ignore-list` | Additional space-separated GitHub login substrings to exclude. Logins ending in `[bot]` are always excluded. A built-in baseline (`dependabot renovate github-actions lerian-studio-midaz-push-bot semantic-release-bot`) is always applied; this value extends it. | no | `''` |
 
 ## Outputs

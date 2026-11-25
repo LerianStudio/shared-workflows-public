@@ -125,6 +125,9 @@ is the correct setting.
 | `ignore_globs` | string | `*.md docs/* .github/* LICENSE* .gitignore` | Globs treated as docs/meta by the gate |
 | `release_on_workflow_changes` | boolean | `false` | Release when a branch push touches only `.github/workflows/`, `.github/actions/` or `.github/scripts/`. Turn it on only where the released artifact lives under `.github/` |
 | `semantic_version` | string | `23.0.8` | Semantic release version to use |
+| `openai_model` | string | `''` | Changelog model (OpenRouter format). Empty uses the `CHANGELOG_MODEL` organization (or repository) variable, then `anthropic/claude-sonnet-5.5` |
+| `changelog_use_pr_context` | boolean | `true` | Build the changelog from the pull requests in the range (title, Release note or Description, Breaking Changes) instead of commit subjects only. See [gptchangelog](gptchangelog.md#pull-request-context) |
+| `changelog_max_context_tokens` | number | `80000` | Upper bound, in tokens, for the change list the changelog model reads |
 | `changelog_release_branch` | string | `''` | Branch whose tags get a changelog. Empty derives it from the run: the branch that triggered the release, falling back to searching which branch contains the tag commit for tag-triggered runs. Set it only for layouts neither step can infer |
 | `runner_type` | string | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |
 | `publish_runner_type` | string | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |
