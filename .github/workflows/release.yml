@@ -86,8 +86,13 @@ on:
         required: false
         type: boolean
         default: true
+      changelog_model:
+        description: 'Model for the release notes (OpenRouter format). Empty uses openai_model, then the CHANGELOG_MODEL variable, then anthropic/claude-sonnet-5.5.'
+        required: false
+        type: string
+        default: ''
       openai_model:
-        description: 'Model to use for changelog generation (OpenRouter format). Empty uses the CHANGELOG_MODEL variable, then anthropic/claude-sonnet-5.5.'
+        description: 'DEPRECATED — use changelog_model. Read only when changelog_model is empty.'
         required: false
         type: string
         default: ''
@@ -102,7 +107,7 @@ on:
         type: number
         default: 80000
       changelog_bot_ignore_list:
-        description: 'Space-separated list of GitHub login substrings to exclude from the changelog (bot authors). Logins ending in [bot] are always excluded. Extends the default list built into the gptchangelog composite action.'
+        description: 'Space-separated list of GitHub login substrings to exclude from the changelog (bot authors). Logins ending in [bot] are always excluded. Extends the default list built into the release-notes composite action.'
         required: false
         type: string
         default: ''
@@ -774,7 +779,7 @@ jobs:
           private-key: ${{ secrets.LERIAN_STUDIO_MIDAZ_PUSH_BOT_PRIVATE_KEY }}
 
       - name: Generate Changelog
-        uses: LerianStudio/shared-workflows-public/src/changelog/gptchangelog@v1
+        uses: LerianStudio/shared-workflows-public/src/changelog/release-notes@v1
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           gpg-private-key: ${{ secrets.LERIAN_CI_CD_USER_GPG_KEY }}
@@ -784,7 +789,7 @@ jobs:
           openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
           filter-paths: ${{ inputs.filter_paths }}
           stable-releases-only: ${{ inputs.stable_releases_only }}
-          openai-model: ${{ inputs.openai_model || vars.CHANGELOG_MODEL }}
+          model: ${{ inputs.changelog_model || inputs.openai_model || vars.CHANGELOG_MODEL }}
           use-pr-context: ${{ inputs.changelog_use_pr_context }}
           max-context-tokens: ${{ inputs.changelog_max_context_tokens }}
           bot-ignore-list: ${{ inputs.changelog_bot_ignore_list }}
