@@ -27,7 +27,7 @@ body:
         - "Go (ci, security, release, pr-analysis)"
         - "TypeScript (ci, release, frontend-pr-analysis)"
         - "Infrastructure (gitops-update, build, helm-update-chart, dispatch-helm)"
-        - "Release & Versioning (release, self-release, gptchangelog)"
+        - "Release & Versioning (release, self-release, release-notes)"
         - "Security (go-security, pr-security-scan)"
         - "Utilities (changed-paths, pr-validation, slack-notify, api-dog-e2e-tests)"
         - "Other (describe below)"

@@ -246,7 +246,7 @@ def exists_at(name, tag):
 
 
 def warn(message):
-    print(f"::warning title=gptchangelog::{message}")
+    print(f"::warning title=release-notes::{message}")
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a", encoding="utf-8") as fh:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Behavioural tests for the changelog's pull request context and checks.
 
-Usage: python3 src/changelog/gptchangelog/test.py
+Usage: python3 src/changelog/release-notes/test.py
 
 The pull request bodies follow the template of Lerian's product repositories
 (a logo table, then Description, Type of Change and Breaking Changes).
@@ -254,7 +254,7 @@ class CheckCommand(unittest.TestCase):
                 cwd=tmp, env=env, capture_output=True, text=True, check=True)
             out = (repo / "out.txt").read_text()
             self.assertIn("📌 Other changes:\n- fix(api): serve the manifest (#10) (@dev)", out)
-            self.assertIn("::warning title=gptchangelog::v1.0.0: the notes cite `NOT_A_REAL_ENV`", result.stdout)
+            self.assertIn("::warning title=release-notes::v1.0.0: the notes cite `NOT_A_REAL_ENV`", result.stdout)
             self.assertNotIn("STREAMING_TENANT_KAFKA`, which", result.stdout)
             self.assertIn("left out #10", summary.read_text())
 
