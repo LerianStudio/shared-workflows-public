@@ -1,5 +1,19 @@
 # Shared-workflows-public Changelog
 
+## [1.10.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.10.0)
+
+Release notes for shared-workflows-public `v1.10.0`
+
+✨ Features:
+- The changelog generator is now called `release-notes`, because it takes its model from the `CHANGELOG_MODEL` variable and defaults to `anthropic/claude-sonnet-5.5`, not OpenAI. There is a new `release-notes.yml` workflow that takes a `model` input and a `src/changelog/release-notes` composite action that takes a `model` input. `release.yml` also gains a `changelog_model` input. The model is chosen in this order: `changelog_model`, then `openai_model`, then `vars.CHANGELOG_MODEL`, then `anthropic/claude-sonnet-5.5`. (#61, @bedatty)
+
+🔄 Behavior changes:
+- `gptchangelog.yml`, the `src/changelog/gptchangelog` action and the `openai_model` input of `release.yml` are deprecated but still work with all their previous inputs and outputs. The workflow maps `openai_model` to `model`, and the action forwards to `src/changelog/release-notes@v1` and prints a deprecation notice. Move to `release-notes.yml`, `src/changelog/release-notes` and `changelog_model` when convenient, following the migration section in `docs/release-notes.md`. The new `release-notes.yml` no longer has the `runner_type`, `shared_paths` and `path_level` inputs, which already had no effect. (#61, @bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.9.0...v1.10.0)
+
+---
+
 ## [1.9.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.9.0)
 
 ✨ Features:
