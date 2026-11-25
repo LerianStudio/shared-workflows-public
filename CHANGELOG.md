@@ -1,5 +1,17 @@
 # Shared-workflows-public Changelog
 
+## [1.9.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.9.0)
+
+✨ Features:
+- The `gptchangelog` release-notes generator now reads the pull requests in a release's range instead of only commit subjects, so the notes describe what each change does for users and include breaking changes and required actions. Any `feat` or `fix` pull request the model leaves out is appended under `📌 Other changes:`. (#60, @bedatty)
+
+🧰 Maintenance:
+- The contributing guide now sends external contributors to open an issue instead of a pull request, `SECURITY.md` now names tier channels as the only supported pins, and `azure/setup-helm` moves from `5.0.1` to `5.1.0`. (#58, #59, #49, @bedatty, @dependabot)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.8.6...v1.9.0)
+
+---
+
 ## [1.8.6](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.8.6)
 
 Fixes:
