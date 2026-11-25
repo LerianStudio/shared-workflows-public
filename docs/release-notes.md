@@ -321,6 +321,7 @@ follows the number of pull requests, not of lines changed.
 
 **Checks on the answer**, deterministic and never failing the release:
 
+- a title or introduction the model wrote above the first section header is dropped;
 - every `feat`/`fix` pull request must be cited as `#N`; one the model left out is appended under
   `📌 Other changes:` with its title;
 - every backticked name the notes cite (route, environment variable, error code, event) is looked
