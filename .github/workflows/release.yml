@@ -87,10 +87,20 @@ on:
         type: boolean
         default: true
       openai_model:
-        description: 'Model to use for changelog generation (OpenRouter format)'
+        description: 'Model to use for changelog generation (OpenRouter format). Empty uses the CHANGELOG_MODEL variable, then anthropic/claude-sonnet-5.5.'
         required: false
         type: string
-        default: 'openai/gpt-4o'
+        default: ''
+      changelog_use_pr_context:
+        description: 'Build the changelog from the pull requests in the range (title, Release note or Description, Breaking Changes) instead of commit subjects only. false restores the subject-only prompt.'
+        required: false
+        type: boolean
+        default: true
+      changelog_max_context_tokens:
+        description: 'Upper bound, in tokens, for the change list the changelog model reads.'
+        required: false
+        type: number
+        default: 80000
       changelog_bot_ignore_list:
         description: 'Space-separated list of GitHub login substrings to exclude from the changelog (bot authors). Logins ending in [bot] are always excluded. Extends the default list built into the gptchangelog composite action.'
         required: false
@@ -774,7 +784,9 @@ jobs:
           openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
           filter-paths: ${{ inputs.filter_paths }}
           stable-releases-only: ${{ inputs.stable_releases_only }}
-          openai-model: ${{ inputs.openai_model }}
+          openai-model: ${{ inputs.openai_model || vars.CHANGELOG_MODEL }}
+          use-pr-context: ${{ inputs.changelog_use_pr_context }}
+          max-context-tokens: ${{ inputs.changelog_max_context_tokens }}
           bot-ignore-list: ${{ inputs.changelog_bot_ignore_list }}
           release-branch: ${{ inputs.changelog_release_branch }}
 

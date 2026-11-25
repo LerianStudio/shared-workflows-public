@@ -1,10 +1,11 @@
 # GPT Changelog Workflow
 
-Reusable workflow for generating CHANGELOG.md using AI. Uses OpenRouter API (GPT-4o by default) to analyze commits and generate human-readable, categorized changelogs.
+Reusable workflow for generating CHANGELOG.md using AI. Uses the OpenRouter API (`anthropic/claude-sonnet-5.5` unless the `CHANGELOG_MODEL` variable or `openai_model` says otherwise) to turn the pull requests of a release into human-readable notes, classified by their effect on users.
 
 ## Features
 
-- **AI-powered changelog generation**: Uses OpenRouter API (GPT-4o) for intelligent commit analysis
+- **AI-powered changelog generation**: Reads each pull request's title, Release note (or Description) and Breaking Changes sections, not only commit subjects
+- **Deterministic checks**: Appends any feat/fix pull request the model left out and warns about cited names the code at the tag does not contain
 - **Consolidated changelog**: Single CHANGELOG.md with sections per app (no overwrites)
 - **Monorepo support**: Automatic detection of changed components via filter_paths
 - **GitHub Release integration**: Automatically updates release notes per app tag
@@ -193,7 +194,9 @@ jobs:
 | `runner_type` | string | `''` | Deprecated, ignored. Runner comes from org variables, see [Runner variables](../README.md#runner-variables). |
 | `filter_paths` | string | `''` | Newline-separated list of path prefixes. If empty, single-app mode |
 | `stable_releases_only` | boolean | `true` | Only generate changelogs for stable releases (skip beta/rc/alpha) |
-| `openai_model` | string | `openai/gpt-4o` | OpenRouter model for changelog generation |
+| `openai_model` | string | `''` | OpenRouter model for changelog generation. Empty uses the `CHANGELOG_MODEL` organization (or repository) variable, then `anthropic/claude-sonnet-5.5` |
+| `use_pr_context` | boolean | `true` | Build the notes from the pull requests in the range. `false` restores the subject-only prompt — see [Pull request context](#pull-request-context) |
+| `max_context_tokens` | string | `'80000'` | Upper bound, in tokens, for the change list sent to the model |
 | `changelog_release_branch` | string | `''` | Branch whose tags get a changelog. Empty resolves it from the run — see [Release line resolution](#release-line-resolution). A value that does not exist on origin fails the job |
 | `bot_ignore_list` | string | `''` | Extra space-separated login substrings to exclude from contributors. Logins ending in `[bot]` are always excluded |
 | `backmerge_enabled` | boolean | `true` | Backmerge the release line into `backmerge_target` after the CHANGELOG is committed |
@@ -207,7 +210,6 @@ Still accepted so existing callers keep working, but they have no effect:
 |-------|-----|
 | `shared_paths` | App selection comes from which stable tags exist on the release line, not from changed files |
 | `path_level` | App names are the basename of each `filter_paths` entry |
-| `max_context_tokens` | Never wired to the API call, in this workflow or the composite |
 
 ## Secrets
 
@@ -265,6 +267,10 @@ The workflow automatically determines the commit range for changelog generation:
 | First tag | First commit → Current tag | `abc123...v1.0.0` |
 | No tags | First commit → HEAD | `abc123...HEAD` |
 
+The previous version is the highest stable tag the new tag descends from (`git tag --merged <tag>`),
+not the second-highest tag on the branch: a line merged in after the tag was cut would otherwise
+add or hide changes.
+
 ### Monorepo Tag Patterns
 
 For monorepos, the workflow supports app-specific tags:
@@ -279,15 +285,51 @@ This works with **any directory structure**:
 - `services/auth`, `services/billing` → tags: `auth-v1.0.0`, `billing-v1.5.0`
 - `charts/midaz`, `charts/agent` → tags: `midaz-v1.0.0`, `agent-v2.0.0`
 
+### Pull request context
+
+With `use_pr_context: true` (the default), every commit in the range is resolved to the pull
+request that brought it (one GraphQL query per 40 commits) and the model reads, once per pull
+request:
+
+- the title and author;
+- the `## Release note` section, or `## Description` when there is none, or the first paragraph
+  of a body without headings;
+- the `## Breaking Changes` (or `## Action required`) section, unless it says `None`.
+
+Promotion pull requests (head `develop`, `release-candidate`, `main` or `master`) are never a
+source: their commits count only when no pull request of their own covers them, and then they
+enter by subject. HTML comments and the logo table of the template are dropped.
+
+**Budget.** `max_context_tokens` bounds the change list. Past it, chore/ci/build/docs/test/style/
+refactor pull requests go title-only first, then every body is cut shorter; only past that is the
+list itself cut, with a warning. The size of the diff never enters the prompt, so a release's cost
+follows the number of pull requests, not of lines changed.
+
+**Checks on the answer**, deterministic and never failing the release:
+
+- every `feat`/`fix` pull request must be cited as `#N`; one the model left out is appended under
+  `📌 Other changes:` with its title;
+- every backticked name the notes cite (route, environment variable, error code, event) is looked
+  up with `git grep` at the tag; one the code does not contain becomes a warning in the log and the
+  step summary.
+
+If the pull requests cannot be read, the run warns and falls back to the subject-only prompt.
+
 ### Changelog Categories
 
-GPTChangelog organizes commits into these categories:
-- ✨ **Features**: New features added
-- 🛠 **Fixes**: Bug fixes and improvements
-- 📚 **Documentation**: Documentation updates
-- 🚀 **Improvements**: Performance or backend optimizations
-- ⚠️ **Breaking Changes**: Breaking changes
-- 🙌 **Contributors**: Acknowledgments
+With pull request context, notes are grouped by their effect on users, in this order (empty
+sections are skipped):
+
+- ⚠️ **Breaking changes / action required**: what breaks and what to do
+- ✨ **Features**: new capabilities, including a fix that allows what was refused on purpose
+- 🔄 **Behavior changes**: existing behavior or defaults that changed
+- 🛠️ **Fixes**
+- 🔒 **Security**
+- 🧰 **Maintenance**: one line for chore, CI, build, test, docs and dependency work
+- 📌 **Other changes**: added after generation for any feat/fix pull request the model left out
+
+Each bullet ends with its pull request number(s) and author handle(s). With
+`use_pr_context: false`, notes keep the earlier Features / Fixes / Improvements grouping.
 
 ## Workflow Jobs
 
@@ -365,7 +407,7 @@ Add `SLACK_WEBHOOK_URL` secret for team notifications.
 **Solutions**:
 1. Verify `OPENROUTER_API_KEY` is set correctly
 2. Check API rate limits
-3. Ensure model name is valid (e.g., `openai/gpt-4o`)
+3. Ensure model name is valid (e.g., `anthropic/claude-sonnet-5.5`)
 
 ### Monorepo changes not detected
 
@@ -441,11 +483,15 @@ jobs:
 
 ### Custom OpenRouter Model
 
+The model for every repository comes from the `CHANGELOG_MODEL` organization variable. A
+repository variable of the same name overrides it for one repository, and `openai_model`
+overrides both for one caller:
+
 ```yaml
 changelog:
   uses: LerianStudio/shared-workflows-public/.github/workflows/gptchangelog.yml@tier-1
   with:
-    openai_model: 'anthropic/claude-3.5-sonnet'
+    openai_model: 'google/gemini-3.8-flash'
   secrets: inherit
 ```
 
