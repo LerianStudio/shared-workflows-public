@@ -155,7 +155,7 @@ class Checks(unittest.TestCase):
         missing = pr_context.missing_prs(content, self.PRS)
         self.assertEqual([p["number"] for p in missing], [12])
         out = pr_context.append_missing(content, missing)
-        self.assertTrue(out.endswith("Other changes:\n- feat: xlsx reports (#12)"))
+        self.assertTrue(out.endswith("📌 Other changes:\n- feat: xlsx reports (#12)"))
 
     def test_number_prefix_does_not_count_as_cited(self):
         self.assertEqual([p["number"] for p in pr_context.missing_prs("See #100 and #1.", self.PRS)],
@@ -187,7 +187,7 @@ class CheckCommand(unittest.TestCase):
                 [sys.executable, str(HERE / "pr_context.py"), "check", "content.txt", "prs.json", "v1.0.0", "out.txt"],
                 cwd=tmp, env=env, capture_output=True, text=True, check=True)
             out = (repo / "out.txt").read_text()
-            self.assertIn("Other changes:\n- fix(api): serve the manifest (#10) (@dev)", out)
+            self.assertIn("📌 Other changes:\n- fix(api): serve the manifest (#10) (@dev)", out)
             self.assertIn("::warning title=gptchangelog::v1.0.0: the notes cite `NOT_A_REAL_ENV`", result.stdout)
             self.assertNotIn("STREAMING_TENANT_KAFKA`, which", result.stdout)
             self.assertIn("left out #10", summary.read_text())

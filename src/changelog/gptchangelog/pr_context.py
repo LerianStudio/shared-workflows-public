@@ -12,7 +12,7 @@ breaking section, then the commits no pull request covers. The pull requests go 
 <prs-out> as JSON for `check`.
 
 `check` reads the generated notes and writes them to <content-out> with every
-feat/fix pull request the model left out appended under "Other changes:", then warns,
+feat/fix pull request the model left out appended under "📌 Other changes:", then warns,
 without failing, about each backticked name the notes cite that the code at <tag>
 does not contain. Warnings go to stdout as workflow commands and to the step summary.
 
@@ -220,7 +220,7 @@ def append_missing(content, missing):
         return content
     lines = [f"- {pr['title']} (#{pr['number']})" + (f" (@{pr['author']})" if pr["author"] else "")
              for pr in missing]
-    return content.rstrip() + "\n\nOther changes:\n" + "\n".join(lines)
+    return content.rstrip() + "\n\n📌 Other changes:\n" + "\n".join(lines)
 
 
 def cited_names(content):

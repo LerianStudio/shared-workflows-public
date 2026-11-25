@@ -308,7 +308,7 @@ follows the number of pull requests, not of lines changed.
 **Checks on the answer**, deterministic and never failing the release:
 
 - every `feat`/`fix` pull request must be cited as `#N`; one the model left out is appended under
-  `Other changes:` with its title;
+  `📌 Other changes:` with its title;
 - every backticked name the notes cite (route, environment variable, error code, event) is looked
   up with `git grep` at the tag; one the code does not contain becomes a warning in the log and the
   step summary.
@@ -320,12 +320,13 @@ If the pull requests cannot be read, the run warns and falls back to the subject
 With pull request context, notes are grouped by their effect on users, in this order (empty
 sections are skipped):
 
-- **Breaking changes / action required**: what breaks and what to do
-- **Features**: new capabilities, including a fix that allows what was refused on purpose
-- **Behavior changes**: existing behavior or defaults that changed
-- **Fixes**
-- **Security**
-- **Maintenance**: one line for chore, CI, build, test, docs and dependency work
+- ⚠️ **Breaking changes / action required**: what breaks and what to do
+- ✨ **Features**: new capabilities, including a fix that allows what was refused on purpose
+- 🔄 **Behavior changes**: existing behavior or defaults that changed
+- 🛠️ **Fixes**
+- 🔒 **Security**
+- 🧰 **Maintenance**: one line for chore, CI, build, test, docs and dependency work
+- 📌 **Other changes**: added after generation for any feat/fix pull request the model left out
 
 Each bullet ends with its pull request number(s) and author handle(s). With
 `use_pr_context: false`, notes keep the earlier Features / Fixes / Improvements grouping.
