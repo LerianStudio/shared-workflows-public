@@ -46,11 +46,13 @@ FALLBACK_SECTIONS = ("description", "summary")
 BREAKING_SECTIONS = ("breaking changes", "breaking change", "breaking / action required",
                      "action required")
 EMPTY_ANSWERS = {"", "none", "none.", "n/a", "na", "-", "no", "nothing"}
-# A breaking section that opens with a no, then explains why, is still a no.
-NOT_BREAKING_RE = re.compile(r"^(none|no|n/a)\b", re.I)
+# A breaking section that opens with a no, then explains why, is still a no. "No longer
+# accepts X" is a breaking change, so only a bare no or "no breaking/changes" counts.
+NOT_BREAKING_RE = re.compile(
+    r"^(none\b|n/a\b|nothing\b|no\s*($|[.,:;!—-])|no (breaking|changes?|impact|action)\b)", re.I)
 
 TYPE_RE = re.compile(r"^\s*([a-z]+)(\([^)]*\))?!?:", re.I)
-HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$")
+HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$")
 COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
 BACKTICK_RE = re.compile(r"`([^`\n]+)`")
 SEMVER_RE = re.compile(r"^@?v?\d+(\.\d+)*([-+][0-9A-Za-z.-]+)?$")
@@ -77,14 +79,17 @@ def clean(text):
 
 
 def sections(body):
-    """Maps each lowercased heading to the text below it, up to the next heading."""
-    found, name, buf = {}, None, []
+    """Maps each lowercased heading to the text below it, up to the next heading of the
+    same or a higher level; deeper subheadings stay inside, as lines of that text."""
+    found, name, level, buf = {}, None, 0, []
     for line in COMMENT_RE.sub("", body or "").splitlines():
         heading = HEADING_RE.match(line)
-        if heading:
+        if heading and (name is None or len(heading.group(1)) <= level):
             if name is not None:
                 found.setdefault(name, "\n".join(buf))
-            name, buf = heading.group(1).strip().lower().rstrip(":"), []
+            name, level, buf = heading.group(2).strip().lower().rstrip(":"), len(heading.group(1)), []
+        elif heading:
+            buf.append(heading.group(2).strip().rstrip(":") + ":")
         elif name is not None:
             buf.append(line)
     if name is not None:
@@ -183,14 +188,15 @@ def build_context(commits, resolved, max_chars):
         for number in order:
             pr = prs[number]
             head = f"- #{number} {pr['title']}" + (f" [@{pr['author']}]" if pr["author"] else "")
-            body = ""
-            if not (drop_low and pr["type"] in LOW_PRIORITY_TYPES):
-                # Breaking text first, so a short cap keeps what a reader must act on.
-                body = "\n".join(t for t in (
-                    f"Breaking / action required: {pr['breaking']}" if pr["breaking"] else "",
-                    f"Release note: {pr['note']}" if pr["note"] else "") if t)
-                if len(body) > cap:
-                    body = body[:cap].rstrip() + " [...]"
+            # Breaking text first, so a short cap keeps what a reader must act on. Short
+            # of budget, a low-priority pull request sheds its release note, never its
+            # breaking text.
+            shed_note = drop_low and pr["type"] in LOW_PRIORITY_TYPES
+            body = "\n".join(t for t in (
+                f"Breaking / action required: {pr['breaking']}" if pr["breaking"] else "",
+                f"Release note: {pr['note']}" if pr["note"] and not shed_note else "") if t)
+            if len(body) > cap:
+                body = body[:cap].rstrip() + " [...]"
             parts.append(head + ("\n  " + body.replace("\n", "\n  ") if body else ""))
         text = "Pull requests:\n" + "\n".join(parts) if parts else ""
         if loose:

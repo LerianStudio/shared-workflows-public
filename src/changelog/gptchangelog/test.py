@@ -67,6 +67,23 @@ class Describe(unittest.TestCase):
         body = "## Description\nX.\n\n## Breaking Changes\n\nNone. Every change is additive.\n"
         self.assertEqual(pr_context.describe(body)[1], "")
 
+    def test_breaking_that_opens_with_no_longer_is_kept(self):
+        for text in ("No longer accepts `REPORT_FORMAT=xls`; set `REPORT_FORMAT=xlsx`.",
+                     "No automatic migration: run `make migrate` before upgrading."):
+            body = f"## Description\nX.\n\n## Breaking Changes\n\n{text}\n"
+            self.assertEqual(pr_context.describe(body)[1], text)
+        for text in ("No.", "No breaking changes.", "No changes for callers.", "None"):
+            body = f"## Description\nX.\n\n## Breaking Changes\n\n{text}\n"
+            self.assertEqual(pr_context.describe(body)[1], "", text)
+
+    def test_subheadings_stay_inside_their_section(self):
+        body = ("## Description\n\n### What changed\n\nThe export moved.\n\n"
+                "## Breaking Changes\n\n### Migration\n\nRename `REPORT_DIR` to `REPORTER_DIR`.\n\n"
+                "## Testing\nUnit tests.\n")
+        note, breaking = pr_context.describe(body)
+        self.assertEqual(note, "What changed:\n\nThe export moved.")
+        self.assertEqual(breaking, "Migration:\n\nRename `REPORT_DIR` to `REPORTER_DIR`.")
+
     def test_untouched_template_gives_nothing(self):
         body = "## Description\n\n<!-- Summarize. -->\n\n## Breaking Changes\n\n<!-- None. -->\n"
         self.assertEqual(pr_context.describe(body), ("", ""))
@@ -138,6 +155,18 @@ class BuildContext(unittest.TestCase):
         self.assertNotIn("lib-commons v7.31.0", text)
         self.assertIn("Breaking / action required:", text)
 
+    def test_budget_keeps_the_breaking_text_of_low_priority_pull_requests(self):
+        body = "## Description\n" + "Internal detail. " * 50 + "\n\n## Breaking Changes\nRemoves `GET /v1/x`.\n"
+        resolved = {"r1": {"number": 20, "title": "refactor(api)!: drop the legacy route", "body": body,
+                           "mergedAt": "2026-11-10T10:00:00Z", "headRefName": "refactor/x",
+                           "author": {"login": "dev"}}}
+        commits = [("r1", "r1", "refactor(api)!: drop the legacy route", "dev")]
+        full, _, _ = pr_context.build_context(commits, resolved, 100000)
+        text, _, truncated = pr_context.build_context(commits, resolved, len(full) - 1)
+        self.assertFalse(truncated)
+        self.assertIn("Removes `GET /v1/x`.", text)
+        self.assertNotIn("Internal detail.", text)
+
     def test_budget_shrinks_bodies_then_cuts_the_list(self):
         text, _, truncated = pr_context.build_context(self.commits, self.resolved, 120)
         self.assertTrue(truncated)
@@ -167,6 +196,43 @@ class Checks(unittest.TestCase):
                    "route `GET /v1/reports/{id}`.")
         self.assertEqual(pr_context.cited_names(content),
                          ["/v1/reports", "/v1/streaming/manifest", "BTF-0405", "STREAMING_TENANT_KAFKA", "draft"])
+
+
+class ContextCommand(unittest.TestCase):
+    """Runs `context` with a stand-in `gh` first on PATH."""
+
+    def run_context(self, gh_script):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "gh").write_text("#!/bin/sh\n" + gh_script)
+            (root / "gh").chmod(0o755)
+            (root / "commits.txt").write_text("a" * 40 + "\x1fa1\x1ffix: health\x1fdev\n"
+                                               + "b" * 40 + "\x1fb1\x1fdirect push\x1fops\n")
+            env = dict(os.environ, PATH=f"{tmp}:{os.environ['PATH']}", GITHUB_REPOSITORY="o/r",
+                       MAX_CONTEXT_TOKENS="80000")
+            result = subprocess.run(
+                [sys.executable, str(HERE / "pr_context.py"), "context", "commits.txt", "ctx.txt", "prs.json"],
+                cwd=tmp, env=env, capture_output=True, text=True)
+            out = {"code": result.returncode}
+            if result.returncode == 0:
+                out["context"] = (root / "ctx.txt").read_text()
+                out["prs"] = json.loads((root / "prs.json").read_text())
+            return out
+
+    def test_writes_context_and_pull_requests(self):
+        answer = json.dumps({"data": {"repository": {
+            "c0": {"associatedPullRequests": {"nodes": [pr(10, "fix(api): serve the manifest", TEMPLATE_BODY)]}},
+            "c1": {"associatedPullRequests": {"nodes": []}}}}})
+        out = self.run_context(f"cat <<'JSON'\n{answer}\nJSON\n")
+        self.assertEqual(out["code"], 0)
+        self.assertEqual([p["number"] for p in out["prs"]], [10])
+        self.assertIn("- #10 fix(api): serve the manifest [@dev]", out["context"])
+        self.assertIn("- b1 direct push [@ops]", out["context"])
+
+    def test_a_failed_lookup_exits_non_zero_so_the_action_falls_back(self):
+        # action.yml runs `context` as an `if` condition: a non-zero exit takes the
+        # subject-only prompt with an empty prs.json instead of failing the release.
+        self.assertNotEqual(self.run_context("echo 'HTTP 502' >&2\nexit 1\n")["code"], 0)
 
 
 class CheckCommand(unittest.TestCase):

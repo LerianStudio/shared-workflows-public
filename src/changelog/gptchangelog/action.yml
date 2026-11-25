@@ -513,6 +513,9 @@ runs:
 
           # Through files: with pull request context the prompt can pass the 128 KiB a
           # single command-line argument may hold, so neither jq nor curl gets it as one.
+          # No temperature: models that always reason (the Claude 5 family among them)
+          # answer 400 to a non-default one. max_tokens covers the reasoning as well as
+          # the notes, and stays within gpt-4o's 16384 output limit.
           printf '%s' "$PROMPT" > /tmp/prompt.txt
           jq -n \
             --arg model "$OPENAI_MODEL" \
@@ -520,8 +523,7 @@ runs:
             '{
               model: $model,
               messages: [{role: "user", content: $prompt}],
-              temperature: 0.3,
-              max_tokens: 4096
+              max_tokens: 16000
             }' > /tmp/request.json
 
           MAX_ATTEMPTS=3
