@@ -219,6 +219,12 @@ with:
   model: anthropic/claude-sonnet-5.5
 ```
 
+## Outputs
+
+| Output | Description |
+|--------|-------------|
+| `has_changes` | `true` when at least one app was eligible for release notes generation; use it to gate later jobs |
+
 ## Secrets
 
 All secrets are inherited via `secrets: inherit`. Required secrets in your repository:

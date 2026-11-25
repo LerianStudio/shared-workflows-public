@@ -61,6 +61,10 @@ on:
         description: 'Branch to backmerge the release line into.'
         type: string
         default: 'develop'
+    outputs:
+      has_changes:
+        description: 'Whether any app was eligible for release notes generation (true/false)'
+        value: ${{ jobs.generate_changelog.outputs.has_changes }}
 
 permissions:
   contents: write
