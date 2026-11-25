@@ -1,5 +1,17 @@
 # Shared-workflows-public Changelog
 
+## [1.8.6](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.8.6)
+
+Fixes:
+- Add only the environment variables that a chart does not render yet. (@bedatty)
+- Strip only the comment span from a line, preserving the rest of the line. (@bedatty)
+- Use an if statement in component_helpers to address shellcheck SC2015. (@bedatty)
+- Credit a component only with the helpers it includes. (@bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.8.5...v1.8.6)
+
+---
+
 ## [1.8.5](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.8.5)
 
 Fixes:
