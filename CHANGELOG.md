@@ -1,5 +1,14 @@
 # Shared-workflows-public Changelog
 
+## [1.10.1](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.10.1)
+
+🛠️ Fixes:
+- Release notes no longer open with an extra line naming the repository and version above the first section, as the notes for `v1.10.0` did. Any text above the first section header is now removed from notes built from pull requests, and notes built only from commit subjects are unchanged. (#62, @bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.10.0...v1.10.1)
+
+---
+
 ## [1.10.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.10.0)
 
 Release notes for shared-workflows-public `v1.10.0`
