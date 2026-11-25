@@ -221,6 +221,20 @@ def missing_prs(content, prs):
     return [pr for pr in prs if pr["type"] in COVERED_TYPES and pr["number"] not in cited]
 
 
+# The section headers the prompt asks for; anything before the first one is a preamble.
+SECTION_HEADERS = ("⚠️ Breaking changes", "✨ Features:", "🔄 Behavior changes:", "🛠️ Fixes:",
+                   "🔒 Security:", "🧰 Maintenance:")
+
+
+def strip_preamble(content):
+    """Drops a title or introduction the model wrote above the first section header."""
+    lines = content.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip().startswith(SECTION_HEADERS):
+            return "\n".join(lines[i:])
+    return content
+
+
 def append_missing(content, missing):
     if not missing:
         return content
@@ -280,6 +294,8 @@ def main(argv):
         with open(argv[3], encoding="utf-8") as fh:
             prs = json.load(fh)
         tag = argv[4]
+        if prs:
+            content = strip_preamble(content)
         missing = missing_prs(content, prs)
         for pr in missing:
             warn(f"{tag}: the model left out #{pr['number']}; it was appended under Other changes.")

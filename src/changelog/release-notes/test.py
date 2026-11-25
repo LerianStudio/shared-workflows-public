@@ -235,6 +235,20 @@ class ContextCommand(unittest.TestCase):
         self.assertNotEqual(self.run_context("echo 'HTTP 502' >&2\nexit 1\n")["code"], 0)
 
 
+class StripPreamble(unittest.TestCase):
+    def test_title_and_intro_above_the_first_section_are_dropped(self):
+        content = "Release notes for app `v1.2.0`\n\napp `v1.2.0`\n\n✨ Features:\n- X. (#1, @dev)"
+        self.assertEqual(pr_context.strip_preamble(content), "✨ Features:\n- X. (#1, @dev)")
+
+    def test_breaking_header_counts_as_a_section(self):
+        content = "Intro.\n⚠️ Breaking changes / action required:\n- Y. (#2)"
+        self.assertTrue(pr_context.strip_preamble(content).startswith("⚠️ Breaking changes"))
+
+    def test_notes_without_a_known_header_are_left_as_they_are(self):
+        content = "Features:\n- old-format notes"
+        self.assertEqual(pr_context.strip_preamble(content), content)
+
+
 class CheckCommand(unittest.TestCase):
     def test_end_to_end_against_a_tag(self):
         with tempfile.TemporaryDirectory() as tmp:
