@@ -129,7 +129,8 @@ Use a scope to identify the affected workflow or area:
 | `build` | Build workflow |
 | `slack` | Slack Notify workflow |
 | `frontend` | Frontend PR Analysis workflow |
-| `gptchangelog` | GPT Changelog workflow |
+| `release-notes` | Release Notes workflow (formerly `gptchangelog`) |
+| `gptchangelog` | Deprecated alias of `release-notes`, kept for history |
 | `helm` | Helm Update / Dispatch workflows |
 | `typescript` | TypeScript CI / Release workflows |
 | `docs` | Documentation |

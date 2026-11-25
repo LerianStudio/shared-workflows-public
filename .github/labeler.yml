@@ -99,6 +99,7 @@ changelog:
   - changed-files:
     - any-glob-to-any-file:
       - "src/changelog/**"
+      - ".github/workflows/release-notes.yml"
       - ".github/workflows/gptchangelog.yml"
 
 routine:
