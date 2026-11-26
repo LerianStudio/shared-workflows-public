@@ -1,5 +1,14 @@
 # Shared-workflows-public Changelog
 
+## [1.11.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.11.0)
+
+✨ Features:
+- Added a composite in `pr-validation` that checks a pull request's release note section. No workflow calls it yet, so existing runs are unaffected. (#63, @bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.10.1...v1.11.0)
+
+---
+
 ## [1.10.1](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.10.1)
 
 🛠️ Fixes:
