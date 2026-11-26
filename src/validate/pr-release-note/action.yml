@@ -1,0 +1,42 @@
+name: Check PR Release Note
+description: "Warns, without failing, when a feat/fix PR leaves out the Release note section its repository's template asks for."
+
+inputs:
+  github-token:
+    description: GitHub token that can read the repository contents (reads the PR template on the base commit)
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  missing:
+    description: Whether a warning was raised because the Release note section is missing or empty (true/false)
+    value: ${{ steps.check.outputs.missing }}
+
+runs:
+  using: composite
+  steps:
+    # Self-hosted runners (LIGHT_RUNNERS) may not ship Node on PATH; GitHub-hosted ones do.
+    - name: Check for Node
+      id: node
+      shell: bash
+      run: |
+        if command -v node >/dev/null 2>&1; then
+          echo "present=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "present=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Set up Node
+      if: steps.node.outputs.present != 'true'
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: "22"
+
+    # Title and body come from the event file, never from the expression context:
+    # both are written by the PR author.
+    - name: Check release note
+      id: check
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: node "$GITHUB_ACTION_PATH/check.js"
