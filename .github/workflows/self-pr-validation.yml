@@ -272,6 +272,21 @@ jobs:
       - name: Run pr-commit-signatures behavioural tests
         run: python3 src/validate/pr-commit-signatures/test.py
 
+  # ----------------- PR Release Note Check Tests -----------------
+  pr-release-note-tests:
+    name: PR Release Note Check Tests
+    runs-on: ${{ vars.PUBLIC_RUNNERS || vars.FALLBACK_RUNNERS }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run PR release note check tests
+        run: node --test src/validate/pr-release-note/test.js
+
   # ----------------- Helm Update Chart Tests -----------------
   helm-update-chart-tests:
     name: Helm Update Chart Tests
@@ -713,6 +728,7 @@ jobs:
       - integration-config-tests
       - gitops-chart-tooling-tests
       - pr-commit-signatures-tests
+      - pr-release-note-tests
       - helm-update-chart-tests
       - trivy-install-tests
       - non-doc-changes-tests

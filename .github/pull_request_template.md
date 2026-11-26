@@ -11,6 +11,10 @@
 
 <!-- Summarize what this PR does and why. List which workflow(s) are affected and what behavior changes. -->
 
+## Release note
+
+<!-- One or two sentences for whoever calls the workflow. "None" for chore/CI/docs. -->
+
 ## Type of Change
 
 - [ ] `feat`: New workflow or new input/output/step in an existing workflow
