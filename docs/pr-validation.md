@@ -41,7 +41,6 @@ pr-validation.yml (reusable workflow)
               ↓ (only continues if all pass)
   Tier 2 — advisory-checks (shared checkout)
     ├── src/validate/pr-metadata        (assignee + linked issues)
-    ├── src/validate/pr-release-note    (warns a feat/fix PR without a Release note)
     ├── src/validate/pr-size            (size calculation + labeling)
     └── src/validate/pr-labels          (auto-label by files)
               ↓
@@ -305,7 +304,7 @@ Full detail: [`breaking-change-approval.md`](breaking-change-approval.md).
 |-----|------|------------|-----------|
 | `breaking-change-guard` | mandatory detection | `breaking-change-guard@v1` | always, including drafts |
 | `blocking-checks` | 1 (fail-fast) | guard enforcement, `pr-source-branch`, `pr-title`, `pr-description`, `pr-commit-signatures` | always; drafts run guard enforcement only |
-| `advisory-checks` | 2 (informational) | `pr-metadata`, `pr-release-note`, `pr-size`, `pr-labels` | non-draft, regardless of the blocking result |
+| `advisory-checks` | 2 (informational) | `pr-metadata`, `pr-size`, `pr-labels` | non-draft, regardless of the blocking result |
 | `pr-checks-summary` | — | `pr-checks-summary` | always (writes to step summary) |
 | `pr-validation-report` | — | `pr-validation-reporter` | non-draft (upserts single PR comment) |
 | `notify` | — | `slack-notify.yml` | non-draft, `!dry_run` |
@@ -362,15 +361,6 @@ The step runs with read-only permissions and emits no commit metadata beyond wha
   pull request that failed a blocking check still gets its size label, its
   auto-labels and its assignee
 - Never block merge — informational only
-
-### Release note warning
-
-A `feat`/`fix` pull request with no `## Release note` section, or one left empty (only the
-template comment, `None`, `N/A`), gets a warning annotation and a step summary line. The release
-notes read that section first and otherwise fall back to the Description, which is written for
-the reviewer. The check is on only in repositories whose PR template on the base branch has a
-`Release note` heading, so adding the section to the template is what turns it on. See
-[`pr-release-note`](../src/validate/pr-release-note/README.md).
 
 ## Dry Run Behavior
 

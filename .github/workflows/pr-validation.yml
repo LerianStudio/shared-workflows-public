@@ -505,15 +505,6 @@ jobs:
           github-token: ${{ secrets.MANAGE_TOKEN || github.token }}
           dry-run: ${{ inputs.dry_run && 'true' || 'false' }}
 
-      # Warns a feat/fix PR that leaves out the Release note section the release
-      # notes read first. Only in repositories whose PR template carries it.
-      - name: Check PR release note
-        id: release-note
-        continue-on-error: true
-        uses: LerianStudio/shared-workflows-public/src/validate/pr-release-note@v1
-        with:
-          github-token: ${{ github.token }}
-
       - name: Check PR size
         id: size
         continue-on-error: true

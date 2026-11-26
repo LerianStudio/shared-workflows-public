@@ -172,7 +172,7 @@ async function main() {
   }
 }
 
-module.exports = { check, sections, meaningful, hasNoteHeading, prType };
+module.exports = { check, main, sections, meaningful, hasNoteHeading, prType };
 
 if (require.main === module) {
   main().catch((err) => {

@@ -307,9 +307,7 @@ request:
 
 - the title and author;
 - the `## Release note` section, or `## Description` when there is none, or the first paragraph
-  of a body without headings. A repository whose PR template carries the `## Release note`
-  section gets a warning from `pr-validation` on each `feat`/`fix` pull request that leaves it
-  out ([`pr-release-note`](../src/validate/pr-release-note/README.md));
+  of a body without headings;
 - the `## Breaking Changes` (or `## Action required`) section, unless it says `None`.
 
 Promotion pull requests (head `develop`, `release-candidate`, `main` or `master`) are never a

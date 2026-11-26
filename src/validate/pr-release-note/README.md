@@ -42,14 +42,7 @@ jobs:
 
 ## Usage as reusable workflow
 
-Runs in the Advisory Checks job of `pr-validation.yml`, and through it of the `go-pr-validation` umbrella. No input is needed:
-
-```yaml
-jobs:
-  validate:
-    uses: LerianStudio/shared-workflows-public/.github/workflows/pr-validation.yml@tier-1
-    secrets: inherit
-```
+Not wired into `pr-validation.yml` yet. A workflow references composites at `@v1`, and Actions resolves every `uses:` of a job before its first step, so the step is added to the Advisory Checks job once a release puts this composite on `v1` (LerianStudio/github-actions-shared-workflows#1255).
 
 ## Template section
 
