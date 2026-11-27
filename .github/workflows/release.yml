@@ -176,7 +176,7 @@ on:
         type: number
         default: 125000
       truncate_oversized_release_notes:
-        description: 'When the release notes exceed release_notes_max_chars, publish the release with the GitHub Release body cut to the limit (never above 125000), ending with a link to the changes between the tags. false fails the run before any tag is created instead, and so does a setup the cut cannot reach (semantic_version below 22, or a caller release config that sets extends, releaseBodyTemplate or addReleases top/bottom). Only the Release body is cut; plugins such as @semantic-release/changelog still get the whole notes.'
+        description: 'When the release notes exceed release_notes_max_chars, publish the release with the GitHub Release body cut to the limit (never above 125000), ending with a link to the changes between the tags. false fails the run before any tag is created instead, and so does a setup the cut cannot be shown to reach (semantic_version below 23, an executable JS/TS release config, or a release config that sets extends, releaseBodyTemplate or addReleases top/bottom). Only the Release body is cut; plugins such as @semantic-release/changelog still get the whole notes.'
         required: false
         type: boolean
         default: true
@@ -560,22 +560,31 @@ jobs:
           }
 
           // The cap is only safe when it is the template that renders the body,
-          // and every body the github plugin sends is the rendered one. Any of
-          // these makes it unsafe, and the run then fails here, before the tag:
-          // - a semantic-release older than 22: its @semantic-release/github
-          //   (^8) sends the notes and ignores releaseBodyTemplate;
+          // and every body the github plugin sends is the rendered one. When
+          // that cannot be shown, the run fails here, before the tag, as it did
+          // before the cap existed:
+          // - semantic_version below 23 (or not a plain version): 22 loads the
+          //   config through cosmiconfig 8, which also searches the parent
+          //   directories, and older ones may ship a github plugin that
+          //   ignores releaseBodyTemplate. 23 and 24 use cosmiconfig 9 and
+          //   @semantic-release/github 10/11, which renders it;
+          // - an executable config (JS/TS): it can set options a file scan
+          //   cannot see (a require()d base, shorthand, assignments);
           // - a caller config that sets `extends`: the cap's CLI `extends`
           //   would replace it instead of adding to it;
           // - a caller releaseBodyTemplate, at the root or on the plugin: it
           //   wins over the cap's root option;
           // - addReleases top/bottom: the plugin's success step rewrites the
           //   body with the whole notes after the release is published.
+          // A data config (JSON, YAML) sets an option only by naming its key in
+          // the file, so a key scan of it is complete.
           const fs = require('fs');
           const path = require('path');
           const callerConfig = () => {
-            // semantic-release calls cosmiconfig('release').search(cwd) with no
-            // stop directory, so cosmiconfig 9 reads the working directory only:
-            // the first of its search places that exists and is not empty.
+            // semantic-release 23+ calls cosmiconfig('release').search(cwd) with
+            // no stop directory, so cosmiconfig 9 reads the working directory
+            // only: the first of its search places that exists and does not
+            // load empty.
             const places = ['package.json', '.releaserc', '.releaserc.json', '.releaserc.yaml', '.releaserc.yml',
               '.releaserc.js', '.releaserc.ts', '.releaserc.cjs', '.releaserc.mjs',
               '.config/releaserc', '.config/releaserc.json', '.config/releaserc.yaml', '.config/releaserc.yml',
@@ -585,6 +594,7 @@ jobs:
             for (const name of places) {
               const file = path.join(dir, name);
               if (!fs.existsSync(file)) continue;
+              if (/\.(js|cjs|mjs|ts)$/.test(name)) return { file, executable: true };
               let text = fs.readFileSync(file, 'utf8');
               if (name === 'package.json') {
                 let release;
@@ -592,21 +602,25 @@ jobs:
                 if (!release) continue;
                 text = JSON.stringify(release);
               }
+              // Keys, not words: a comment that mentions one is not a setting,
+              // and a file of comments only loads empty, so cosmiconfig moves on.
+              text = text.split('\n').filter((line) => !/^\s*(#|\/\/)/.test(line)).join('\n');
               if (!text.trim()) continue;
-              // Keys, not words: a comment that mentions one is not a setting.
-              return { file, text: text.split('\n').filter((line) => !/^\s*(#|\/\/)/.test(line)).join('\n') };
+              return { file, text };
             }
             return null;
           };
 
           const reasons = [];
           if (process.env.TRUNCATE === 'true') {
-            const major = Number((process.env.SEMANTIC_VERSION || '').match(/^\D*(\d+)/)?.[1]);
-            if (!(major >= 22)) {
-              reasons.push(`semantic_version ${process.env.SEMANTIC_VERSION} ships a @semantic-release/github that ignores releaseBodyTemplate`);
+            const major = Number((process.env.SEMANTIC_VERSION || '').match(/^v?(\d+)\./)?.[1]);
+            if (!(major >= 23)) {
+              reasons.push(`semantic_version ${process.env.SEMANTIC_VERSION} is not 23 or later, whose config loading and github plugin the cap relies on`);
             }
             const config = callerConfig();
-            if (config) {
+            if (config && config.executable) {
+              reasons.push(`${path.relative(process.env.WORKSPACE || '.', config.file)} is an executable config, whose options cannot be checked`);
+            } else if (config) {
               const where = path.relative(process.env.WORKSPACE || '.', config.file);
               const key = (name) => new RegExp(`(^|[\\s{,])["']?${name}["']?\\s*:`, 'm');
               if (key('extends').test(config.text)) reasons.push(`${where} sets \`extends\`, which the cap would replace`);

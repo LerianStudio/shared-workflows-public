@@ -180,16 +180,19 @@ publish runner's locale. Over `release_notes_max_chars`:
 - with `false`, the run fails there, before the real semantic-release step, so no tag
   exists and there is nothing to clean up. It also fails there, naming the reason, when
   the cut would not reach the body:
-  - `semantic_version` older than 22, whose `@semantic-release/github` ignores
-    `releaseBodyTemplate`;
+  - `semantic_version` below 23, or not a plain version: 22 also reads release configs
+    from parent directories, and older versions may ship a `@semantic-release/github`
+    that ignores `releaseBodyTemplate`;
+  - the caller's release config is executable (`.js`, `.cjs`, `.mjs`, `.ts`): it can set
+    options that a check of the file cannot see;
   - the caller's release config sets `extends` (the CLI `extends` would replace it), its
     own `releaseBodyTemplate` (it wins over the cut), or `addReleases: top|bottom` (the
     plugin rewrites the body with the whole notes after publishing).
 
-  The config checked is the one semantic-release loads: the first non-empty cosmiconfig
-  search place (`package.json` `release`, `.releaserc*`, `.config/releaserc*`,
-  `release.config.*`) in the release working directory, not in its parents. Publish that
-  release by hand with short notes, or narrow what the notes cover in `.releaserc`.
+  The config checked is the one semantic-release 23+ loads: the first cosmiconfig search
+  place (`package.json` `release`, `.releaserc*`, `.config/releaserc*`, `release.config.*`)
+  in the release working directory that does not load empty, not in its parents. Publish
+  that release by hand with short notes, or narrow what the notes cover in `.releaserc`.
 
 Set `release_notes_max_chars: 0` to turn the check and the cut off. Any other non-whole or
 negative value fails the step rather than silently disabling it.

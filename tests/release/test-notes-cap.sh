@@ -82,10 +82,18 @@ check 'a comment that mentions extends does not block' '0 cap=true' \
 check 'a caller releaseBodyTemplate blocks the cap' '1 ' \
   "$(guard template 200000 125000 true app/.releaserc.json '{"plugins":[["@semantic-release/github",{"releaseBodyTemplate":"<%= nextRelease.notes %>"}]]}')"
 check 'addReleases top blocks the cap' '1 ' \
-  "$(guard addreleases 200000 125000 true app/release.config.cjs "module.exports = { plugins: [['@semantic-release/github', { addReleases: 'top' }]] };")"
+  "$(guard addreleases 200000 125000 true app/.releaserc.yml $'plugins:\n  - - "@semantic-release/github"\n    - addReleases: top')"
+check 'an executable config blocks the cap, whatever it sets' '1 ' \
+  "$(guard executable 200000 125000 true app/release.config.cjs "module.exports = { ...require('./base.cjs') };")"
+check 'the executable failure names the config' yes "$(logged executable 'app/release.config.cjs is an executable config')"
+mkdir -p "${WORK_DIR}/commentonly/ws/app" && printf 'extends: x\n' >"${WORK_DIR}/commentonly/ws/app/.releaserc.yml"
+check 'a comment-only .releaserc is skipped for the next place' '1 ' \
+  "$(guard commentonly 200000 125000 true app/.releaserc $'# nothing here\n# extends: no')"
 check 'package.json release.extends blocks the cap' '1 ' \
   "$(guard pkg 200000 125000 true app/package.json '{"name":"x","release":{"extends":"@acme/cfg"}}')"
-check 'semantic-release 21 blocks the cap' '1 ' "$(SEMVER=21.1.2 guard sr21 200000 125000 true)"
+check 'semantic-release 22 blocks the cap' '1 ' "$(SEMVER=22.0.12 guard sr22 200000 125000 true)"
+check 'a non-numeric semantic_version blocks the cap' '1 ' "$(SEMVER=latest guard srlatest 200000 125000 true)"
+check 'semantic-release 24 takes the cap' '0 cap=true' "$(SEMVER=24.2.9 guard sr24 200000 125000 true)"
 check 'limit 0 disables the check' '0 ' "$(guard disabled 200000 0 true)"
 check 'a non-integer limit fails' '1 ' "$(guard bad 10 1e5 true)"
 
