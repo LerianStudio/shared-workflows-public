@@ -171,10 +171,15 @@ on:
         type: boolean
         default: false
       release_notes_max_chars:
-        description: 'Fail the release before any tag is created when the generated release notes exceed this many characters. The GitHub Releases API rejects a body over 125000 characters, and semantic-release only hits that limit in its `publish` step — after the tag is already pushed, which leaves the repository with a tag, a deployed build and no Release, changelog or backmerge. The check runs on the dry-run notes, so an oversized body stops the run with nothing published. Set to 0 to disable.'
+        description: 'Character limit for the generated release notes. The GitHub Releases API rejects a body over 125000 characters, and semantic-release only hits that limit in its `publish` step — after the tag is already pushed, which leaves the repository with a tag, a deployed build and no Release, changelog or backmerge. The check runs on the dry-run notes, before any tag exists: over the limit, the GitHub Release body is cut to fit (see truncate_oversized_release_notes) or the run fails with nothing published. Set to 0 to disable.'
         required: false
         type: number
         default: 125000
+      truncate_oversized_release_notes:
+        description: 'When the release notes exceed release_notes_max_chars, publish the release with the GitHub Release body cut to the limit, ending with a link to the full list of changes. false fails the run before any tag is created instead. Only the Release body is cut; plugins such as @semantic-release/changelog still get the whole notes.'
+        required: false
+        type: boolean
+        default: true
       environment_name:
         description: 'Overrides the per-channel deployment environment for this run. Empty (default) keeps `stable` on main, `rc` on release-candidate and `beta` on anything else. Pass a value only when a ref needs its own environment, scoping it with a condition in the caller so the channel split still applies to every other ref (see docs/release.md, Deployment Environments). The environment lives in your repository; if it has a deployment branch policy that does not allow this ref, the job fails, which is the intended behaviour.'
         required: false
@@ -499,17 +504,24 @@ jobs:
       # skipped. The target branch then never gets the stable tag, so the
       # prerelease guard above fails every later push to it.
       #
-      # The first stable release of a repository with a long prerelease history
-      # is the case that hits this: with no previous stable tag the notes cover
-      # the whole history. Checking the dry-run notes stops the run before any
-      # tag exists, so a failure here leaves nothing behind to clean up.
+      # Two cases hit this, both because the notes cover every commit since the
+      # last release the branch reaches: the first stable release of a
+      # repository with a long prerelease history, and the next prerelease after
+      # a stable release cut straight on the stable branch, which resets the
+      # prerelease line to that tag. Checking the dry-run notes decides before
+      # any tag exists: over the limit, the next step caps the Release body, or
+      # the run stops here with nothing behind to clean up.
       - name: Guard against oversized release notes
+        id: notes_guard
         # The input is validated here rather than in the `if:` above, so a bad
         # value fails loudly instead of quietly turning the guard off.
         if: steps.semantic_dry.outputs.new_release_published == 'true'
         env:
           MAX_CHARS: ${{ inputs.release_notes_max_chars }}
           NEXT_VERSION: ${{ steps.semantic_dry.outputs.new_release_version }}
+          TRUNCATE: ${{ inputs.truncate_oversized_release_notes }}
+          WORKSPACE: ${{ github.workspace }}
+          WORKING_DIR: ${{ matrix.app.working_dir }}
         # Node, already installed above, rather than bash. The notes cannot
         # reach the script through `env:`: Linux refuses a single environment
         # string over 128 KiB, so oversized notes made the runner fail to start
@@ -546,14 +558,97 @@ jobs:
             process.exit(0);
           }
 
+          // The cap reaches semantic-release as a shareable config passed in
+          // `extends`, and a CLI `extends` replaces the one in the caller's
+          // config instead of adding to it. Look for that config the way
+          // semantic-release does (cosmiconfig: first file found, from the
+          // working directory up) and leave a config that extends alone.
+          const fs = require('fs');
+          const path = require('path');
+          const configWithExtends = () => {
+            const names = ['package.json', '.releaserc', '.releaserc.json', '.releaserc.yaml', '.releaserc.yml',
+              '.releaserc.js', '.releaserc.cjs', '.releaserc.mjs', 'release.config.js', 'release.config.cjs', 'release.config.mjs'];
+            const root = path.resolve(process.env.WORKSPACE || '.');
+            let dir = path.resolve(root, process.env.WORKING_DIR || '.');
+            for (;;) {
+              for (const name of names) {
+                const file = path.join(dir, name);
+                if (!fs.existsSync(file)) continue;
+                const text = fs.readFileSync(file, 'utf8');
+                if (name === 'package.json') {
+                  let release;
+                  try { release = JSON.parse(text).release; } catch { continue; }
+                  if (!release) continue;
+                  return release.extends ? file : '';
+                }
+                return /\bextends\b/.test(text) ? file : '';
+              }
+              if (dir === root || dir === path.dirname(dir)) return '';
+              dir = path.dirname(dir);
+            }
+          };
+
+          const blocker = process.env.TRUNCATE === 'true' ? configWithExtends() : '';
+          if (process.env.TRUNCATE === 'true' && !blocker) {
+            console.log(`::notice::Release notes for v${nextVersion} are ${size} characters, over the ${limit} limit. The GitHub Release body will be cut to fit, ending with a link to the full list of changes.`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'cap=true\n');
+            process.exit(0);
+          }
+
           console.log('::error::' + [
             `Release notes for v${nextVersion} are ${size} characters, over the ${limit} limit. `,
             'The GitHub Releases API would reject them in the publish step, after the tag had already been created and pushed. This run stopped before that: no tag, no release, nothing to clean up.%0A',
-            'This is usually the first stable release of a repository with a long prerelease history: with no previous stable tag, the notes cover every commit.%0A',
-            'To unblock it, publish this release by hand with the notes of the last prerelease on the promoted channel, or narrow what the notes cover in .releaserc.%0A',
+            blocker
+              ? `The Release body could not be cut to fit: ${path.relative(process.env.WORKSPACE || '.', blocker)} sets \`extends\`, which the cap would replace.%0A`
+              : 'This usually means the notes cover every commit since the last release the branch reaches: a long prerelease history, or a stable release cut straight on the stable branch.%0A',
+            'To unblock it, publish this release by hand with short notes, or narrow what the notes cover in .releaserc.%0A',
             'Set release_notes_max_chars to 0 to disable this check.',
           ].join(''));
           process.exit(1);
+
+      # Over the limit, the Release body is cut through `releaseBodyTemplate`,
+      # an option of @semantic-release/github. A root-level option reaches every
+      # plugin, so it travels in a one-file shareable config the action
+      # installs (`name@file:dir`) and passes as `extends`; options the caller
+      # sets on the plugin itself still win. Only the body is cut: the notes
+      # the other plugins get (changelog, git) stay whole.
+      - name: Cap the release body to the limit
+        id: notes_cap
+        if: steps.notes_guard.outputs.cap == 'true'
+        env:
+          MAX_CHARS: ${{ inputs.release_notes_max_chars }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          CAP_DIR: ${{ runner.temp }}/lerian-release-notes-cap
+        shell: node {0}
+        run: |
+          const fs = require('fs');
+          const path = require('path');
+          const { MAX_CHARS: maxChars, REPO_URL: repoUrl, CAP_DIR: capDir } = process.env;
+          const limit = Number(maxChars);
+
+          // Lodash template, rendered by @semantic-release/github with the
+          // release context. Code points, as the guard counts them; the cut
+          // falls on the last whole line that leaves room for the footer.
+          const footer = `\n\n---\n\nThese notes were cut to fit the ${limit}-character limit of GitHub Releases. Full list of changes: `;
+          const template = [
+            '<%',
+            `var limit = ${limit};`,
+            "var notes = nextRelease.notes || '';",
+            'var chars = Array.from(notes);',
+            'if (chars.length <= limit) { print(notes); } else {',
+            `var link = lastRelease && lastRelease.gitTag ? ${JSON.stringify(`${repoUrl}/compare/`)} + lastRelease.gitTag + '...' + nextRelease.gitTag : ${JSON.stringify(`${repoUrl}/commits/`)} + nextRelease.gitTag;`,
+            `var tail = ${JSON.stringify(footer)} + link;`,
+            'var body = chars.slice(0, Math.max(0, limit - Array.from(tail).length)).join(\'\');',
+            "var cut = body.lastIndexOf('\\n');",
+            'if (cut > 0) { body = body.slice(0, cut); }',
+            'print(body + tail); }',
+            '%>',
+          ].join(' ');
+
+          fs.mkdirSync(capDir, { recursive: true });
+          fs.writeFileSync(path.join(capDir, 'package.json'), JSON.stringify({ name: 'lerian-release-notes-cap', version: '1.0.0', main: 'index.cjs' }));
+          fs.writeFileSync(path.join(capDir, 'index.cjs'), `module.exports = ${JSON.stringify({ releaseBodyTemplate: template })};\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `spec=lerian-release-notes-cap@file:${capDir}\n`);
 
       - name: Semantic Release
         uses: cycjimmy/semantic-release-action@ad51787758d9654d5a75150a89a6fa9b3ccef95e # v8.1.4
@@ -568,6 +663,8 @@ jobs:
           working_directory: ${{ matrix.app.working_dir }}
           extra_plugins: |
             conventional-changelog-conventionalcommits@v7.0.2
+          # Empty unless the notes are over the limit (see the step above).
+          extends: ${{ steps.notes_cap.outputs.spec }}
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           GIT_AUTHOR_NAME: ${{ secrets.LERIAN_CI_CD_USER_NAME }}
