@@ -176,7 +176,7 @@ on:
         type: number
         default: 125000
       truncate_oversized_release_notes:
-        description: 'When the release notes exceed release_notes_max_chars, publish the release with the GitHub Release body cut to the limit (never above 125000), ending with a link to the changes between the tags. false fails the run before any tag is created instead, and so does a setup the cut cannot be shown to reach (semantic_version below 23, an executable JS/TS release config, or a release config that sets extends, releaseBodyTemplate or addReleases top/bottom). Only the Release body is cut; plugins such as @semantic-release/changelog still get the whole notes.'
+        description: 'When the release notes exceed release_notes_max_chars, publish the release with the GitHub Release body cut to the limit (never above 125000), ending with a link to the changes between the tags. false fails the run before any tag is created instead, and so does a setup the cut cannot be shown to reach (semantic_version below 23, an executable JS/TS release config, $import or a cosmiconfig meta config, or a release config that sets extends, releaseBodyTemplate or addReleases top/bottom). Only the Release body is cut; plugins such as @semantic-release/changelog still get the whole notes.'
         required: false
         type: boolean
         default: true
@@ -568,16 +568,18 @@ jobs:
           //   directories, and older ones may ship a github plugin that
           //   ignores releaseBodyTemplate. 23 and 24 use cosmiconfig 9 and
           //   @semantic-release/github 10/11, which renders it;
-          // - an executable config (JS/TS): it can set options a file scan
-          //   cannot see (a require()d base, shorthand, assignments);
+          // - a config whose options a file scan cannot see: an executable one
+          //   (JS/TS: a require()d base, shorthand, assignments), a data one
+          //   that pulls others in through `$import`, or a cosmiconfig meta
+          //   config that adds search places;
           // - a caller config that sets `extends`: the cap's CLI `extends`
           //   would replace it instead of adding to it;
           // - a caller releaseBodyTemplate, at the root or on the plugin: it
           //   wins over the cap's root option;
           // - addReleases top/bottom: the plugin's success step rewrites the
           //   body with the whole notes after the release is published.
-          // A data config (JSON, YAML) sets an option only by naming its key in
-          // the file, so a key scan of it is complete.
+          // Without `$import`, a data config (JSON, YAML) sets an option only by
+          // naming its key in the file, so a key scan of it is complete.
           const fs = require('fs');
           const path = require('path');
           const callerConfig = () => {
@@ -591,10 +593,21 @@ jobs:
               '.config/releaserc.js', '.config/releaserc.ts', '.config/releaserc.cjs', '.config/releaserc.mjs',
               'release.config.js', 'release.config.ts', 'release.config.cjs', 'release.config.mjs'];
             const dir = path.resolve(process.env.WORKSPACE || '.', process.env.WORKING_DIR || '.');
+            // A cosmiconfig meta config can add search places this list does not know.
+            const metaPlaces = ['.config/config.json', '.config/config.yaml', '.config/config.yml',
+              '.config/config.js', '.config/config.ts', '.config/config.cjs', '.config/config.mjs'];
+            for (const name of metaPlaces) {
+              if (fs.existsSync(path.join(dir, name))) return { file: path.join(dir, name), opaque: 'a cosmiconfig meta config' };
+            }
+            try {
+              if (JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).cosmiconfig) {
+                return { file: path.join(dir, 'package.json'), opaque: 'a cosmiconfig meta config' };
+              }
+            } catch {}
             for (const name of places) {
               const file = path.join(dir, name);
               if (!fs.existsSync(file)) continue;
-              if (/\.(js|cjs|mjs|ts)$/.test(name)) return { file, executable: true };
+              if (/\.(js|cjs|mjs|ts)$/.test(name)) return { file, opaque: 'an executable config' };
               let text = fs.readFileSync(file, 'utf8');
               if (name === 'package.json') {
                 let release;
@@ -606,6 +619,8 @@ jobs:
               // and a file of comments only loads empty, so cosmiconfig moves on.
               text = text.split('\n').filter((line) => !/^\s*(#|\/\/)/.test(line)).join('\n');
               if (!text.trim()) continue;
+              // cosmiconfig 9 merges the files a data config names in `$import`.
+              if (/(^|[\s{,])["']?\$import["']?\s*:/m.test(text)) return { file, opaque: 'a config that uses $import' };
               return { file, text };
             }
             return null;
@@ -618,8 +633,8 @@ jobs:
               reasons.push(`semantic_version ${process.env.SEMANTIC_VERSION} is not 23 or later, whose config loading and github plugin the cap relies on`);
             }
             const config = callerConfig();
-            if (config && config.executable) {
-              reasons.push(`${path.relative(process.env.WORKSPACE || '.', config.file)} is an executable config, whose options cannot be checked`);
+            if (config && config.opaque) {
+              reasons.push(`${path.relative(process.env.WORKSPACE || '.', config.file)} is ${config.opaque}, whose options cannot be checked`);
             } else if (config) {
               const where = path.relative(process.env.WORKSPACE || '.', config.file);
               const key = (name) => new RegExp(`(^|[\\s{,])["']?${name}["']?\\s*:`, 'm');

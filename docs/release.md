@@ -183,8 +183,9 @@ publish runner's locale. Over `release_notes_max_chars`:
   - `semantic_version` below 23, or not a plain version: 22 also reads release configs
     from parent directories, and older versions may ship a `@semantic-release/github`
     that ignores `releaseBodyTemplate`;
-  - the caller's release config is executable (`.js`, `.cjs`, `.mjs`, `.ts`): it can set
-    options that a check of the file cannot see;
+  - the caller's release config has options a check of the file cannot see: it is
+    executable (`.js`, `.cjs`, `.mjs`, `.ts`), it pulls other files in through `$import`, or
+    a cosmiconfig meta config (`package.json` `cosmiconfig`, `.config/config.*`) is present;
   - the caller's release config sets `extends` (the CLI `extends` would replace it), its
     own `releaseBodyTemplate` (it wins over the cut), or `addReleases: top|bottom` (the
     plugin rewrites the body with the whole notes after publishing).

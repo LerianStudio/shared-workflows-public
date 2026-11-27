@@ -86,6 +86,12 @@ check 'addReleases top blocks the cap' '1 ' \
 check 'an executable config blocks the cap, whatever it sets' '1 ' \
   "$(guard executable 200000 125000 true app/release.config.cjs "module.exports = { ...require('./base.cjs') };")"
 check 'the executable failure names the config' yes "$(logged executable 'app/release.config.cjs is an executable config')"
+check 'a data config with $import blocks the cap' '1 ' \
+  "$(guard import 200000 125000 true app/.releaserc.yml $'$import: ./base.yml\nbranches: [main]')"
+check 'a .config/config.* meta config blocks the cap' '1 ' \
+  "$(guard meta 200000 125000 true app/.config/config.yml $'cosmiconfig:\n  searchPlaces: [x.yml]')"
+check 'a package.json cosmiconfig key blocks the cap' '1 ' \
+  "$(guard pkgmeta 200000 125000 true app/package.json '{"name":"x","cosmiconfig":{"searchPlaces":["x.yml"]}}')"
 mkdir -p "${WORK_DIR}/commentonly/ws/app" && printf 'extends: x\n' >"${WORK_DIR}/commentonly/ws/app/.releaserc.yml"
 check 'a comment-only .releaserc is skipped for the next place' '1 ' \
   "$(guard commentonly 200000 125000 true app/.releaserc $'# nothing here\n# extends: no')"
