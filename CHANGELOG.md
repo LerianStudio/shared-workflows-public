@@ -1,5 +1,14 @@
 # Shared-workflows-public Changelog
 
+## [1.12.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.12.0)
+
+✨ Features:
+- `pr-validation` now warns, without blocking, when a `feat` or `fix` pull request omits the `## Release note` section or leaves it empty, if the repository's PR template asks for that section. Repositories whose template has no such section see no change. (#64, @bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.11.0...v1.12.0)
+
+---
+
 ## [1.11.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.11.0)
 
 ✨ Features:
