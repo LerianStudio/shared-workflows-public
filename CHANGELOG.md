@@ -1,5 +1,14 @@
 # Shared-workflows-public Changelog
 
+## [1.12.1](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.12.1)
+
+🛠️ Fixes:
+- The release-notes size guard no longer crashes with "Argument list too long" when release notes exceed 128 KiB; it now reports the oversize error it was meant to. (#65, @bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.12.0...v1.12.1)
+
+---
+
 ## [1.12.0](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.12.0)
 
 ✨ Features:
