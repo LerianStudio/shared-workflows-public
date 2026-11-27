@@ -1,5 +1,14 @@
 # Shared-workflows-public Changelog
 
+## [1.12.2](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.12.2)
+
+✨ Features:
+- Release notes longer than `release_notes_max_chars` no longer stop the release. The GitHub Release body is cut to the limit and ends with a link to the full list of changes. Set `truncate_oversized_release_notes: false` to keep the previous behavior of failing. (#66, @bedatty)
+
+[Compare changes](https://github.com/LerianStudio/shared-workflows-public/compare/v1.12.1...v1.12.2)
+
+---
+
 ## [1.12.1](https://github.com/LerianStudio/shared-workflows-public/releases/tag/v1.12.1)
 
 🛠️ Fixes:
