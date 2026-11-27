@@ -142,7 +142,8 @@ is the correct setting.
 | `enable_release_announcement` | boolean | `true` | Announce the published release to the repository Slack channel after a successful release |
 | `announcement_product_name` | string | `''` | Product name displayed in the announcement. Defaults to the repository name |
 | `announcement_slack_channel` | string | `''` | Slack channel that receives the announcement. Defaults to the `RELEASE_SLACK_CHANNEL` repository variable; the announcement is skipped when both are empty |
-| `release_notes_max_chars` | number | `125000` | Fail the release before any tag is created when the generated release notes are longer than this. Matches the GitHub Releases API limit — see [Oversized release notes](#oversized-release-notes). `0` disables the check |
+| `release_notes_max_chars` | number | `125000` | Character limit for the generated release notes, checked before any tag is created. Matches the GitHub Releases API limit — see [Oversized release notes](#oversized-release-notes). `0` disables the check |
+| `truncate_oversized_release_notes` | boolean | `true` | Over `release_notes_max_chars`, publish with the GitHub Release body cut to the limit and a link to the full list of changes. `false` fails the run before any tag is created instead |
 | `normalize_to_filter` | boolean | `false` | With `filter_paths` set, run each release leg from the matching `filter_paths` entry instead of the `path_level`-trimmed directory. Use it when a top-level component (e.g. `cockpit`) would otherwise get one leg per subdirectory, none carrying its `.releaserc` |
 | `environment_name` | string | `''` | Overrides the per-channel deployment environment for this run. Empty keeps `stable`/`rc`/`beta` by ref — see [Deployment Environments](#deployment-environments) |
 
@@ -156,19 +157,45 @@ Release, the changelog, the announcement and the backmerge are all skipped. With
 stable tag never reaching `backmerge_target`, the prerelease guard then fails every
 later push to that branch until someone backmerges by hand.
 
-The case that hits this is the **first stable release of a repository with a long
-prerelease history**: with no previous stable tag, `@semantic-release/release-notes-generator`
-builds the notes from the whole history.
+`@semantic-release/release-notes-generator` lists every commit since the last release the
+branch reaches, so two cases hit this:
 
-To prevent it, the release job runs semantic-release in dry-run mode on every branch
-and measures the notes it would publish, counting Unicode code points so the
-verdict does not depend on the publish runner's locale. Over `release_notes_max_chars`, the run fails
-there — before the real semantic-release step, so no tag exists and there is nothing to
-clean up.
+- the **first stable release of a repository with a long prerelease history**, which has
+  no previous stable tag;
+- the **next prerelease after a stable release cut straight on the stable branch** (a
+  hotfix or a port): once that tag is backmerged, it is the highest version the
+  prerelease branch reaches, and the next beta lists the whole prerelease cycle since it.
 
-When the guard fires, publish that release by hand with the notes of the last prerelease
-on the promoted channel (for example the last `-rc.N`), or narrow what the notes cover in
-`.releaserc`. Set `release_notes_max_chars: 0` to turn the check off. Any other non-whole or
+The release job runs semantic-release in dry-run mode on every branch and measures the
+notes it would publish, counting Unicode code points so the verdict does not depend on the
+publish runner's locale. Over `release_notes_max_chars`:
+
+- with `truncate_oversized_release_notes: true` (the default), the release goes ahead and
+  only the GitHub Release body is cut, never above 125 000 characters: it keeps the whole
+  lines that fit and ends with a link to the compare view between the previous and the new
+  tag (GitHub lists at most 250 commits there). The cut travels as `releaseBodyTemplate`,
+  an option of `@semantic-release/github`, in a one-file shareable config passed to
+  semantic-release through `extends`. Every other plugin (`@semantic-release/changelog`,
+  `@semantic-release/git`) gets the whole notes.
+- with `false`, the run fails there, before the real semantic-release step, so no tag
+  exists and there is nothing to clean up. It also fails there, naming the reason, when
+  the cut would not reach the body:
+  - `semantic_version` below 23, or not a plain version: 22 also reads release configs
+    from parent directories, and older versions may ship a `@semantic-release/github`
+    that ignores `releaseBodyTemplate`;
+  - the caller's release config has options a check of the file cannot see: it is
+    executable (`.js`, `.cjs`, `.mjs`, `.ts`), it pulls other files in through `$import`, or
+    a cosmiconfig meta config (`package.json` `cosmiconfig`, `.config/config.*`) is present;
+  - the caller's release config sets `extends` (the CLI `extends` would replace it), its
+    own `releaseBodyTemplate` (it wins over the cut), or `addReleases: top|bottom` (the
+    plugin rewrites the body with the whole notes after publishing).
+
+  The config checked is the one semantic-release 23+ loads: the first cosmiconfig search
+  place (`package.json` `release`, `.releaserc*`, `.config/releaserc*`, `release.config.*`)
+  in the release working directory that does not load empty, not in its parents. Publish
+  that release by hand with short notes, or narrow what the notes cover in `.releaserc`.
+
+Set `release_notes_max_chars: 0` to turn the check and the cut off. Any other non-whole or
 negative value fails the step rather than silently disabling it.
 
 ## Semantic Release That Never Started
