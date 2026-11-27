@@ -508,45 +508,52 @@ jobs:
         # value fails loudly instead of quietly turning the guard off.
         if: steps.semantic_dry.outputs.new_release_published == 'true'
         env:
-          NOTES: ${{ steps.semantic_dry.outputs.new_release_notes }}
           MAX_CHARS: ${{ inputs.release_notes_max_chars }}
           NEXT_VERSION: ${{ steps.semantic_dry.outputs.new_release_version }}
+        # Node, already installed above, rather than bash. The notes cannot
+        # reach the script through `env:`: Linux refuses a single environment
+        # string over 128 KiB, so oversized notes made the runner fail to start
+        # the shell ("Argument list too long") before the check ran. The script
+        # body is written to a file instead, and `toJSON` turns the notes into a
+        # JSON string literal, which is also a JavaScript one: the pull request
+        # text they carry stays inside the string.
+        shell: node {0}
         run: |
-          # A character limit is a whole number. Anything else — a fraction, a
-          # negative, the exponent notation GitHub can produce when it renders a
-          # large `number` input as a string — is a configuration mistake, and
-          # `test -le` would report it as oversized notes instead.
-          case "$MAX_CHARS" in
-            '' | *[!0-9]*)
-              echo "::error::release_notes_max_chars must be a non-negative whole number (got '${MAX_CHARS}')"
-              exit 1
-              ;;
-          esac
+          const notes = ${{ toJSON(steps.semantic_dry.outputs.new_release_notes) }} || '';
+          const { MAX_CHARS: maxChars = '', NEXT_VERSION: nextVersion } = process.env;
 
-          if [ "$MAX_CHARS" -eq 0 ]; then
-            echo "Release notes size check disabled (release_notes_max_chars=0)"
-            exit 0
-          fi
+          // A character limit is a whole number. Anything else — a fraction, a
+          // negative, the exponent notation GitHub can produce when it renders a
+          // large `number` input as a string — is a configuration mistake, and
+          // comparing it would report it as oversized notes instead.
+          if (!/^[0-9]+$/.test(maxChars)) {
+            console.log(`::error::release_notes_max_chars must be a non-negative whole number (got '${maxChars}')`);
+            process.exit(1);
+          }
+          const limit = Number(maxChars);
 
-          # Counted with node, already installed above, rather than `wc -m`:
-          # the caller picks the runner, and on one without the C.UTF-8 locale
-          # `wc -m` silently falls back to counting bytes, so notes with accents
-          # or emoji would measure larger than the API counts them. Spreading
-          # the string iterates code points, which is what the API limit counts.
-          size="$(node -e 'process.stdout.write(String([...(process.env.NOTES || "")].length))')"
-          echo "Release notes for v${NEXT_VERSION}: ${size} characters (limit ${MAX_CHARS})"
+          if (limit === 0) {
+            console.log('Release notes size check disabled (release_notes_max_chars=0)');
+            process.exit(0);
+          }
 
-          if [ "$size" -le "$MAX_CHARS" ]; then
-            exit 0
-          fi
+          // Spreading the string iterates code points, which is what the API
+          // limit counts; a byte count would measure accents and emoji larger.
+          const size = [...notes].length;
+          console.log(`Release notes for v${nextVersion}: ${size} characters (limit ${limit})`);
 
-          printf '::error::%s%s%s%s%s\n' \
-            "Release notes for v${NEXT_VERSION} are ${size} characters, over the ${MAX_CHARS} limit. " \
-            "The GitHub Releases API would reject them in the publish step, after the tag had already been created and pushed. This run stopped before that: no tag, no release, nothing to clean up.%0A" \
-            "This is usually the first stable release of a repository with a long prerelease history: with no previous stable tag, the notes cover every commit.%0A" \
-            "To unblock it, publish this release by hand with the notes of the last prerelease on the promoted channel, or narrow what the notes cover in .releaserc.%0A" \
-            "Set release_notes_max_chars to 0 to disable this check."
-          exit 1
+          if (size <= limit) {
+            process.exit(0);
+          }
+
+          console.log('::error::' + [
+            `Release notes for v${nextVersion} are ${size} characters, over the ${limit} limit. `,
+            'The GitHub Releases API would reject them in the publish step, after the tag had already been created and pushed. This run stopped before that: no tag, no release, nothing to clean up.%0A',
+            'This is usually the first stable release of a repository with a long prerelease history: with no previous stable tag, the notes cover every commit.%0A',
+            'To unblock it, publish this release by hand with the notes of the last prerelease on the promoted channel, or narrow what the notes cover in .releaserc.%0A',
+            'Set release_notes_max_chars to 0 to disable this check.',
+          ].join(''));
+          process.exit(1);
 
       - name: Semantic Release
         uses: cycjimmy/semantic-release-action@ad51787758d9654d5a75150a89a6fa9b3ccef95e # v8.1.4
